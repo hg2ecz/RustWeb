@@ -1,0 +1,174 @@
+\chapter{Practical applications: wiki and CMS}
+
+The next two examples use the same foundations but demonstrate different product needs. The minimal wiki combines stable slugs, Markdown content, and authenticated editing; a more mature wiki can later add optimistic locking and an audit trail. The CMS example adds a multi-file project structure, editor authorization, and public cache, then lists the additional layers a production CMS usually needs.
+
+The minimal wiki is also checked as a compilation fixture in \code{examples/wiki/main.rw}; the CMS is the multi-file \code{examples/news-site/} project. These examples are therefore not merely book pseudocode.
+
+\section{A simple wiki}
+
+A minimal wiki domain consists of pages: stable identifier, slug, title, and Markdown body. The following example focuses on connecting the language elements.
+
+\subsection*{Model}
+
+\begin{lstlisting}[language=RWLang]
+model WikiPage {
+    id: Int
+    slug: Slug
+    title: String
+    body: String
+}
+\end{lstlisting}
+
+\subsection*{Query}
+
+\begin{lstlisting}[language=RWLang]
+query fn wikiBySlug(db: Db, slug: Slug)
+    -> Result<WikiPage, DbError> sql {
+    SELECT id, slug, title, body
+    FROM wiki_pages
+    WHERE slug = :slug
+}
+\end{lstlisting}
+
+\subsection*{Public page}
+
+\begin{lstlisting}[language=RWLang]
+page fn wikiShow(ctx: PageContext, db: Db, slug: Slug)
+    -> Result<Html, PageError> {
+    let page = wikiBySlug(db, slug)?;
+    return Ok(html {
+        @layout(Main, page.title) {
+            <article>
+                <h1>{{ page.title }}</h1>
+                @markdown(page.body)
+            </article>
+        }
+    });
+}
+
+route wikiShow GET "/wiki/:slug<Slug>" => wikiShow;
+\end{lstlisting}
+
+\subsection*{Editor form}
+
+\begin{lstlisting}[language=RWLang]
+form WikiForm {
+    title<String>
+    body<String>
+    validate title length 2 200 body length 1 300000
+}
+\end{lstlisting}
+
+The mutating route should require authentication, for example \code{auth role Editor}. The write query should receive a \code{Transaction} capability. Do not blindly regenerate and overwrite the slug from the title on every edit if preserving stable old URLs matters.
+
+\subsection*{Canonical slug and aliases}
+
+A more mature wiki can maintain old names in a separate slug-alias/history table. The runtime can produce a 301 redirect from a canonical route, so the application does not need to build arbitrary redirect URLs.
+
+\subsection*{What should a real wiki add?}
+
+\begin{itemize}
+  \item optimistic locking for concurrent edits;
+  \item a business audit trail for changes;
+  \item object-level authorization if not every page has identical access rules;
+  \item backup/restore policy for the database and any AppFs state.
+\end{itemize}
+
+\section{CMS and news site}
+
+The repository's \code{examples/news-site/} project already demonstrates a small CMS core: model, typed SQL, layout, Markdown, editor action, and public cache.
+
+\subsection*{Project structure}
+
+\begin{lstlisting}
+main.rw
+models.rw
+queries.rw
+components.rw
+pages.rw
+actions.rw
+\end{lstlisting}
+
+\subsection*{Article model}
+
+\begin{lstlisting}[language=RWLang]
+model Article {
+    id: Int
+    slug: Slug
+    title: String
+    body: String
+}
+\end{lstlisting}
+
+Editor input gets a separate named form schema:
+
+\begin{lstlisting}[language=RWLang]
+form ArticleForm {
+    title<String>
+    body<String>
+    validate title length 2 200 body length 1 300000
+}
+\end{lstlisting}
+
+\subsection*{Public article page}
+
+\begin{lstlisting}[language=RWLang]
+page fn article(ctx: PageContext, db: Db, slug: Slug)
+    -> Result<Html, PageError> {
+    let article = articleBySlug(db, slug)?;
+    return Ok(html {
+        @layout(Main, article.title) {
+            <article>
+                <h1>{{ article.title }}</h1>
+                @markdown(article.body)
+            </article>
+        }
+    });
+}
+
+route article GET "/article/:slug<Slug>"
+    cache public ttl 60
+    => article;
+\end{lstlisting}
+
+Public cache is appropriate only for a page that does not depend on session or user state.
+
+\subsection*{Editor-side creation}
+
+\begin{lstlisting}[language=RWLang]
+action fn create(ctx: ActionContext, db: Db,
+                 title: String, body: String)
+    -> Result<Redirect, PageError> {
+    let articleSlug = slug(title);
+    transaction db {
+        insertArticle(tx, articleSlug, title, body)?;
+    }
+    return Ok(redirect("/admin/articles"));
+}
+
+route articleCreate POST "/admin/articles"
+    form ArticleForm
+    auth role Editor
+    invalidate cache article
+    => create;
+\end{lstlisting}
+
+The invalidation above changes the route-level generation: it does not delete just one cache key for the new slug, but makes the previous generation of the \code{article} route unreachable. This is correct and predictable in a simple example; in a high-traffic CMS you should deliberately decide which public routes a given mutation really needs to invalidate.
+
+\subsection*{From CMS to production system}
+
+The following additions form the backbone of a practical production CMS:
+
+\begin{itemize}
+  \item separate validation for publication and domain invariants;
+  \item draft/published state as an enum;
+  \item canonical slug history;
+  \item optimistic locking during editing;
+  \item business audit trail;
+  \item media library and AppFs for images;
+  \item role-based editor/publisher policy;
+  \item rate limits and resource profiles for expensive routes;
+  \item backups, restore drills, and controlled deployment.
+\end{itemize}
+
+In a CMS, original Markdown should remain the source of truth; do not store raw rendered HTML produced by the application.

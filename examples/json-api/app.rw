@@ -1,0 +1,52 @@
+model Product {
+    id: Int
+    name: String
+    price: Int
+}
+
+query fn listProducts(
+    db: Db,
+    limit: Int,
+    offset: Int
+) -> Result<List<Product>, DbError> sql {
+    SELECT id, name, price
+    FROM products
+    ORDER BY id
+    LIMIT :limit OFFSET :offset
+}
+
+page fn productsApi(
+    ctx: PageContext,
+    db: Db,
+    limit: Int,
+    offset: Int
+) -> Result<Json, PageError> {
+    let products = listProducts(db, limit, offset)?;
+    return Ok(json(products));
+}
+
+page fn csrfApi(ctx: PageContext) -> Result<Json, PageError> {
+    return Ok(json(csrfToken));
+}
+
+action fn echoApi(
+    ctx: ActionContext,
+    name: String,
+    age: Int,
+    active: Bool
+) -> Result<Json, PageError> {
+    return Ok(json(name));
+}
+
+route productsApi GET "/api/products"
+    query limit<Int> offset<Int>
+    validate limit range 1 100 offset range 0 1000000
+    => productsApi;
+
+route csrfApi GET "/api/csrf" auth user => csrfApi;
+
+route echoApi POST "/api/echo"
+    json name<String> age<Int> active<Bool>
+    validate name length 1 100 age range 0 150
+    auth user
+    => echoApi;

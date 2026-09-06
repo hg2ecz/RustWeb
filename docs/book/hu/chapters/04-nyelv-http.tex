@@ -1,0 +1,370 @@
+\chapter{Nyelvi alapok és HTTP-határok}
+
+Az A--Z példában már láttuk a fő építőelemeket működés közben. Ebben a fejezetben ezeket napi webfejlesztési munkafolyamattá rendezzük: a forrásfájlokat explicit modulgráfba szervezzük, a statementeket egyértelműen lezárjuk, typed értékekkel számolunk, a szöveget a határokon normalizáljuk, a domainlogikát handlerekben tartjuk, majd typed route-on és biztonságos renderelésen keresztül lépünk át HTTP/HTML világba.
+
+Hasznos munkaszabály: \emph{a bemenetet a határon parse-old és normalizáld, a domainben typed értékekkel dolgozz, explicit query-ken keresztül perzisztálj, és csak a lehető legkésőbb renderelj}. A fejezet sorrendje ezt követi.
+
+\section{Forrásstruktúra és statement-határok}
+
+\subsection*{Modulok}
+
+A \code{main.rw} a modulgráf belépési pontja:
+
+\begin{lstlisting}[language=RWLang]
+mod models;
+mod queries;
+mod components;
+mod pages;
+mod actions;
+\end{lstlisting}
+
+A V1-ben a \code{mod} application-root relatív modult tölt be, de a deklarációit nem önti a globális névtérbe. Például a \code{models.rw} deklarációi más modulból \code{models::Article} alakban érhetők el. A saját modulon belüli lokális deklaráció rövid névvel is hivatkozható. Nincs általános Rust-szerű \code{pub} export-rendszer.
+
+\subsection*{Modul-névterek és modulok közötti hívások}
+
+A moduldeklaráció egy application-root relatív forrásmodult vesz fel az explicit source graphba; nem másolja annak deklarációit az aktuális scope-ba. A kanonikus leképezés közvetlen:
+
+\begin{lstlisting}
+models.rw              -> models
+catalog/queries.rw     -> catalog::queries
+catalog/pages.rw       -> catalog::pages
+\end{lstlisting}
+
+Egy belépési pont például több modult tölthet be:
+
+\begin{lstlisting}[language=RWLang]
+mod models;
+mod catalog::queries;
+mod catalog::pages;
+
+route catalogIndex GET "/catalog"
+    => catalog::pages::index;
+\end{lstlisting}
+
+Modulhatáron át kvalifikált nevet használj. Például:
+
+\begin{lstlisting}[language=RWLang]
+let recent = catalog::queries::recent(db);
+// tipus modulhataron at: models::Article
+\end{lstlisting}
+
+A \code{catalog/queries.rw} tehát a \code{catalog::queries} névtérhez tartozik. A deklaráció saját modulján belül a rövid lokális név továbbra is használható. Így a helyi kód rövid marad, a forrásmodulok közötti dependency viszont látható.
+
+A modulútvonal mindig az application rootból indul. Nincs \code{mod.rw} fallback, automatikus könyvtár-discovery, \code{../}, \code{./}, \code{self::}, \code{super::}, \code{crate::} vagy wildcard import. Minden forrásmodult explicit deklarálj, még a normál top-level deklarációk előtt.
+
+A nyelvi builtinok -- például \code{trim(...)}, \code{sin(...)} és \code{len(...)} -- nem alkalmazásmodul-deklarációk, ezért továbbra is kvalifikáció nélkül használhatók.
+
+\subsection*{Statement terminátorok}
+
+Az RWLangban az egyszerű statementeket explicit pontosvessző zárja. A sortörés whitespace, nem statement-határ; nincs automatikus semicolon insertion. Ez determinisztikussá teszi a többsoros kifejezéseket és egyértelműbbé a generált, illetve auditált kódot.
+
+\begin{lstlisting}[language=RWLang]
+let subtotal = price
+    * quantity
+    + shipping;
+set retries = retries + 1;
+authorize article owner authorUsername or role Publisher;
+return Ok(json(subtotal));
+\end{lstlisting}
+
+A blokkos statementeket és blokkos deklarációkat a kapcsos zárójel zárja, utánuk nincs pontosvessző:
+
+\begin{lstlisting}[language=RWLang]
+if ready {
+    set state = 1;
+}
+while state < 3 {
+    set state = state + 1;
+}
+\end{lstlisting}
+
+Ugyanez érvényes tranzakción belül is: az önálló mutating query-hívás és a business-audit statement egyszerű statement, ezért \code{;} zárja. A top-level blokkos deklarációk -- például \code{model}, \code{page fn}, \code{action fn} -- és a control-flow blokkok után nincs \code{;}. A blokk nélküli top-level deklarációk viszont pontosvesszősök: a \code{mod path;} és a \code{route ... => handler;} is explicit \code{;} terminátort kap. Többsoros route esetén is csak ez a záró terminátor fejezi be a deklarációt.
+
+\section{Typed számítás webalkalmazás-kódban}
+
+\subsection*{Kifejezések és aritmetika}
+
+Az RWLang explicit operátorprecedenciát használ. Szorosabbtól lazább felé: unáris \code{!}; szorzás, osztás és maradékképzés; összeadás és kivonás; shiftek; összehasonlítások; bitenkénti AND/XOR/OR; logikai AND; logikai OR. Ha javítja az olvashatóságot, használj zárójelet.
+
+\begin{lstlisting}[language=RWLang]
+let total = 12 + 3 * 4;
+let remainder = 17 % 5;
+let shifted = 3 << 2;
+let masked = 12 & 10;
+let allowed = ready && authorized;
+let fallback = cached || fresh;
+let denied = !allowed;
+\end{lstlisting}
+
+Az operátorszerződés szigorúan typed:
+
+\begin{center}
+\begin{tabularx}{\textwidth}{@{}l l Y@{}}
+\toprule
+\textbf{Operandusok} & \textbf{Operátorok} & \textbf{Eredmény} \\
+\midrule
+\code{Int}, azonos típus & \code{+ - * / \%} & checked \code{Int}. \\
+\code{F32}, azonos típus & \code{+ - * / \%} & \code{F32}; véges eredmény szükséges. \\
+\code{Decimal}, azonos típus & \code{+ - * / \%} & checked \code{Decimal}. \\
+\code{Int}, azonos típus & \code{<< >> \& \^{} |} & shift/bitművelet, \code{Int}. \\
+\code{Bool}, azonos típus & \code{\&\& ||} & \code{Bool}; short-circuit kiértékelés. \\
+\code{Bool} & \code{!} & logikai negáció. \\
+\code{String}, azonos típus & \code{+} & budgetelt String-konkatenáció. \\
+Numerikus, azonos típus & \code{< <= > >=} & \code{Bool}. \\
+Támogatott azonos skalártípus & \code{== !=} & \code{Bool}. \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+Nincs implicit keverés \code{Int}, \code{F32} és \code{Decimal} között. Lebegőpontos számításhoz az integert explicit \code{toF32(value)} hívással alakítsd át. Overflow, nullával osztás/maradékképzés, hibás shift vagy nem véges \code{F32} eredmény fail-closed hibát ad.
+
+A numerikus builtinok:
+
+\begin{center}
+\begin{tabularx}{\textwidth}{@{}l l Y@{}}
+\toprule
+\textbf{Függvény} & \textbf{Típus} & \textbf{Feladat} \\
+\midrule
+\code{sin(x)}, \code{cos(x)} & \code{F32 -> F32} & Trigonometrikus függvények. \\
+\code{sqrt(x)} & \code{F32 -> F32} & Négyzetgyök; hibás tartomány elutasítva. \\
+\code{abs(x)} & \code{Int -> Int} vagy \code{F32 -> F32} & Abszolútérték. \\
+\code{ln(x)}, \code{log10(x)} & \code{F32 -> F32} & Természetes/tízes alapú logaritmus. \\
+\code{log(x, base)} & \code{F32, F32 -> F32} & Explicit alapú logaritmus. \\
+\code{exp(x)} & \code{F32 -> F32} & Exponenciális függvény. \\
+\code{pow(x, y)} & \code{F32, F32 -> F32} & Lebegőpontos hatványozás. \\
+\code{round/floor/ceil(x)} & \code{F32 -> F32} & Kerekítési műveletek. \\
+\code{toF32(x)} & \code{Int -> F32} & Explicit integer--\code{F32} konverzió. \\
+\code{monotonicNanos()} & \code{() -> Int} & Process-lokális monoton nanoszekundum-számláló. \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+Minden \code{F32} eredménynek végesnek kell maradnia. A \code{sqrt(-1.0f32)} és \code{ln(-1.0f32)} jellegű domainhibák NaN/végtelen helyett hibát adnak. A \code{monotonicNanos()} eltelt idő mérésére való, nem falióra-időbélyeg; a tőle függő public-cache kimenetet a compiler elutasítja.
+
+\subsection*{Gyakori webes aritmetikai minták}
+
+Webalkalmazásban ritkán kell mindenhol haladó matematika, néhány numerikus minta viszont folyamatosan visszatér. Ezeket typed értékekkel és látható kóddal kezeld, ne string-konverziókba vagy SQL-részletekbe rejtsd.
+
+Lapozásnál validált integerekből számolj offsetet:
+
+\begin{lstlisting}[language=RWLang]
+let pageSize = 25;
+let offset = (page - 1) * pageSize;
+\end{lstlisting}
+
+Integer flag/mask esetén használhatók a bitműveletek, de üzleti feltételekhez az olvasható boolean logika az alap. A \code{&&} és \code{||} short-circuit módon működik:
+
+\begin{lstlisting}[language=RWLang]
+let mayPublish = authenticated
+    && ownsArticle
+    && !locked;
+\end{lstlisting}
+
+Pénzhez \code{Decimal}-t használj. \code{F32}-t akkor válassz, ha maga a feladat lebegőpontos: például geometria, jelfeldolgozás, statisztika vagy explicit matematikai függvény. Pénzösszeget ne alakíts \code{F32}-re csak azért, hogy math builtint lehessen rá alkalmazni.
+
+\subsection*{String- és szövegfüggvények}
+
+A string műveletek typed, Unicode-tudatos builtinok a korlátozott runtime-on belül:
+
+\begin{lstlisting}[language=RWLang]
+let cleaned = trim(text);
+let left = trimStart(text);
+let right = trimEnd(text);
+let normalized = lower(cleaned);
+let chars = stringLen(cleaned);
+let rewritten = replace(normalized, " ", "-");
+let part = substring(cleaned, 1, 3);
+let first = indexOf(cleaned, "rw");
+let last = lastIndexOf(cleaned, "a");
+let ch = charAt("RWLang", 1);
+let repeated = repeat("rw", 3);
+let parts = split(rewritten, "-");
+\end{lstlisting}
+
+\begin{center}
+\begin{tabularx}{\textwidth}{@{}Y Y@{}}
+\toprule
+\textbf{Függvény} & \textbf{Szignatúra} \\
+\midrule
+\code{stringLen(text)} & \code{String -> Int} \\
+\code{trim/trimStart/trimEnd(text)} & \code{String -> String} \\
+\code{lower/upper(text)} & \code{String -> String} \\
+\code{contains(text, needle)} & \code{String, String -> Bool} \\
+\code{startsWith/endsWith(text, part)} & \code{String, String -> Bool} \\
+\code{replace(text, search, replacement)} & \code{String, String, String -> String} \\
+\code{split(text, delimiter)} & \code{String, String -> List<String>} \\
+\code{substring(text, start[, length])} & \code{String, Int[, Int] -> String} \\
+\code{indexOf/lastIndexOf(text, needle)} & \code{String, String -> Int} \\
+\code{charAt(text, index)} & \code{String, Int -> String} \\
+\code{repeat(text, count)} & \code{String, Int -> String} \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+A \code{stringLen}, \code{substring}, \code{indexOf}, \code{lastIndexOf} és \code{charAt} Unicode scalar value pozíciókat használ, nem UTF-8 byte indexet. Sikertelen keresésnél \code{-1} az eredmény; negatív vagy érvénytelen index fail-closed hibát ad. A \code{replace} nem enged üres keresőszöveget, a \code{split} nem enged üres delimitert és legfeljebb 4096 elemet ad, a \code{repeat} pedig az eredmény létrehozása előtt bekerül az allocation budgetbe. A \code{List<String>} typed compute collection marad \code{len(parts)} és ellenőrzött \code{parts[index]} használattal.
+
+Korlátozott reguláris kifejezéses feldolgozáshoz elérhető a \code{regexMatch}, \code{regexReplace} és \code{regexCaptures}; ezek továbbra is a validációs és resource limitek alatt futnak.
+
+\subsection*{Gyakori szövegkezelési minták}
+
+A szövegmanipulációt kezeld boundary-feladatként. Keresési és filter inputot érdemes összehasonlítás előtt normalizálni, de az eredeti értéket tartsd meg, ha a domainben számít a pontos írásmód.
+
+\begin{lstlisting}[language=RWLang]
+let queryText = trim(q);
+let normalizedQuery = lower(queryText);
+let hasRwlang = contains(normalizedQuery, "rwlang");
+\end{lstlisting}
+
+A \code{replace} determinisztikus helyettesítésre való, nem általános parser helyett:
+
+\begin{lstlisting}[language=RWLang]
+let displayTag = replace(trim(tag), "_", " ");
+\end{lstlisting}
+
+Szeletelésnél és pozíciókeresésnél az RWLang Unicode scalar-value pozíciókat használ UTF-8 byte offset helyett. Így a \code{substring}, \code{charAt} és indexfüggvények alkalmazásszövegnél nem teszik ki a fejlesztőt encoding-részleteknek. Strukturált azonosítóknál -- URL, slug, email, dátum, UUID -- viszont a dedikált RWLang típusokat és validátorokat használd, ne string függvényekből építsd újra a szabályokat.
+
+\subsection*{Melyik eszközt válaszd alkalmazáskódban?}
+
+\begin{center}
+\begin{tabularx}{\textwidth}{@{}l Y@{}}
+\toprule
+\textbf{Webfejlesztési feladat} & \textbf{Preferált RWLang megoldás} \\
+\midrule
+Keresési/filter szöveg normalizálása & \code{trim}, majd \code{lower}/\code{upper} csak akkor, ha az összehasonlítás case-insensitive. \\
+Ismert token helyettesítése & \code{replace}; regexet csak valódi mintakereséshez használj. \\
+Email, URL, slug, dátum, UUID & Dedikált typed érték és validáció, ne ad-hoc string parsing. \\
+Pénz/összegzés & \code{Decimal}. \\
+Lapozás/számlálók & \code{Int} checked aritmetikával. \\
+Üzleti feltételek & \code{Bool} short-circuit \code{&&}, \code{||}, \code{!} operátorokkal. \\
+Tudományos/statisztikai matematika & \code{F32} és explicit math builtin; előbb döntsd el, hogy a lebegőpont valóban illik-e a domainhez. \\
+Eltelt idő mérése & \code{monotonicNanos()}, soha ne falióra-időbélyegként. \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\section{Domainértékek és handlerkód}
+
+\subsection*{Modellek és üzleti típusok}
+
+\begin{lstlisting}[language=RWLang]
+model Article {
+    id: Int
+    slug: Slug
+    title: String
+    body: String
+}
+\end{lstlisting}
+
+A gyakori típusok: \code{String}, \code{Int}, \code{Bool}, továbbá \code{Date}, \code{DateTime}, \code{Uuid}, \code{Decimal} és \code{Slug}. Pénzhez \code{Decimal}-t használj, ne lebegőpontos számot.
+
+\subsection*{Page és action}
+
+A page GET-szerű megjelenítési logika:
+
+\begin{lstlisting}[language=RWLang]
+page fn show(ctx: PageContext, db: Db, id: Int)
+    -> Result<Html, PageError> {
+    let article = articleById(db, id)?;
+    return Ok(html { <h1>{{ article.title }}</h1> });
+}
+\end{lstlisting}
+
+Az action állapotváltoztató kérés kezelője:
+
+\begin{lstlisting}[language=RWLang]
+action fn create(ctx: ActionContext, db: Db, title: String)
+    -> Result<Redirect, PageError> {
+    transaction db {
+        insertArticle(tx, title)?;
+    }
+    return Ok(redirect("/admin/articles"));
+}
+\end{lstlisting}
+
+\subsection*{Változók és hibaterjedés}
+
+A \code{let} typed lokális értéket hoz létre. Általános \code{mut} nincs a V1-ben; compute kódban explicit \code{set name = expr} újraértékadás használható az eredeti statikus típus megtartásával és instruction budget alatt. A \code{?} a typed Result hibáját továbbítja.
+
+\subsection*{Enum}
+
+Zárt választási halmazhoz ne szabad szöveget használj, hanem enumot. Ez form-, route-, JSON- és domain-contractként is erősebb.
+
+\subsection*{Object}
+
+Összetartozó model/query/page műveletek domain object alatt csoportosíthatók. Ez különösen nagyobb alkalmazásban segít a domain API körülhatárolásában.
+
+
+\section{HTTP- és prezentációs határ}
+
+\subsection*{Route}
+
+\begin{lstlisting}[language=RWLang]
+route article GET "/cikk/:slug<Slug>" => article;
+\end{lstlisting}
+
+A path paraméter típusa a route-ban deklarált. Hibás input nem jut el a handlerig typed értékként.
+
+\subsection*{HTML escape}
+
+\begin{lstlisting}[language=RWLang]
+return Ok(html {
+    <h1>{{ article.title }}</h1>
+});
+\end{lstlisting}
+
+A \code{{ ... }} HTML-escaped. Adatbázisból érkező string sem kivétel. Raw HTML API nincs.
+
+\subsection*{Lista és optional érték}
+
+A listát iterálni kell, az optional modelt pedig explicit jelenlétvizsgálat után lehet mezőzni. A compiler nem engedi, hogy \code{List<Model>} vagy ellenőrizetlen \code{Model?} úgy viselkedjen, mintha egyetlen rekord lenne.
+
+\begin{lstlisting}[language=RWLang]
+@for article in articles {
+    <li>{{ article.title }}</li>
+}
+
+@if article {
+    <h1>{{ article.title }}</h1>
+}
+\end{lstlisting}
+
+A query-cardinality pontos futásidejű szerződését -- például hogy a \code{Model?} több sor esetén hibát jelent -- az adatbázis-fejezet tárgyalja.
+
+\subsection*{Typed URL}
+
+\begin{lstlisting}[language=RWLang]
+<a @href(article, article.slug)>Megnyitas</a>
+<form method="post" @action(deleteArticle, article.id)>
+\end{lstlisting}
+
+\subsection*{Preferáld a route helpereket}
+
+Saját alkalmazás-route-ok URL-jét ne másold kézzel több helyre. HTML-ben POST formhoz az \code{@action(...)} és linkhez az \code{@href(...)} a preferált minta, mert a route neve és typed paraméterei maradnak a kapcsolat forrásai. A beépített runtime endpointok -- például a \code{/__rw/auth/logout} -- természetesen nem alkalmazás-route helperek.
+
+
+Ne építs dinamikus \code{href="{{ value }}"} linket. A route helper ismeri a célt és a paramétertípust.
+
+\subsection*{Component és layout}
+
+\begin{lstlisting}[language=RWLang]
+layout fn Main(title: String) -> Html {
+    html {
+        <html>
+            <head><title>{{ title }}</title></head>
+            <body><main>@content</main></body>
+        </html>
+    }
+}
+\end{lstlisting}
+
+Page-ben:
+
+\begin{lstlisting}[language=RWLang]
+return Ok(html {
+    @layout(Main, article.title) {
+        <article><h1>{{ article.title }}</h1></article>
+    }
+});
+\end{lstlisting}
+
+A layout pontosan egy \code{@content} slotot tartalmazhat; component/layout csak explicit typed paramétereket lát.

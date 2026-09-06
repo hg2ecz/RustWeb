@@ -1,0 +1,27 @@
+/var/log/rwlang/server.log /var/log/rwlang/access.log {
+    daily
+    rotate 14
+    compress
+    delaycompress
+    missingok
+    notifempty
+    create 0640 rwlang rwlang
+    sharedscripts
+    postrotate
+        systemctl kill -s HUP --kill-who=main rwlang.service >/dev/null 2>&1 || true
+    endscript
+}
+
+/var/log/rwlang/audit.log {
+    daily
+    rotate 90
+    compress
+    delaycompress
+    missingok
+    notifempty
+    create 0640 rwlang rwlang
+    sharedscripts
+    postrotate
+        systemctl kill -s HUP --kill-who=main rwlang.service >/dev/null 2>&1 || true
+    endscript
+}

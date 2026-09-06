@@ -1,0 +1,13 @@
+model Product {
+    id: Int
+    name: String
+    price: Int
+}
+query fn findProduct(db: Db, id: Int) -> Result<Product?, DbError> sql {
+    SELECT id, name, price FROM products WHERE id = :id
+}
+page fn product(ctx: PageContext, db: Db, id: Int) -> Result<Html, PageError> {
+    let product = findProduct(db, id)?;
+    return Ok(html {<h1>{{ product.name }}</h1>});
+}
+route product GET "/products/:id<Int>" => product;

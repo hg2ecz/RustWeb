@@ -1,0 +1,37 @@
+# Keep one application entrypoint per example directory. Negative/security fixtures are excluded.
+# Positive RWLang examples compiled by tools/check-positive-examples.sh.
+examples/a-z-products/main.rw
+examples/auth/app.rw
+examples/business-audit/main.rw
+examples/business-types/app.rw
+examples/cache/app.rw
+examples/canonical-url/main.rw
+examples/components/app.rw
+examples/crud/app.rw
+examples/database/app.rw
+examples/domain-objects/main.rw
+examples/domain-validation-m42/main.rw
+examples/domain-validation/main.rw
+examples/enums/main.rw
+examples/fft4096/main.rw
+examples/forms/app.rw
+examples/hello/app.rw
+examples/json-api/app.rw
+examples/markdown/app.rw
+examples/media/app.rw
+examples/module-namespaces/main.rw
+examples/news-site/main.rw
+examples/numeric-operators/main.rw
+examples/object-authorization/app.rw
+examples/optimistic-locking/main.rw
+examples/prg-flash/app.rw
+examples/rate-limit/app.rw
+examples/regex/main.rw
+examples/resource-profile/app.rw
+examples/starter-project/main.rw
+examples/static-assets/app.rw
+examples/string-dict/main.rw
+examples/string-list/main.rw
+examples/string-operations/main.rw
+examples/upload/app.rw
+examples/wiki/main.rw

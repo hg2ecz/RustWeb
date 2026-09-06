@@ -1,0 +1,2 @@
+page fn home(ctx: PageContext, page: Int) -> Result<Html, PageError> { return Ok(html {ok}); }
+route home GET "/" query page<Int> validate page length 1 10 => home;

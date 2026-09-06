@@ -1,0 +1,10 @@
+[package]
+name = "rwlang-cli"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+auth = { path = "../auth" }
+compiler = { path = "../compiler" }
+migrations = { path = "../migrations" }
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }

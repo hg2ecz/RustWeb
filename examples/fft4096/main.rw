@@ -1,0 +1,106 @@
+page fn fft4096(ctx: PageContext) -> Result<Html, PageError> {
+    let n = 4096;
+    let real = arrayF32(4096, 0.0f32);
+    let imag = arrayF32(4096, 0.0f32);
+
+    // Deterministic test signal:
+    // sin(2*pi*64*n/N) + 0.5*sin(2*pi*256*n/N)
+    let i = 0;
+    while i < n {
+        let sample = toF32(i);
+        let size = toF32(n);
+        let a64 = 6.283185307179586f32 * 64.0f32 * sample / size;
+        let a256 = 6.283185307179586f32 * 256.0f32 * sample / size;
+        set real[i] = sin(a64) + 0.5f32 * sin(a256);
+        set i = i + 1;
+    }
+
+    let started = monotonicNanos();
+
+    // In-place bit-reversal permutation.
+    set i = 1;
+    let j = 0;
+    while i < n {
+        let bit = n / 2;
+        while j >= bit {
+            set j = j - bit;
+            set bit = bit / 2;
+        }
+        set j = j + bit;
+        if i < j {
+            let tr = real[i];
+            let ti = imag[i];
+            set real[i] = real[j];
+            set imag[i] = imag[j];
+            set real[j] = tr;
+            set imag[j] = ti;
+        }
+        set i = i + 1;
+    }
+
+    // Iterative radix-2 Cooley-Tukey FFT.
+    let span = 2;
+    while span <= n {
+        let angle = -6.283185307179586f32 / toF32(span);
+        let step_r = cos(angle);
+        let step_i = sin(angle);
+        let half = span / 2;
+
+        set i = 0;
+        while i < n {
+            let wr = 1.0f32;
+            let wi = 0.0f32;
+            set j = 0;
+            while j < half {
+                let even = i + j;
+                let odd = even + half;
+
+                let vr = real[odd] * wr - imag[odd] * wi;
+                let vi = real[odd] * wi + imag[odd] * wr;
+                let ur = real[even];
+                let ui = imag[even];
+
+                set real[even] = ur + vr;
+                set imag[even] = ui + vi;
+                set real[odd] = ur - vr;
+                set imag[odd] = ui - vi;
+
+                let next_wr = wr * step_r - wi * step_i;
+                let next_wi = wr * step_i + wi * step_r;
+                set wr = next_wr;
+                set wi = next_wi;
+                set j = j + 1;
+            }
+            set i = i + span;
+        }
+        set span = span * 2;
+    }
+
+    let elapsed = monotonicNanos() - started;
+    let peak64 = sqrt(real[64] * real[64] + imag[64] * imag[64]);
+    let peak256 = sqrt(real[256] * real[256] + imag[256] * imag[256]);
+    let correct = true;
+    if peak64 < 1900.0f32 {
+        set correct = false;
+    }
+    if peak64 > 2200.0f32 {
+        set correct = false;
+    }
+    if peak256 < 900.0f32 {
+        set correct = false;
+    }
+    if peak256 > 1150.0f32 {
+        set correct = false;
+    }
+
+    return Ok(html {
+        <h1>RWLang F32 FFT4096 benchmark</h1>
+        <p>FFT size: 4096</p>
+        <p>FFT elapsed: {{ elapsed }} ns</p>
+        <p>bin 64 magnitude: {{ peak64 }}</p>
+        <p>bin 256 magnitude: {{ peak256 }}</p>
+        <p>correctness window passed: {{ correct }}</p>
+    });
+}
+
+route fft4096 GET "/fft4096" => fft4096;

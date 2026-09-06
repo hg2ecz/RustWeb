@@ -1,0 +1,11 @@
+[package]
+name = "storage"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+rustix = { version = "1.1.4", features = ["fs"] }
+tokio = { version = "1", features = ["fs", "io-util", "macros", "rt"] }
+thiserror = "2"
+multer = { version = "3.1.0", features = ["tokio-io"] }
+rand = "0.10.2"

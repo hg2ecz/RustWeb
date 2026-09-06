@@ -1,0 +1,175 @@
+\chapter{Gyakorlati alkalmazások: wiki és CMS}
+
+A következő két minta ugyanazokra az alapokra épül, de eltérő termékigényeket mutat. A minimális wiki a stabil slugot, Markdown tartalmat és autentikált szerkesztést kapcsolja össze; az érettebb wikihez később optimistic locking és audit trail adható. A CMS-minta ehhez többfájlos projektstruktúrát, szerkesztői jogosultságot és public cache-t ad, majd külön felsoroljuk a production CMS további rétegeit.
+
+A wiki minimális, fordítási fixture-ként is ellenőrzött változata az \code{examples/wiki/main.rw}; a CMS többfájlos mintája az \code{examples/news-site/}. Így az alábbi két alkalmazásminta nem csak könyvbeli pszeudokód.
+
+\section{Egyszerű wiki}
+
+Egy wiki minimális domainje oldalból áll: stabil azonosító, slug, cím és Markdown törzs. Az alábbi minta a nyelvi elemek összekapcsolását mutatja.
+
+\subsection*{Modell}
+
+\begin{lstlisting}[language=RWLang]
+model WikiPage {
+    id: Int
+    slug: Slug
+    title: String
+    body: String
+}
+\end{lstlisting}
+
+\subsection*{Lekérdezés}
+
+\begin{lstlisting}[language=RWLang]
+query fn wikiBySlug(db: Db, slug: Slug)
+    -> Result<WikiPage, DbError> sql {
+    SELECT id, slug, title, body
+    FROM wiki_pages
+    WHERE slug = :slug
+}
+\end{lstlisting}
+
+\subsection*{Publikus oldal}
+
+\begin{lstlisting}[language=RWLang]
+page fn wikiShow(ctx: PageContext, db: Db, slug: Slug)
+    -> Result<Html, PageError> {
+    let page = wikiBySlug(db, slug)?;
+    return Ok(html {
+        @layout(Main, page.title) {
+            <article>
+                <h1>{{ page.title }}</h1>
+                @markdown(page.body)
+            </article>
+        }
+    });
+}
+
+route wikiShow GET "/wiki/:slug<Slug>" => wikiShow;
+\end{lstlisting}
+
+\subsection*{Szerkesztő form}
+
+\begin{lstlisting}[language=RWLang]
+form WikiForm {
+    title<String>
+    body<String>
+    validate title length 2 200 body length 1 300000
+}
+\end{lstlisting}
+
+A módosító route legyen autentikált, például \code{auth role Editor}. A write query \code{Transaction} capabilityt kapjon. A cím alapján generált slugot ne írd át vakon minden szerkesztéskor, ha a régi URL-ek stabilitása fontos.
+
+\subsection*{Canonical slug és alias}
+
+Érettebb wikiben külön slug-alias/history tábla tartja a régi címeket. A runtime canonical route-ból tud 301-es redirectet készíteni, így nem kell tetszőleges redirect URL-t építeni.
+
+\subsection*{Mit adj hozzá egy valódi wikihez?}
+
+\begin{itemize}
+  \item optimistic locking a konkurens szerkesztésekhez;
+  \item üzleti audit trail a módosításokhoz;
+  \item objektumszintű authorization, ha nem minden oldal azonos jogosultságú;
+  \item backup/restore policy az adatbázisra és az esetleges AppFs adatra.
+\end{itemize}
+
+
+\section{CMS és híroldal}
+
+A repository \code{examples/news-site/} példája már egy kis CMS magját mutatja: model, typed SQL, layout, Markdown, szerkesztői action és public cache.
+
+\subsection*{Projektstruktúra}
+
+\begin{lstlisting}
+main.rw
+models.rw
+queries.rw
+components.rw
+pages.rw
+actions.rw
+\end{lstlisting}
+
+\subsection*{Cikkmodell}
+
+\begin{lstlisting}[language=RWLang]
+model Article {
+    id: Int
+    slug: Slug
+    title: String
+    body: String
+}
+\end{lstlisting}
+
+A szerkesztői input külön named form-sémát kap:
+
+\begin{lstlisting}[language=RWLang]
+form ArticleForm {
+    title<String>
+    body<String>
+    validate title length 2 200 body length 1 300000
+}
+\end{lstlisting}
+
+\subsection*{Publikus cikkoldal}
+
+\begin{lstlisting}[language=RWLang]
+page fn article(ctx: PageContext, db: Db, slug: Slug)
+    -> Result<Html, PageError> {
+    let article = articleBySlug(db, slug)?;
+    return Ok(html {
+        @layout(Main, article.title) {
+            <article>
+                <h1>{{ article.title }}</h1>
+                @markdown(article.body)
+            </article>
+        }
+    });
+}
+
+route article GET "/cikk/:slug<Slug>"
+    cache public ttl 60
+    => article;
+\end{lstlisting}
+
+Public cache csak olyan oldalra való, amely nem session- vagy userfüggő.
+
+\subsection*{Szerkesztői létrehozás}
+
+\begin{lstlisting}[language=RWLang]
+action fn create(ctx: ActionContext, db: Db,
+                 title: String, body: String)
+    -> Result<Redirect, PageError> {
+    let articleSlug = slug(title);
+    transaction db {
+        insertArticle(tx, articleSlug, title, body)?;
+    }
+    return Ok(redirect("/admin/articles"));
+}
+
+route articleCreate POST "/admin/articles"
+    form ArticleForm
+    auth role Editor
+    invalidate cache article
+    => create;
+\end{lstlisting}
+
+A fenti invalidáció route-szintű generationváltás: nem csak az új slug egyetlen cache-kulcsát törli, hanem az \code{article} route korábbi generationjét teszi elérhetetlenné. Egyszerű mintában ez helyes és kiszámítható, de nagy forgalmú CMS-nél érdemes tudatosan mérlegelni, mely publikus route-okat kell valóban invalidálni egy adott módosítás után.
+
+\subsection*{CMS-ből production rendszer}
+
+A következő lépések adják a gyakorlati production CMS gerincét:
+
+\begin{itemize}
+  \item publikálási és domain-invariánsok külön validációja;
+  \item draft/published állapot enumként;
+  \item canonical slug history;
+  \item optimistic locking szerkesztéskor;
+  \item business audit trail;
+  \item media library és AppFs a képekhez;
+  \item role-based szerkesztő/publisher policy;
+  \item rate limit és resource profile a drágább route-okra;
+  \item backup, restore drill és kontrollált deployment.
+\end{itemize}
+
+A CMS-ben az eredeti Markdown legyen a source of truth; ne tárolj alkalmazásból származó raw renderelt HTML-t.

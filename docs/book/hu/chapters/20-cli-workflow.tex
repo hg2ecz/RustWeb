@@ -1,0 +1,374 @@
+\chapter{Az RWLang CLI és a napi fejlesztői/üzemeltetői workflow}
+
+Az RWLang két telepített programot ad: a hosszú életű \code{rwlang-server} processzt és a rövid életű \code{rwlang-cli} operátori eszközt. A kettőt érdemes következetesen külön kezelni. A szerver HTTP-t szolgál ki és runtime policyt érvényesít; a CLI forrást ellenőriz, migrációt kezel és local-auth adminisztrációt végez.
+
+Ez a fejezet nem új nyelvi feature-öket vezet be. Azt mutatja meg, hogyan áll össze a napi munka egy ismételhető parancsfolyamattá a szerkesztéstől a production ellenőrzésig.
+
+\section{Melyik feladathoz melyik program?}
+
+\begin{longtable}{L{0.29\textwidth}L{0.23\textwidth}L{0.39\textwidth}}
+\toprule
+Feladat & Eszköz & Megjegyzés \\
+\midrule
+RWLang forrás ellenőrzése & \code{rwlang-cli check} & Compiler-szintű, nem indít HTTP szervert. \\
+Migration status/verify/apply & \code{rwlang-cli migrate} & DB URL secret fájlból. \\
+Local-auth store admin & \code{rwlang-cli auth} & SQLite identity store, operátori művelet. \\
+Server config preflight & \code{rwlang-server} & \code{--check-config}: config + app + lokális policy/resource fájlok ellenőrzése. \\
+Effective config megtekintése & \code{rwlang-server} & \code{--print-effective-config}; a secret értékek redaktálva maradnak. \\
+Webalkalmazás futtatása & \code{rwlang-server} & Hosszú életű processz, proxy vagy közvetlen HTTPS mögött. \\
+Workspace release build & \code{cargo build} & \code{--locked --release} módban készül a két bináris. \\
+Platform teljes verifikációja & \code{./verify.sh} & Az RWLang repository release-evidence része, nem minden alkalmazás saját parancsa. \\
+\bottomrule
+\end{longtable}
+
+A production példákban a programok helye:
+
+\begin{lstlisting}
+/usr/local/bin/rwlang-cli
+/usr/local/bin/rwlang-server
+\end{lstlisting}
+
+A shell normál \code{PATH} beállítása mellett ezért a további példákban elég a rövid programnevet használni.
+
+\section{A CLI nem a szerver alternatívája}
+
+A \code{rwlang-cli} nem indít listenert, nem szolgál ki route-ot és nem tart fenn session state-et. Egy parancsot végrehajt, majd kilép. Ez biztonsági szempontból is hasznos: migration vagy user-admin művelethez nem kell külön admin HTTP endpointot nyitni.
+
+A másik irányban a \code{rwlang-server} nem futtat automatikus migrationt startupkor. A schema változás explicit operátori döntés marad.
+
+\section{Az első parancs: \texttt{rwlang-cli check}}
+
+Napi fejlesztésben minden érdemi forrásmódosítás után ez legyen az első kapu:
+
+\begin{lstlisting}
+rwlang-cli check main.rw
+\end{lstlisting}
+
+Siker esetén a CLI rövid összegzést ír a fordító által látott model-, query-, page-, action- és route-számról. Hiba esetén nem érdemes szervert indítani: előbb a compile-time contractot kell kijavítani.
+
+A \code{check} többek között olyan hibákat fog meg, mint:
+
+\begin{itemize}
+  \item ismeretlen típus vagy hibás nyelvi szintaxis;
+  \item query projection és model shape eltérése;
+  \item hibás typed bind/decode contract;
+  \item route/policy vagy resource profile hivatkozási hiba, amely compiler-szinten bizonyítható;
+  \item tiltott raw HTML/SQL jellegű konstrukció.
+\end{itemize}
+
+A \code{check} viszont nem bizonyítja, hogy a DB vagy Redis hálózaton elérhető, és nem helyettesíti a HTTP integration tesztet.
+
+\section{Forrásfából futtatás és telepített CLI}
+
+Az RWLang repository fejlesztésekor ugyanaz a program Cargo-n keresztül is futtatható:
+
+\begin{lstlisting}
+cargo run --locked -p rwlang-cli -- check main.rw
+\end{lstlisting}
+
+Ez fejlesztői kényelmi forma. Production runbookban az immutable, telepített release-binárist használd:
+
+\begin{lstlisting}
+/usr/local/bin/rwlang-cli check /srv/rwlang/app/main.rw
+\end{lstlisting}
+
+Ne keverd a kettőt egy deploymentben. A production művelet legyen egyértelműen egy release artifacthoz köthető.
+
+\section{Migration workflow}
+
+A migration parancs három műveletet ad:
+
+\begin{description}
+  \item[\code{status}] megmutatja az applied és pending migrationöket;
+  \item[\code{verify}] ellenőrzi a migration historyt és checksum-contractot;
+  \item[\code{apply}] lock mellett alkalmazza a pending migrationöket.
+\end{description}
+
+A DB URL nem parancssori plaintext secret, hanem egy egysoros secret fájl:
+
+\begin{lstlisting}
+/run/secrets/rwlang/db-url
+\end{lstlisting}
+
+A tipikus ellenőrzési sorrend:
+
+\begin{lstlisting}
+rwlang-cli migrate status \
+  --dir migrations \
+  --db-url-file /run/secrets/rwlang/db-url
+
+rwlang-cli migrate verify \
+  --dir migrations \
+  --db-url-file /run/secrets/rwlang/db-url
+\end{lstlisting}
+
+Jóváhagyott schema-változásnál:
+
+\begin{lstlisting}
+rwlang-cli migrate apply \
+  --dir migrations \
+  --db-url-file /run/secrets/rwlang/db-url \
+  --lock-timeout-secs 30
+
+rwlang-cli migrate verify \
+  --dir migrations \
+  --db-url-file /run/secrets/rwlang/db-url
+\end{lstlisting}
+
+A \code{--lock-timeout-secs} értéke pozitív egész. Ha a migration lock nem szerezhető meg a megadott időn belül, a művelet hibával álljon meg; ne legyen párhuzamos schema-módosítás.
+
+\subsection*{Az \texttt{--allow-insecure-db} nem kényelmi kapcsoló productionre}
+
+A migration CLI is ugyanazt a secure-by-default szemléletet követi, mint a szerver. Az \code{--allow-insecure-db} csak tudatos, kontrollált környezetben használható. Productionben a megfelelő TLS/DB security legyen az alapértelmezett, ne egy állandósult bypass flag.
+
+\section{Local-auth adminisztráció}
+
+Ha az alkalmazás local authot használ, az identity store kezelése szintén a CLI feladata. Először inicializálni kell a store-t:
+
+\begin{lstlisting}
+rwlang-cli auth init \
+  --db-url-file /run/secrets/rwlang/local-auth-db-url
+\end{lstlisting}
+
+Felhasználó létrehozása:
+
+\begin{lstlisting}
+rwlang-cli auth user-add \
+  --db-url-file /run/secrets/rwlang/local-auth-db-url \
+  --username alice \
+  --password-file /run/secrets/rwlang/bootstrap-password \
+  --role Editor
+\end{lstlisting}
+
+Ha nincs \code{--role}, új usernél a CLI a \code{User} role-t használja. Több role több \code{--role} kapcsolóval adható meg.
+
+Jelszócsere és account állapot:
+
+\begin{lstlisting}
+rwlang-cli auth password-set \
+  --db-url-file /run/secrets/rwlang/local-auth-db-url \
+  --username alice \
+  --password-file /run/secrets/rwlang/new-password
+
+rwlang-cli auth disable \
+  --db-url-file /run/secrets/rwlang/local-auth-db-url \
+  --username alice
+
+rwlang-cli auth enable \
+  --db-url-file /run/secrets/rwlang/local-auth-db-url \
+  --username alice
+\end{lstlisting}
+
+Role-csere:
+
+\begin{lstlisting}
+rwlang-cli auth roles-set \
+  --db-url-file /run/secrets/rwlang/local-auth-db-url \
+  --username alice \
+  --role Editor --role Publisher
+\end{lstlisting}
+
+A \code{roles-set} a megadott role-listát tekinti az új állapotnak; az operátor ne úgy kezelje, mint egyetlen role inkrementális hozzáadását.
+
+\section{TOTP adminisztráció különösen érzékeny művelet}
+
+TOTP enrolment:
+
+\begin{lstlisting}
+rwlang-cli auth totp-enroll \
+  --db-url-file /run/secrets/rwlang/local-auth-db-url \
+  --username alice \
+  --recovery-count 8
+\end{lstlisting}
+
+A parancs kiírja a TOTP secretet, az \code{otpauth} URI-t és az egyszer megjelenő recovery code-okat. Emiatt ezt ne futtasd CI logban, shell transcriptben vagy közös terminálon. Az operátori folyamatnak biztosítania kell a secret és recovery code-ok azonnali, biztonságos átadását és tárolását.
+
+TOTP kikapcsolása:
+
+\begin{lstlisting}
+rwlang-cli auth totp-disable \
+  --db-url-file /run/secrets/rwlang/local-auth-db-url \
+  --username alice
+\end{lstlisting}
+
+\section{A secret fájl is input contract}
+
+A CLI a DB URL és password fájlokat nem korlátlanul olvassa. A jelenlegi contract szerint a secret URL fájl:
+
+\begin{itemize}
+  \item regular file;
+  \item nem symlink;
+  \item legfeljebb 16 KiB;
+  \item pontosan egy nem üres sort tartalmaz.
+\end{itemize}
+
+A password file szintén regular, nem symlink fájl; legfeljebb 4096 byte, egyetlen sor, a jelszó pedig 12--1024 byte közötti.
+
+Ezért ne process substitutionnel, symlinkkel vagy több soros secret template-tel próbáld megkerülni a contractot. A CLI boundary szándékosan szűk.
+
+\section{Server preflight: a CLI után a szerver saját ellenőrzése jön}
+
+A forrás és migration ellenőrzése után a production konfigurációt a szerverrel validáld:
+
+\begin{lstlisting}
+rwlang-server \
+  --config /usr/local/etc/rwlang/server.toml \
+  --check-config
+\end{lstlisting}
+
+Ez beolvassa a trusted TOML-t, lefordítja az alkalmazást, ellenőrzi a route-rate/resource policy hivatkozásokat, TLS konfigurációt, valamint a deklarált storage/static rootok lokális feltételeit.
+
+Ha a precedence-t vagy az effektív policyt kell auditálni:
+
+\begin{lstlisting}
+rwlang-server \
+  --config /usr/local/etc/rwlang/server.toml \
+  --print-effective-config
+\end{lstlisting}
+
+A kimenet kifejezetten secret-redacted. Ettől még operátori információ, ezért automation logban csak indokolt retentionnel tárold.
+
+\section{Napi fejlesztői ciklus}
+
+Egy kis vagy közepes alkalmazásnál jó alapfolyamat:
+
+\begin{lstlisting}
+edit .rw source
+-> rwlang-cli check main.rw
+-> rwlang-cli migrate verify
+-> if schema changed: migrate status/apply/verify on dev DB
+-> rwlang-server --config server.dev.toml --check-config
+-> start rwlang-server
+-> HTTP/form/JSON smoke tests
+-> automated application tests
+\end{lstlisting}
+
+A sorrend lényege, hogy az olcsóbb és determinisztikusabb hibákat előbb fogjuk meg. Nincs értelme HTTP smoke tesztet futtatni olyan forrásra, amely már compiler-szinten hibás.
+
+\section{Application release workflow}
+
+Egy production release minimális operátori folyamata:
+
+\begin{lstlisting}
+immutable release selected
+-> rwlang-cli check deployed main.rw
+-> rwlang-server --check-config
+-> rwlang-cli migrate status
+-> rwlang-cli migrate verify
+-> backup/recovery gate
+-> approved rwlang-cli migrate apply, if pending
+-> rwlang-cli migrate verify
+-> controlled service restart/switch
+-> /health/live
+-> /health/ready
+-> application smoke test
+-> logs + metrics + audit review
+\end{lstlisting}
+
+A migration \code{apply} az egyetlen mutáló schema-lépés ebben a folyamatban; külön approval pontként kezeld.
+
+\section{Az RWLang platform release workflowja más}
+
+Ha magát az RWLang repositoryt buildeljük, a Rust workspace release-evidence is része a folyamatnak:
+
+\begin{lstlisting}
+./verify.sh
+cargo build --locked --release \
+  -p rwlang-server -p rwlang-cli
+\end{lstlisting}
+
+A kész binárisok:
+
+\begin{lstlisting}
+target/release/rwlang-server
+target/release/rwlang-cli
+\end{lstlisting}
+
+Telepítés:
+
+\begin{lstlisting}
+sudo install -m 0755 target/release/rwlang-server \
+  /usr/local/bin/rwlang-server
+sudo install -m 0755 target/release/rwlang-cli \
+  /usr/local/bin/rwlang-cli
+\end{lstlisting}
+
+A saját RWLang webalkalmazásod napi workflowjához nem kell minden alkalommal a nyelv teljes Rust workspace-ét verifikálni. Ott a saját source-, migration-, config- és integration tesztjeid a relevánsak.
+
+\section{Automatizálás: read-only és mutáló lépések legyenek külön}
+
+CI/CD-ben különítsd el a biztonságosan ismételhető ellenőrzéseket a state-et módosító műveletektől.
+
+\textbf{Read-only/preflight:}
+
+\begin{lstlisting}
+rwlang-cli check main.rw
+rwlang-cli migrate status \
+  --dir migrations --db-url-file /run/secrets/rwlang/db-url
+rwlang-cli migrate verify \
+  --dir migrations --db-url-file /run/secrets/rwlang/db-url
+rwlang-server --config /usr/local/etc/rwlang/server.toml \
+  --check-config
+rwlang-server --config /usr/local/etc/rwlang/server.toml \
+  --print-effective-config
+health/readiness GET
+\end{lstlisting}
+
+\textbf{Mutáló/operator-approved:}
+
+\begin{lstlisting}
+rwlang-cli migrate apply \
+  --dir migrations --db-url-file /run/secrets/rwlang/db-url
+rwlang-cli auth init \
+  --db-url-file /run/secrets/rwlang/local-auth-db-url
+# A tobbi auth muvelet ugyanilyen explicit --db-url-file
+# mellett kapja a sajat --username/--password-file/--role opcioit.
+\end{lstlisting}
+
+Az auth-admin parancsokat általában ne tedd automatikus application deployment pipeline-ba. Ezek identity-admin műveletek, külön audit- és hozzáférési boundaryval.
+
+\section{Gyakori hibák}
+
+\begin{description}
+  \item[\code{check} sikeres, a server mégsem indul] A compile-time contract rendben van, de konfigurációs, TLS-, filesystem- vagy policy-startup hiba van. Futtasd a \code{--check-config} ellenőrzést és olvasd a server logot.
+  \item[\code{--check-config} sikeres, readiness piros] A lokális config helyes, de runtime dependency -- például DB vagy Redis -- nem érhető el vagy nem egészséges.
+  \item[\code{migrate verify} hibázik] Ne futtass reflexből \code{apply}-t. Előbb tisztázd a history/checksum eltérést.
+  \item[Auth CLI nem nyitja meg a DB-t] Ellenőrizd, hogy local-auth SQLite URL-t adtál-e, és a store inicializálva van-e.
+  \item[Secret file hibát kap] Ne lazítsd a fájlcontractot; regular, nem symlink, egysoros secretet adj.
+\end{description}
+
+\section{Egy oldalnyi operátori runbook}
+
+Ha csak a minimális sorrendet akarod megjegyezni:
+
+\begin{lstlisting}
+# source
+rwlang-cli check main.rw
+
+# schema
+rwlang-cli migrate status ...
+rwlang-cli migrate verify ...
+
+# config
+rwlang-server --config /usr/local/etc/rwlang/server.toml \
+  --check-config
+
+# approved change
+rwlang-cli migrate apply ...
+rwlang-cli migrate verify ...
+
+# service
+systemctl restart rwlang
+
+# end-to-end health through the public TLS edge
+curl -fsS https://www.example.com/health/live
+curl -fsS https://www.example.com/health/ready
+
+# proxy topology: optional local upstream probe
+curl -fsS http://127.0.0.1:8080/health/ready
+
+# evidence
+review server/access/audit log + metrics
+\end{lstlisting}
+
+A konkrét systemd unit neve deploymentenként eltérhet; a könyvben szereplő \code{rwlang} csak példa. A fontos invariáns a sorrend: \textbf{source → schema → config → approved mutation → service → health → evidence}.

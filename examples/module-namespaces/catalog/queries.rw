@@ -1,0 +1,6 @@
+query fn recent(db: Db) -> Result<List<catalog::Product>, DbError> sql {
+    SELECT id, name
+    FROM products
+    ORDER BY id DESC
+    LIMIT 20
+}

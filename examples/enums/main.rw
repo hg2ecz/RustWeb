@@ -1,0 +1,39 @@
+enum ArticleStatus {
+    Draft
+    Review
+    Published
+    Archived
+}
+
+object Article {
+    model {
+        id: Int
+        slug: Slug
+        title: String
+        status: ArticleStatus
+    }
+
+    query fn bySlug(db: Db, slug: Slug) -> Result<Article, DbError> sql {
+        SELECT id, slug, title, status FROM articles WHERE slug = :slug
+    }
+
+    query fn setStatus(tx: Transaction, id: Int, status: ArticleStatus) -> Result<Void, DbError> sql {
+        UPDATE articles SET status = :status WHERE id = :id
+    }
+
+    page fn show(ctx: PageContext, db: Db, slug: Slug) -> Result<Json, PageError> {
+        let article = Article.bySlug(db, slug)?;
+        return Ok(json(article));
+    }
+
+    action fn publish(ctx: ActionContext, db: Db, id: Int) -> Result<Json, PageError> {
+        let status = ArticleStatus.Published;
+        transaction db {
+            Article.setStatus(tx, id, status)?;
+        }
+        return Ok(json(status));
+    }
+}
+
+route articleShow GET "/cikk/:slug<Slug>" => Article.show;
+route articlePublish POST "/admin/cikk/:id<Int>/publish" auth role Publisher => Article.publish;

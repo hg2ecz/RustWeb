@@ -1,0 +1,47 @@
+\chapter*{Preface}
+\addcontentsline{toc}{chapter}{Preface}
+
+This book is for web application developers who are meeting \rwlang{} for the first time and may also be new to model-centered application design. It does not assume that the reader naturally thinks in terms of ORMs, domain models, or capability-based systems. The first chapter therefore does not begin with syntax. It begins with the question \emph{what an application consists of}: what business data it handles, what operations may be performed on that data, who may perform them, and where all of this meets the HTTP world.
+
+The recommended reading order is deliberately gradual. We first build the model and capability mental model, then compile and install the RWLang programs. After that we walk through a deliberately small A-to-Z application, from the model through a form and the database to the HTTP response. Only then do we break the language, database, authentication, file, and browser-facing topics into deeper chapters.
+
+Once the reader can write an ordinary application, we move on to organizing larger projects and then to a wiki/CMS example. External integration and testing come next, because they make more sense once there is a complete application to reason about. The production part then introduces shared Redis state and caching, security hardening, observability, deployment, and disaster recovery. At the end of the book, the CLI and full \code{server.toml} reference are presented as searchable operator references rather than as introductory teaching material.
+
+\section*{How to read this book}
+
+On a first pass, do not try to memorize every configuration key or production limit. The first goal is to be able to answer three questions consistently:
+
+\begin{enumerate}
+  \item \emph{What typed data does this feature operate on?}
+  \item \emph{What operation reads or modifies that data?}
+  \item \emph{What authority or capability permits that operation?}
+\end{enumerate}
+
+Once those three questions are clear, the route, form, SQL, authentication, and configuration become different boundaries of the same model rather than unrelated tricks.
+
+\section*{Five recurring terms}
+
+The book uses a few technical terms consistently. It is useful to establish the same meaning for them from the beginning:
+
+\begin{description}
+  \item[\code{model}] a named typed data shape known to the compiler; it is not an ORM class and not an automatically generated database schema;
+  \item[typed] the shape and type of the data are known to the compiler instead of being discovered only at runtime;
+  \item[capability] an explicit ability to access a resource or perform a sensitive operation, such as \code{Db}, \code{Transaction}, or \code{AppFs};
+  \item[policy] a rule enforced at an external boundary, such as authentication, rate limiting, CORS, or trusted-proxy policy;
+  \item[runtime] the server-side environment that executes compiled RWLang programs and enforces limits and capability boundaries.
+\end{description}
+
+Later chapters refine these definitions, but these meanings are enough for a first reading.
+
+\section*{Book conventions}
+
+\begin{itemize}
+  \item \code{main.rw} is the application entry point.
+  \item The trusted TOML file is the primary production configuration surface.
+  \item Secret values do not go on the command line or in plaintext TOML fields; configuration uses \code{*_file} references.
+  \item SQL text is compiler-owned; user values may enter queries only as typed bind parameters.
+  \item In HTML, \code{{ ... }} interpolation is escaped; there is no raw-HTML escape hatch.
+  \item Business mutations run inside transactions.
+\end{itemize}
+
+The book targets the V1 surface. If a capability is not part of that surface, it should not be implemented through an ad-hoc bypass; it should become an explicit language/runtime feature.

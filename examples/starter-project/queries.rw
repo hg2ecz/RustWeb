@@ -1,0 +1,3 @@
+query fn articleBySlug(db: Db, slug: Slug) -> Result<models::Article, DbError> sql {
+    SELECT id, slug, title FROM articles WHERE slug = :slug
+}

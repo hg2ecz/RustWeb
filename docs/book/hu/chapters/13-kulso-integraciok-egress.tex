@@ -1,0 +1,231 @@
+\chapter{Külső szolgáltatások és egress policy}
+
+Egy valódi webalkalmazás ritkán marad teljesen önmagában. Fizetési szolgáltatót, címtárat, térképes API-t, belső vállalati szolgáltatást vagy más HTTPS végpontot kell elérnie. Ez azonban más biztonsági határ, mint egy bejövő HTTP route: itt már maga az alkalmazás kezdeményez hálózati kapcsolatot.
+
+\section{Először a V1-határ}
+
+A V1-ben \textbf{nincs általános RWLang \code{HttpClient} vagy \code{Secrets} nyelvi API}. Az alkalmazáskód ezért nem kap tetszőleges hálózati hozzáférést. Az alábbi szándékosan nem RWLang szintaxis, csak azt mutatja, milyen kerülőutat nem szabad feltételezni:
+
+\begin{lstlisting}
+// NINCS ilyen altalanos V1 surface:
+// let r = http.get(user_supplied_url);
+\end{lstlisting}
+
+A repository \code{integrations} crate-je viszont már tartalmaz egy trusted Rust adapterréteget:
+
+\begin{itemize}
+  \item policy-vezérelt outbound HTTPS klienst;
+  \item névvel azonosított egress targeteket;
+  \item host-, CIDR-, port- és TLS-korlátozást;
+  \item küldési/fogadási méretlimitet és timeoutokat;
+  \item fájlalapú \code{SecretsStore}-t.
+\end{itemize}
+
+Ez fontos tervezési döntés: \textbf{ha egy capability nincs a nyelvi surface-ben, ne építs alkalmazáskódban kerülőutat}. A külső integrációt trusted adapterként vagy későbbi, külön megtervezett nyelvi/runtime feature-ként kell kezelni.
+
+\section{Miért veszélyes a tetszőleges URL?}
+
+Tegyük fel, hogy egy route a felhasználótól kapott URL-t közvetlenül meghívhatná. Ezzel az alkalmazás könnyen belső vagy lokális szolgáltatásokat érhetne el:
+
+\begin{lstlisting}
+http://127.0.0.1:...
+http://169.254.169.254/...
+http://internal-db.example/...
+http://[::1]/...
+\end{lstlisting}
+
+Ez az SSRF (Server-Side Request Forgery) klasszikus formája. A helyes modell ezért nem az, hogy a request megmondja, \emph{hová} kapcsolódjunk, hanem az, hogy a trusted konfiguráció előre definiál egy névvel ellátott célpontot.
+
+\section{Named target: a hálózati capability konfigurációja}
+
+Egy célpont például így nézhet ki:
+
+\begin{lstlisting}
+[[target]]
+name = "payments"
+hosts = ["api.payments.example"]
+cidrs = ["203.0.113.0/24", "2001:db8:1200::/48"]
+ports = [443]
+tls_required = true
+max_dns_answers = 8
+max_sent_bytes = 262144
+max_received_bytes = 2097152
+connect_timeout_ms = 5000
+total_timeout_ms = 15000
+\end{lstlisting}
+
+A név --- itt \code{payments} --- az alkalmazás/integráció által ismert capability. A hostname és a hálózati tartomány viszont trusted operátori policy.
+
+A repositoryban ugyanez a minta megtalálható az \code{examples/egress/policy.toml} fájlban.
+
+\section{A policy több rétegen ellenőriz}
+
+Az egress policy nem csak a hostname-et nézi.
+
+\subsection*{Host}
+
+A kért hostnak szerepelnie kell a target explicit \code{hosts} listájában. IP-literal hostname helyett névvel azonosított, TLS-sel ellenőrizhető hostot használunk.
+
+\subsection*{Port és TLS}
+
+A portnak szerepelnie kell az engedélyezett portok között. A jelenlegi adapter TLS-t követel meg; a tipikus cél a 443-as HTTPS.
+
+\subsection*{DNS és CIDR}
+
+A DNS-feloldás minden A és AAAA válaszát ellenőrzi. A szabály fail-closed: ha akár egy feloldott cím nincs az engedélyezett CIDR-ekben, a teljes kapcsolat elutasításra kerül.
+
+Ez azért fontos, mert csak a hostname allowlist önmagában nem véd DNS-rebinding vagy hibás DNS-konfiguráció ellen.
+
+\subsection*{Kapcsolódás utáni peer-ellenőrzés}
+
+A TCP kapcsolat létrejötte után az adapter újra ellenőrzi a tényleges peer IP-címet. Annak egyeznie kell a kiválasztott címmel és ugyanúgy át kell mennie a CIDR policy-n.
+
+\subsection*{TLS identity}
+
+A tanúsítvány ellenőrzése az eredeti hostname alapján történik. A CIDR tehát nem helyettesíti a TLS identity verificationt; a két ellenőrzés egymást erősíti.
+
+\section{IPv4 és IPv6 ugyanahhoz a policyhoz tartozik}
+
+Az outbound policy dual-stack. A targetben IPv4 és IPv6 CIDR is megadható:
+
+\begin{lstlisting}
+cidrs = [
+  "203.0.113.0/24",
+  "2001:db8:1200::/48"
+]
+\end{lstlisting}
+
+Az IPv4-mapped IPv6 címeket a runtime normalizálja. A \code{::ffff:203.0.113.9} például IPv4-ként kerül policy-ellenőrzésre, ezért ezzel nem lehet megkerülni az IPv4 szabályt.
+
+A loopback, link-local, ULA, multicast és unspecified IPv6 tartományok sem kapnak implicit bizalmat. Ha ilyen címhez való hozzáférésre ténylegesen szükség van, azt is explicit CIDR-rel kell engedélyezni.
+
+\section{Méret- és időkorlátok}
+
+A külső szolgáltatás ugyanúgy lehet hibás vagy ellenséges, mint a kliens. Ezért a target policy nem csak címet korlátoz:
+
+\begin{longtable}{L{0.36\textwidth}L{0.54\textwidth}}
+\toprule
+Beállítás & Mit korlátoz? \\
+\midrule
+\code{max_dns_answers} & elfogadható DNS-válaszok száma \\
+\code{max_sent_bytes} & elküldhető request maximális mérete \\
+\code{max_received_bytes} & fogadható response maximális mérete \\
+\code{connect_timeout_ms} & egy kapcsolódási kísérlet ideje \\
+\code{total_timeout_ms} & a teljes outbound művelet ideje \\
+\bottomrule
+\end{longtable}
+
+A lényeg ugyanaz, mint az RWLang más részein: \textbf{a felhasználói alkalmazáskód ne dönthesse el saját erőforrás-limitjeit}.
+
+\section{Secret nem konfigurációs string}
+
+Egy külső API gyakran credentialt igényel. A trusted adapter ehhez \code{SecretsStore}-t használhat, amely egy elkülönített secret rootból olvas név alapján.
+
+Például az operátori elrendezés lehet:
+
+\begin{lstlisting}
+/run/secrets/rwlang/
+  payments-bearer
+\end{lstlisting}
+
+A secret neve nem tartalmazhat útvonalat, \code{..}-ot vagy tetszőleges szeparátort. Az adapter symlinket nem követ, fájlméretet korlátoz, és Unix rendszeren ellenőrzi, hogy a secret ne legyen world-accessible.
+
+A \code{SecretString} debug reprezentációja redacted, és dropkor a tárolt byte-ok felülírásra kerülnek. Ettől még továbbra is alapelv, hogy credentialt nem írunk logba, error message-be vagy audit payloadba.
+
+\section{GET és JSON POST a trusted adapterben}
+
+A jelenlegi Rust adapter két tipikus műveletet ad: HTTPS GET-et és JSON POST-ot opcionális bearer secrettel. A használat \textbf{trusted Rust kód}, nem \code{.rw} szintaxis.
+
+\begin{lstlisting}[language={}]
+let policy = EgressPolicy::from_toml_file(policy_path)?;
+let client = OutboundHttpsClient::new(policy);
+let secrets = SecretsStore::new("/run/secrets/rwlang")?;
+let token = secrets.get("payments-bearer")?;
+
+let response = client
+    .post_json(
+        "payments",
+        "api.payments.example",
+        443,
+        "/v1/charge",
+        body,
+        Some(&token),
+    )
+    .await?;
+\end{lstlisting}
+
+Itt a \code{payments} target és a konkrét host egyszerre kell, hogy megfeleljen a trusted policy-nak. A requestből származó tetszőleges host nem válhat új célponttá.
+
+\section{Hibamodell}
+
+A külső integrációnál fontos különbséget tenni a hibák között:
+
+\begin{itemize}
+  \item \textbf{Policy}: a kért cél vagy DNS/peer nem engedélyezett;
+  \item \textbf{Secret}: a credential nem olvasható vagy szabályt sért;
+  \item \textbf{DNS}: névfeloldási hiba;
+  \item \textbf{Connect/TLS}: hálózati vagy identity hiba;
+  \item \textbf{Timeout}: az upstream túl lassú;
+  \item \textbf{Protocol}: hibás HTTP-válasz;
+  \item \textbf{ResponseTooLarge/SendTooLarge}: policy limit sérült.
+\end{itemize}
+
+Ezeket ne alakítsd automatikusan ugyanazzá az üzleti hibává. Egy policy denial például konfigurációs/security esemény, egy upstream \code{503} pedig rendelkezésre állási probléma.
+
+\section{Retry és idempotencia}
+
+A jelenlegi adapter nem ad általános automatikus retry-réteget. Ez helyes alapállás: egy POST újraküldése mellékhatást ismételhet meg.
+
+Ha egy későbbi integráció retry-t kap, előbb tisztázni kell:
+
+\begin{enumerate}
+  \item idempotens-e a művelet;
+  \item támogat-e az upstream idempotency key-t;
+  \item mely hibák retry-zhatók;
+  \item mekkora a teljes timeout-budget;
+  \item hogyan kerülhető el a retry storm.
+\end{enumerate}
+
+Fizetési vagy webhook-szerű műveletnél az idempotency kulcs üzleti adat, nem pusztán hálózati tuning.
+
+\section{Szinkron kérés vagy háttérmunka?}
+
+A V1 surface-ben nincs általános background-job nyelvi API. Ezért ne rejts hosszú külső workflow-t egy normál page/action request mögé csak azért, mert technikailag megoldható egy adapterrel.
+
+Rövid, jól bounded integráció esetén a request-válasz ciklus elfogadható lehet. Hosszú vagy megbízható újrapróbálást igénylő folyamatnál külön, explicit job/outbox feature-re van szükség; ezt nem szabad ad hoc threaddel vagy subprocesszel pótolni.
+
+\section{Mit jelent ez az RWLang alkalmazásfejlesztőnek?}
+
+A napi szabály egyszerű:
+
+\begin{enumerate}
+  \item Ne tervezz tetszőleges URL-t fogadó outbound feature-t.
+  \item Ne olvass secretet raw filesystem vagy environment kerülőúttal.
+  \item Az integráció célpontja legyen névvel azonosított capability.
+  \item Host/CIDR/port/TLS/timeout/méret trusted policy legyen.
+  \item A felhasználói input legfeljebb az üzleti payloadot válassza meg, ne a hálózati célpontot.
+  \item Ha a szükséges integráció nincs a V1 nyelvi surface-ben, trusted adaptert vagy új, review-zott language/runtime feature-t tervezz.
+\end{enumerate}
+
+\section{Tesztelési minimum}
+
+Egress policy esetén a happy path kevés. Legalább ezeket érdemes bizonyítani:
+
+\begin{itemize}
+  \item engedélyezett host + engedélyezett IPv4;
+  \item engedélyezett host + engedélyezett IPv6;
+  \item vegyes A/AAAA válaszban egy tiltott cím esetén fail-closed;
+  \item tiltott port;
+  \item túl sok DNS-válasz;
+  \item peer IP újraellenőrzés;
+  \item TLS hostname mismatch;
+  \item IPv4-mapped IPv6 normalizáció;
+  \item send/receive limit és timeout;
+  \item secret path traversal/symlink/permission negatív esetek.
+\end{itemize}
+
+A repository unit tesztjei a policy-döntéseket bizonyíthatják, de a release evidence része legyen valódi dual-stack hálózati integration teszt is.
+
+\section{A fejezet lényege}
+
+A külső HTTPS nem egyszerű utility, hanem új trust boundary. Az RWLang V1 ezért szándékosan nem ad korlátlan hálózati capabilityt az alkalmazáskódnak. A jelenlegi trusted adapter megmutatja a kívánt modellt: \textbf{named target + explicit hálózati policy + bounded erőforrás + külön secret store + fail-closed ellenőrzés}.

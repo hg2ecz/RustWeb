@@ -1,0 +1,73 @@
+\chapter{Production deployment and service lifecycle}
+
+This chapter does not repeat the configuration reference or observability details. From a production perspective, it summarizes how a verified release becomes a running service, how release switching works, and how the process lifecycle remains controlled. Complete backup, restore, and disaster recovery are covered separately in the next chapter.
+
+\section{Release path}
+
+Recommended order:
+
+\begin{lstlisting}
+./verify.sh
+-> cargo build --locked --release
+-> immutable release directory
+-> rwlang-server --config ... --check-config
+-> rwlang-cli migrate verify
+-> approved rwlang-cli migrate apply
+-> rwlang-cli migrate verify
+-> atomic current symlink switch
+-> controlled restart
+-> /health/live
+-> /health/ready
+-> log / metric / audit review
+\end{lstlisting}
+
+The built \code{rwlang-server} and \code{rwlang-cli} binaries, application source, and migrations should all be attributable to the same release identifier. Do not modify files one by one inside a live \code{/srv/rwlang/current} directory. Prepare a new immutable release directory and switch the symlink atomically.
+
+\section{systemd service}
+
+\code{rwlang-server} is a long-lived service process. \code{rwlang-cli} is not a daemon: it starts for a migration, auth administration, or another operator task and exits when the task is complete.
+
+\begin{lstlisting}
+[Service]
+User=rwlang
+Group=rwlang
+ExecStart=/usr/local/bin/rwlang-server \\
+  --config /usr/local/etc/rwlang/server.toml
+Restart=on-failure
+NoNewPrivileges=true
+PrivateTmp=true
+\end{lstlisting}
+
+Run the service under an unprivileged account. Under systemd, let systemd own the process-level cgroup ceilings such as \code{MemoryMax}, \code{CPUQuota}, and \code{TasksMax}; do not simultaneously configure RWLang to write the same cgroup controls. The goal is one clear authority for each resource boundary.
+
+For direct TLS on ports 80/443, grant only the bind-service capability (\path{CAP_NET_BIND_SERVICE}). Behind a reverse proxy on \code{127.0.0.1:8080}, omit it.
+
+\section{Controlled restart and readiness}
+
+After changing process-level configuration, run \code{--check-config} first, then perform a controlled restart. In behind-proxy mode, SIGHUP reopens logs and transactionally rebuilds domain/application hosting state, but listener, database/Redis/auth connections, cgroup policy, logging sinks, and other process-level settings still require restart.
+
+Application-source deployment has a lighter path. The shared source-reload supervisor watches each loaded application entrypoint and its complete transitive module graph using \code{mtime + size}. After a configurable debounce, it compiles and validates a candidate runtime and atomically swaps only that domain on success. A broken upload leaves the previous generation active and is logged as a reload rejection. The logical entrypoint path is watched too, so an atomic \code{current} symlink switch activates a new immutable release. Successful code reload also advances public-cache generations so old rendered content does not survive merely because of its previous TTL.
+
+A traffic director should send requests only to a ready instance. During a rolling deployment, start the new instance, wait until it is ready, and only then remove the old one. Health endpoints and their diagnostics are covered in detail in the observability chapter.
+
+\section{Migration and rollback are not the same operation}
+
+Rolling back an application binary or source release may be simple; rolling back a database schema is not. Prefer expand/contract migrations in production: first introduce a backward-compatible schema, then remove obsolete structures only in a later release after the rollback window has closed.
+
+Do not tie automatic reverse SQL to switching the application symlink back. If a migration transformed or deleted data, the real recovery point may be the verified backup.
+
+\section{Recovery gate before deployment}
+
+Before a destructive or schema-compatibility-sensitive release, require a known recovery point and recent restore evidence. Backup contents, DB/AppFs consistency, RPO/RTO, and the rollback-versus-restore decision tree are covered in the next chapter. Deployment is responsible for ensuring that this gate is satisfied before the release switch.
+
+\section{Minimum post-deploy checks}
+
+\begin{enumerate}
+  \item the new process is running and ready;
+  \item the public home page or a smoke route responds through the real edge path;
+  \item there is no new error spike in the server log;
+  \item the access-log status distribution looks normal;
+  \item the audit log is writable;
+  \item DB/Redis dependency metrics have not degraded;
+  \item the release hash and database migration state are known for a rollback decision.
+\end{enumerate}

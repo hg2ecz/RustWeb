@@ -1,0 +1,6 @@
+model User { id: Int }
+query fn bad(db: Db, id: Int) -> Result<User, DbError> sql {
+    SELECT id FROM users WHERE id = :other
+}
+page fn home(ctx: PageContext) -> Result<Html, PageError> { return Ok(html {ok}); }
+route home GET "/" => home;

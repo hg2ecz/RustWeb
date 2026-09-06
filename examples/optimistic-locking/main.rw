@@ -1,0 +1,34 @@
+model Article {
+    id: Int
+    title: String
+    version: Int
+}
+
+query fn articleById(db: Db, id: Int) -> Result<Article, DbError> sql {
+    SELECT id, title, version FROM articles WHERE id = :id
+}
+
+query fn updateArticle(tx: Transaction, id: Int, title: String, version: Int) -> Result<Changed, DbError> sql {
+    UPDATE articles
+    SET title = :title, version = version + 1
+    WHERE id = :id AND version = :version
+}
+
+action fn articleUpdate(ctx: ActionContext, db: Db, id: Int, title: String, version: Int) -> Result<Redirect, PageError> {
+    transaction db {
+        updateArticle(tx, id, title, version)?;
+    }
+    return Ok(redirect("/articles"));
+}
+
+route articleUpdate POST "/articles/:id<Int>"
+    form title<String> version<Int>
+    auth role Editor
+    => articleUpdate;
+
+
+page fn articlesIndex(ctx: PageContext) -> Result<Html, PageError> {
+    return Ok(html {<main><h1>Articles</h1></main>});
+}
+
+route articlesIndex GET "/articles" auth role Editor => articlesIndex;

@@ -1,0 +1,239 @@
+\chapter{Hogyan gondolkodjunk egy RWLang alkalmazásról?}
+
+Mielőtt telepítünk, route-ot írunk vagy adatbázist kötünk az alkalmazáshoz, érdemes tisztázni egy szemléleti kérdést. Sok webes technológiában természetes kiindulópont az oldal, az endpoint vagy a controller: \emph{``kell egy \code{/products} URL, írjunk hozzá handlert''}. RWLangban hasznosabb előbb azt megkérdezni: \emph{``milyen üzleti adat létezik, milyen alakban, milyen műveletek végezhetők rajta, és milyen határok között?''}
+
+Ez nem akadémiai különbség. A nyelv több biztonsági és helyességi garanciája abból származik, hogy az alkalmazás fontos adatalakjai, bemenetei, lekérdezései és erőforrás-hozzáférései explicit szerződések.
+
+\section{Először a fogalmak, utána az oldalak}
+
+Vegyünk egy egyszerű terméklistát. A feladatot lehetne így kezdeni:
+
+\begin{quote}
+Kell egy GET oldal, egy POST endpoint és egy SQL INSERT.
+\end{quote}
+
+RWLangban célszerűbb így gondolkodni:
+
+\begin{enumerate}
+  \item Van egy üzleti fogalom: \emph{Product}.
+  \item A programban ennek ismert adatalakja van: \code{id}, \code{name}, \code{price}.
+  \item Vannak olvasó és módosító műveletek: listázás és létrehozás.
+  \item A módosítás adatbázis-tranzakciót igényel.
+  \item A HTTP réteg typed inputot ad a műveletnek, és policy-t rendel hozzá.
+  \item A megjelenítés már az így kapott typed adatot rendereli HTML-be vagy JSON-ba.
+\end{enumerate}
+
+A gondolkodás iránya tehát nagyjából:
+
+\begin{lstlisting}
+uzleti fogalom
+    -> typed adatalak
+        -> muveletek
+            -> capability-k es policy-k
+                -> HTTP route
+                    -> HTML / JSON
+\end{lstlisting}
+
+Nem minden alkalmazásnál kell ezt papíron végigírni. A sorrend mégis segít elkerülni, hogy az üzleti szabályok véletlenül route-okba, template-ekbe vagy kézzel összefűzött SQL-be szóródjanak szét.
+
+\section{Mit jelent a \code{model}?}
+
+A könyvben két közeli fogalommal találkozunk:
+
+\begin{itemize}
+  \item \textbf{adatmodell vagy domain modell}: annak emberi leírása, milyen üzleti fogalmak és kapcsolatok léteznek az alkalmazásban;
+  \item \textbf{\code{model} deklaráció}: az RWLang konkrét, fordító által ismert adatalakja.
+\end{itemize}
+
+Például:
+
+\begin{lstlisting}[language=RWLang]
+model Product {
+    id: Int
+    name: String
+    price: Int
+}
+\end{lstlisting}
+
+Ez azt mondja a fordítónak, hogy egy \code{Product} rekordnak pontosan ilyen mezői és típusai vannak. A typed SQL query eredményalakja ehhez a szerződéshez igazodik, és ugyanez az érték később HTML- vagy JSON-kimenetben is használható.
+
+\subsection*{A \code{model} nem automatikus adatbázisséma}
+
+A fenti deklaráció önmagában nem hoz létre \code{products} táblát. Az adatbázissémát migration hozza létre, például:
+
+\begin{lstlisting}[language=SQL]
+CREATE TABLE products (
+    id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL,
+    price INTEGER NOT NULL
+);
+\end{lstlisting}
+
+A két réteg kapcsolatban áll, de nem ugyanaz. Ez tudatos szétválasztás:
+
+\begin{itemize}
+  \item a migration az adatbázis tartós sémájának életciklusa;
+  \item a \code{model} az alkalmazáskód typed adatszerződése;
+  \item a query mondja meg explicit módon, hogyan lesz adatbázissorokból model rekord.
+\end{itemize}
+
+Ezért RWLangban nincs szükség arra a feltételezésre, hogy minden model automatikusan egy ORM-entitás vagy egy azonos nevű tábla.
+
+\subsection*{A \code{model} nem mutable objektum}
+
+A \code{Product} nem klasszikus objektumorientált osztály. Nincs mögötte rejtett \code{save()} metódus, implicit adatbázis-kapcsolat vagy mutable objektuméletciklus. Ha adatot akarunk módosítani, explicit műveletet és explicit erőforrást használunk.
+
+Például az olvasás:
+
+\begin{lstlisting}[language=RWLang]
+query fn listProducts(db: Db) -> Result<List<Product>, DbError> sql {
+    SELECT id, name, price
+    FROM products
+    ORDER BY id DESC
+    LIMIT 50
+}
+\end{lstlisting}
+
+A módosítás pedig külön, tranzakcióhoz kötve jelenik meg:
+
+\begin{lstlisting}[language=RWLang]
+query fn createProduct(
+    tx: Transaction,
+    name: String,
+    price: Int
+) -> Result<Void, DbError> sql {
+    INSERT INTO products(name, price)
+    VALUES (:name, :price)
+}
+\end{lstlisting}
+
+A függvény aláírásából látszik, hogy melyik művelet csak olvas, és melyik kap módosításra alkalmas tranzakciót.
+
+\section{A model a rétegek közti szerződés}
+
+Érdemes a \code{model}-re nem pusztán ``adatbázisos struktúraként'', hanem a rétegek között mozgó typed szerződésként gondolni.
+
+\begin{lstlisting}
+Database row
+    |  typed query
+    v
+Product model
+    |-------------------|
+    v                   v
+HTML page            JSON API
+    |
+    v
+felhasznalo
+\end{lstlisting}
+
+A fordító emiatt tud olyan hibákat korán megfogni, amelyeket dinamikus rendszerekben csak futás közben vennénk észre. Ha egy query \code{Product}-ot ígér, a kiválasztott/returned mezőknek a model shape-jéhez kell igazodniuk. Nem az a cél, hogy a program ``majd valahogy'' értelmezze az eredményt.
+
+Ez a szemlélet később az object authorizationnél és a JSON API-nál is visszatér: a rendszer ismert, typed rekordokkal dolgozik ahelyett, hogy tetszőleges, futás közben változó objektumokat adna tovább.
+
+\section{Az üzleti fogalomhoz műveletek tartoznak}
+
+Egy model önmagában ritkán érdekes. A valódi alkalmazásban műveletek tartoznak hozzá:
+
+\begin{itemize}
+  \item \code{Product.list};
+  \item \code{Product.byId};
+  \item \code{Product.create};
+  \item egy CMS-ben például \code{Article.publish};
+  \item egy wikiben \code{WikiPage.update}.
+\end{itemize}
+
+Kis programban ezek lehetnek top-level függvények. Nagyobb programban a később bemutatott \code{object} domain namespace fogja őket egy üzleti fogalom köré rendezni.
+
+Fontos különbség:
+
+\begin{center}
+\begin{tabularx}{\textwidth}{@{}lY@{}}
+\toprule
+Elem & Kérdés, amelyre válaszol \\
+\midrule
+\code{model} & Milyen alakú adat a \code{Product}? \\
+\code{query fn} & Hogyan olvassuk vagy módosítjuk a tartós adatot? \\
+\code{object} & Mely üzleti fogalomhoz tartoznak ezek a műveletek? \\
+\code{page}/\code{action} & Hogyan kapcsolódik az üzleti művelet a webes handlerhez? \\
+\code{route} & Milyen HTTP útvonalon, inputtal és policy-val érhető el? \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\section{Capability: a hozzáférés is része a modellnek}
+
+RWLangban nem csak az adat típusa explicit, hanem az is, milyen erőforráshoz fér hozzá egy művelet. Egy függvény nem ``valahonnan'' kap adatbázist, fájlrendszert vagy current usert.
+
+\begin{lstlisting}[language=RWLang]
+page fn home(ctx: PageContext, db: Db)
+    -> Result<Html, PageError> {
+    let products = listProducts(db)?;
+    return Ok(html {
+        <ul>
+            @for product in products {
+                <li>{{ product.name }}</li>
+            }
+        </ul>
+    });
+}
+\end{lstlisting}
+
+A \code{db: Db} az aláírásban látható. Fájlkezelésnél AppFs capability, módosító adatbázis-műveletnél Transaction, autentikált műveletnél pedig az auth policy és a hozzá tartozó typed kontextus válik relevánssá.
+
+Ebből egy hasznos tervezési szabály következik:
+
+\begin{quote}
+Ha egy műveletnek érzékeny erőforrás kell, annak a kódból és a policy-ból látszania kell.
+\end{quote}
+
+\section{A route nem az üzleti modell}
+
+A route fontos, de a rendszer külső határa. Például:
+
+\begin{lstlisting}[language=RWLang]
+route create POST "/products"
+    form name<String> price<Int>
+    validate name length 1 100 price range 0 100000000
+    => create;
+\end{lstlisting}
+
+Ez azt mondja meg, hogyan léphet be egy HTTP kérés a rendszerbe: melyik metóduson és pathon, milyen typed inputtal, milyen validációval és később milyen auth/cache/rate-limit policy-val.
+
+Az üzleti fogalom azonban nem a \code{/products} URL. Ugyanaz a \code{Product} később HTML oldalon, JSON API-ban, admin felületen vagy más route mögött is használható.
+
+Ezért nagyobb alkalmazásban különösen hasznos a következő határ:
+
+\begin{lstlisting}
+domain/model     : mi az adat es milyen muvelet ertelmes rajta?
+HTTP route       : ki, hogyan es milyen policy-val hivhatja?
+runtime config   : milyen infrastruktura-es eroforras-hatarok kozott futhat?
+\end{lstlisting}
+
+\section{Egy egyszerű tervezési módszer}
+
+Amikor új feature-t kezdesz, a következő öt kérdés jó kiindulópont:
+
+\begin{enumerate}
+  \item \textbf{Mi az üzleti főnév?} -- Product, Article, Invoice, WikiPage.
+  \item \textbf{Milyen typed adatra van ténylegesen szükség?} -- ne automatikusan a teljes adatbázissort másold át.
+  \item \textbf{Mely műveletek olvasnak, és melyek módosítanak?}
+  \item \textbf{Milyen capability kell hozzájuk?} -- Db, Transaction, AppFs, auth, később hálózati egress.
+  \item \textbf{Milyen HTTP/policy felületen tesszük elérhetővé?} -- route, input, validáció, auth, cache, rate limit.
+\end{enumerate}
+
+Egy egyszerű CRUD esetén ez pár perc gondolkodás. Egy CMS-nél vagy ügyviteli rendszernél viszont ez akadályozza meg, hogy az alkalmazás néhány hónap után route-ok, SQL-ek és implicit jogosultsági feltételek nehezen követhető halmazává váljon.
+
+\section{Mit vigyél tovább a következő fejezetekbe?}
+
+Nem kell minden alkalmazást ``domain-driven design'' terminológiával megtervezni, és nem kell minden hárommezős rekordból külön object hierarchy-t építeni. A könyvben használt modell-szemlélet ennél egyszerűbb:
+
+\begin{itemize}
+  \item nevezd meg a fontos üzleti adatot;
+  \item add meg a typed alakját;
+  \item az adatmozgást explicit query-kkel írd le;
+  \item a módosítást explicit tranzakcióhoz kösd;
+  \item az erőforrás-hozzáférést capability-ként tedd láthatóvá;
+  \item a HTTP-t és a security policy-t külső határként kezeld.
+\end{itemize}
+
+A következő fejezetekben először lefordítjuk, telepítjük és csak a szükséges minimumon konfiguráljuk a rendszert, majd az A--Z példában ugyanezt a szemléletet egy működő \code{Product} alkalmazáson végigkövetjük. Utána a könyv minden egyes részét külön mélyíti el.

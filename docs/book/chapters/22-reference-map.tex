@@ -1,0 +1,66 @@
+\chapter{Developer reference and where to go next}
+
+\section{Where to look for each topic}
+
+This English book is the canonical long-form guide. The repository is in the process of making English the default language for all supporting Markdown documentation as well. Where an English topic document already exists, the table points to \code{docs/}; where only the Hungarian companion currently exists, it is explicitly marked under \code{docs/hu/}. Do not infer that a missing English Markdown file means the feature is undocumented in this book.
+
+\begin{longtable}{L{0.31\textwidth}L{0.61\textwidth}}
+\toprule
+Topic & Detailed project documentation \\
+\midrule
+Routing, input, validation & \code{docs/hu/04-routing-input.md} \\
+Database and SQL & \code{docs/hu/05-adatbazis.md} \\
+CRUD and transactions & \code{docs/hu/06-crud.md} \\
+Auth and Redis & \code{docs/hu/07-auth-redis.md} \\
+Route rate limiting & \code{docs/hu/08-rate-limiting.md} \\
+JSON API and CORS & \code{docs/hu/05-json-api-cors.md} \\
+Static assets & \code{docs/hu/06-static-assets.md} \\
+Public page cache & \code{docs/hu/13-cache.md} \\
+HTTPS and proxy security & \code{docs/hu/08-https-security.md} \\
+Upload and AppFs & \code{docs/hu/09-upload-appfs.md} \\
+Migrations & \code{docs/hu/10-database-migrations.md} \\
+Forms & \code{docs/hu/12-forms.md} \\
+Components and layouts & \code{docs/hu/14-components-layouts.md} \\
+Security checklist & \code{docs/hu/15-security-checklist.md} \\
+Dependency security & \code{docs/19-dependency-security.md} \\
+Server configuration & \code{docs/hu/15-server-config.md} \\
+Markdown/rich text & \code{docs/hu/16-markdown-rich-text.md} \\
+Media library & \code{docs/hu/17-media-library.md} \\
+Object authorization & \code{docs/hu/20-object-authorization.md} \\
+Project structure and modules & \code{docs/hu/21-modules-slugs-project-layout.md} \\
+Modules and namespaces & \code{docs/21-modules-and-namespaces.md} \\
+Arithmetic, F32 math, timing & \code{docs/44-math-and-timing.md} \\
+String builtins & \code{docs/46-string-builtins.md} \\
+Typed string lists & \code{docs/47-string-lists.md} \\
+Typed string dictionaries & \code{docs/48-string-dictionaries.md} \\
+Regular expressions & \code{docs/49-regular-expressions.md} \\
+Domain objects & \code{docs/hu/22-domain-objects.md} \\
+Enums & \code{docs/hu/23-enums.md} \\
+Optimistic locking & \code{docs/24-optimistic-locking.md} \\
+Business audit & \code{docs/hu/25-business-audit-trail.md} \\
+Domain validation & \code{docs/hu/26-domain-validation.md} \\
+Canonical URL & \code{docs/hu/27-canonical-url.md} \\
+PRG, flash, conflict UX & \code{docs/hu/28-prg-flash-conflict.md} \\
+Production deployment & \code{docs/hu/29-production-deployment.md} \\
+Backup, restore, upgrade & \code{docs/hu/30-backup-restore-upgrade-rollback.md} \\
+V1 developer handoff & \code{docs/hu/31-v1-developer-guide.md} \\
+IPv6-ready outbound egress & \code{docs/32-ipv6-egress.md} \\
+CLI and daily workflow & \code{docs/hu/33-cli-workflow.md} \\
+Server TOML reference & \code{docs/hu/34-server-toml-reference.md} \\
+Production checklist and examples & \code{docs/hu/35-production-checklist.md} \\
+Debian package and dpkg installation & \code{docs/36-debian-package.md} \\
+\bottomrule
+\end{longtable}
+
+\section{Daily development checklist}
+
+\begin{enumerate}
+  \item Use typed route/input contracts, and an enum for closed choices.
+  \item Never place user input into raw SQL or raw HTML.
+  \item Perform mutations inside a transaction when the business operation must be atomic.
+  \item After a successful browser POST, use Post/Redirect/Get.
+  \item Do not public-cache pages that depend on user/session state.
+  \item Supply secrets only through \code{*_file} boundaries.
+  \item Before release, run application checks, configuration preflight, and migration verification; when releasing the RWLang platform itself, also run \code{./verify.sh}.
+  \item After deployment, verify live/ready, logs, metrics, audit, and an application smoke path.
+\end{enumerate}

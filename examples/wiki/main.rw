@@ -1,0 +1,80 @@
+model WikiPage {
+    id: Int
+    slug: Slug
+    title: String
+    body: String
+}
+
+form WikiForm {
+    title<String>
+    body<String>
+    validate title length 2 200 body length 1 300000
+}
+
+query fn wikiBySlug(db: Db, slug: Slug) -> Result<WikiPage, DbError> sql {
+    SELECT id, slug, title, body
+    FROM wiki_pages
+    WHERE slug = :slug
+}
+
+query fn updateWikiPage(
+    tx: Transaction,
+    id: Int,
+    title: String,
+    body: String
+) -> Result<Void, DbError> sql {
+    UPDATE wiki_pages
+    SET title = :title, body = :body
+    WHERE id = :id
+}
+
+layout fn Main(title: String) -> Html {
+    html {
+        <html>
+            <head><title>{{ title }}</title></head>
+            <body><main>@content</main></body>
+        </html>
+    }
+}
+
+
+page fn wikiIndex(ctx: PageContext) -> Result<Html, PageError> {
+    return Ok(html {
+        <main>
+            <h1>Wiki</h1>
+            <p>A szerkesztes sikeresen elmentve.</p>
+        </main>
+    });
+}
+
+page fn wikiShow(ctx: PageContext, db: Db, slug: Slug) -> Result<Html, PageError> {
+    let page = wikiBySlug(db, slug)?;
+    return Ok(html {
+        @layout(Main, page.title) {
+            <article>
+                <h1>{{ page.title }}</h1>
+                @markdown(page.body)
+            </article>
+        }
+    });
+}
+
+action fn wikiEdit(
+    ctx: ActionContext,
+    db: Db,
+    id: Int,
+    title: String,
+    body: String
+) -> Result<Redirect, PageError> {
+    transaction db {
+        updateWikiPage(tx, id, title, body)?;
+    }
+    return Ok(redirect("/wiki"));
+}
+
+route wikiIndex GET "/wiki" => wikiIndex;
+route wikiShow GET "/wiki/:slug<Slug>" => wikiShow;
+route wikiEdit POST "/admin/wiki/:id<Int>"
+    form WikiForm
+    auth role Editor
+    => wikiEdit;

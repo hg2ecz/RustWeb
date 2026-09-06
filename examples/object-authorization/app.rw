@@ -1,0 +1,40 @@
+model Article {
+    id: Int
+    authorUsername: String
+    title: String
+}
+
+query fn loadArticle(db: Db, id: Int) -> Result<Article, DbError> sql {
+    SELECT id, authorUsername, title FROM articles WHERE id = :id
+}
+
+query fn updateTitle(tx: Transaction, id: Int, title: String) -> Result<Void, DbError> sql {
+    UPDATE articles SET title = :title WHERE id = :id
+}
+
+page fn article(ctx: PageContext, db: Db, id: Int) -> Result<Html, PageError> {
+    let article = loadArticle(db, id)?;
+    authorize article owner authorUsername or role Publisher;
+    return Ok(html {
+        <article><h1>{{ article.title }}</h1></article>
+    });
+}
+
+action fn articleEdit(ctx: ActionContext, db: Db, id: Int, title: String) -> Result<Redirect, PageError> {
+    let article = loadArticle(db, id)?;
+    authorize article owner authorUsername or role Publisher;
+    transaction db {
+        updateTitle(tx, id, title)?;
+    }
+    return Ok(redirect("/articles"));
+}
+
+route article GET "/articles/:id<Int>" auth user => article;
+route articleEdit POST "/articles/:id<Int>/edit" form title<String> auth user => articleEdit;
+
+
+page fn articlesIndex(ctx: PageContext) -> Result<Html, PageError> {
+    return Ok(html {<main><h1>Articles</h1></main>});
+}
+
+route articlesIndex GET "/articles" auth user => articlesIndex;

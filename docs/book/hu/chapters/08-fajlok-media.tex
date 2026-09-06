@@ -1,0 +1,230 @@
+\chapter{Fájlok, feltöltés és médiatár}
+
+Egy webalkalmazásban a fájlkezelés nem egyszerűen annyi, hogy a kliens által küldött fájlnevet bemásoljuk egy könyvtárba. A feltöltés egyszerre érinti a request feldolgozását, az erőforrás-korlátokat, a fájlrendszer-biztonságot, az adatbázist, a jogosultságkezelést, a backupot és -- képek esetén -- a HTML-kimenetet is.
+
+Az \rwlang{} ezért két külön szintet ad. Az általános \code{Upload} feltöltési metaadatot ad egy AppFs-be streamelt fájlhoz, az \code{Image} pedig ennél szigorúbb, validált képtípus, amelyet CMS- és wiki-felületen érdemes használni.
+
+\section{A mentális modell: három külön dolog}
+
+Feltöltésnél tartsd külön a következőket:
+
+\begin{enumerate}
+  \item \textbf{kliens-metaadat}: eredeti fájlnév és a kliens által állított MIME-típus;
+  \item \textbf{tárolás}: a runtime által választott, AppFs-en belüli szerveroldali fájl;
+  \item \textbf{üzleti referencia}: amit az alkalmazás adatbázisban tárol és később felhasznál.
+\end{enumerate}
+
+A kliens fájlneve nem storage path, a kliens \code{Content-Type} fejléce pedig nem biztonsági bizonyíték. Ezt a két értéket legfeljebb megjelenítési vagy audit-metaadatként kezeld.
+
+\section{Általános fájlfeltöltés: \code{Upload}}
+
+A route deklarációja megmondja a runtime-nak, hogy multipart fájlt vár, és melyik statikus AppFs alkönyvtárba helyezze azt:
+
+\begin{lstlisting}[language=RWLang]
+route uploadFile POST "/upload"
+    upload file<Upload> to "uploads"
+    => uploadFile;
+\end{lstlisting}
+
+\newpage
+Az action már nem a teljes fájlt kapja meg memóriában. Az \code{Upload} a feltöltés metaadatait adja át:
+
+\begin{lstlisting}[language=RWLang]
+action fn uploadFile(ctx: ActionContext, file: Upload)
+    -> Result<Redirect, PageError> {
+    let savedPath = file.path;
+    let originalName = file.filename;
+    let contentType = file.contentType;
+    let byteCount = file.bytes;
+    return Ok(redirect("/uploaded"));
+}
+\end{lstlisting}
+
+Ez fontos erőforrás-védelmi tulajdonság: a runtime streameli a multipart tartalmat, ezért egy nagyobb fájl nem válik automatikusan ugyanekkora VM heap-allokációvá.
+
+\section{AppFs: az alkalmazás írható fájltere}
+
+Az AppFs az alkalmazás számára kijelölt, korlátozott fájlrendszer-rész. Productionban külön data rootot adj neki; ne keverd a program binárisával, a statikus assetek könyvtárával vagy a rendszer más írható területeivel.
+
+Példa szerverkonfiguráció:
+
+\begin{lstlisting}
+[storage]
+data_root = "/srv/rwlang/data"
+fs_mode = "rwc"
+max_upload_bytes = 16777216
+max_image_pixels = 40000000
+\end{lstlisting}
+
+A rövid capability-jelölések jelentése:
+
+\begin{description}
+  \item[\code{r}] olvasás;
+  \item[\code{w}] írás;
+  \item[\code{c}] létrehozás és az upload commitjához szükséges műveletek.
+\end{description}
+
+Feltöltéshez tipikusan \code{rwc} szükséges. A byte-limit operátori hard limit: az alkalmazáskód nem emelheti meg tetszőlegesen egy route kedvéért.
+
+Linuxon az AppFs confinement célja, hogy az alkalmazás a kijelölt root alól path traversal, symlink vagy magic-link trükkel se tudjon kitörni. Ettől még a normál Unix ownership és permission beállítások is szükségesek: a service user csak azt a könyvtárat kapja meg írhatónak, amelyre valóban szüksége van.
+
+\section{Mi történik egy feltöltés során?}
+
+A biztonságos feltöltési útvonal lépései fejlesztői szemmel:
+
+\begin{enumerate}
+  \item a runtime ellenőrzi a request méretkorlátait és a route upload-sémáját;
+  \item a fájlt streaming módon egy confined staging helyre írja;
+  \item a storage kulcsot a szerver generálja, nem a kliens fájlnevéből képezi;
+  \item typed feltöltésnél további szerveroldali tartalomellenőrzés fut;
+  \item sikeres feldolgozás után a fájl atomikusan commitolható;
+  \item handler- vagy runtime-hiba esetén a runtime cleanupot kísérel meg.
+\end{enumerate}
+
+Ezért ne építs saját \emph{``sanitize filename és írjuk ki valahová''} mechanizmust az AppFs mellett. Az a nyelv által biztosított biztonsági határt kerülné meg.
+
+\section{Képfeltöltés: preferáld az \code{Image} típust}
+
+CMS-ben, wikiben, hírportálon és adminfelületen a képekhez az általános \code{Upload} helyett az \code{Image} a megfelelő surface:
+
+\begin{lstlisting}[language=RWLang]
+route saveHero POST "/admin/hero"
+    upload hero<Image> to "media"
+    auth role Editor
+    => saveHero;
+\end{lstlisting}
+
+Az \code{Image} ugyanazt a streaming multipart és AppFs útvonalat használja, de a szerver a tényleges fájltartalmat is ellenőrzi. V1-ben PNG és JPEG fogadható el. A kliens által küldött MIME-típus nem authority.
+
+Az SVG szándékosan nem általános képfeltöltési formátum: aktív tartalmat és script/XSS felületet hordozhat. A GIF, WebP vagy AVIF támogatását se feltételezd, ha az adott runtime-verzió dokumentációja nem mondja ki.
+
+\section{Byte-limit és pixel-limit nem ugyanaz}
+
+Képnél két külön erőforrás-probléma van. Egy fájl lehet kevés byte, miközben a dekódolt kép óriási pixelszámú. Ezért a \code{max_upload_bytes} mellett külön \code{max_image_pixels} limit is van.
+
+\begin{lstlisting}
+max_upload_bytes = 16777216
+max_image_pixels = 40000000
+\end{lstlisting}
+
+A második limit a \code{width * height} értéket korlátozza. A production konfigurációban mindkettőt tudatosan állítsd be az alkalmazás feladatához; a ``16 MB-os upload limit'' önmagában nem kép-dekódolási védelem.
+
+\section{Kép referencia az adatbázisban}
+
+Az \code{Image} first-class scalar, ezért model mezőként és adatbázisban is tárolható canonical reprezentációval. Az alkalmazásnak nem kell -- és nem is érdemes -- a belső storage path részeit kézzel összeraknia vagy szétszednie.
+
+Tipikus üzleti modell:
+
+\begin{lstlisting}[language=RWLang]
+model Article {
+    id: Int
+    slug: Slug
+    title: String
+    body: String
+    hero: Image
+}
+\end{lstlisting}
+
+A lényeg az, hogy az adatbázisban \emph{referencia} legyen, ne kliens fájlnév és ne kézzel gyártott publikus URL. Így a tárolási és a HTTP-kiszolgálási szabályok a runtime kontrollja alatt maradnak.
+
+\newpage
+\section{Biztonságos megjelenítés HTML-ben}
+
+Egy validált képet nem közvetlen string-interpolációval jelenítünk meg, hanem az erre szolgáló renderelővel:
+
+\begin{lstlisting}[language=RWLang]
+page fn article(ctx: PageContext, article: Article)
+    -> Result<Html, PageError> {
+    return Ok(html {
+        <article>
+            <h1>{{ article.title }}</h1>
+            @image(article.hero, article.title)
+            @markdown(article.body)
+        </article>
+    });
+}
+\end{lstlisting}
+
+Az \code{@image(image, alt)} a validált kép-referenciából készít HTML-t. Az alt szöveget escape-eli, a validált méreteket felhasználja, és a beépített read-only media endpointot célozza. Az \code{Image} közvetlen \code{{ image }} interpolációja compiler error, így a typed referencia nem csúszhat át véletlenül raw URL vagy markup szerepbe.
+
+\section{A beépített media endpoint}
+
+A runtime fenntartja a következő URL-prefixet:
+
+\begin{lstlisting}
+/__rw/media/
+\end{lstlisting}
+
+Az alkalmazás ezzel ütköző route-ot nem deklarálhat. A media endpoint nem teszi HTTP-n böngészhetővé a teljes \code{data_root} könyvtárat: csak olyan AppFs könyvtárból szolgál ki képet, amelyet a program valamely \code{upload ...<Image> to "..."} route-ja deklarált.
+
+Kiszolgáláskor a szerver a tartalmat ismét a képdetektor alapján kezeli, nem a kliens eredeti MIME-jára hagyatkozik. A válaszhoz biztonsági és cache headerek társulnak; a média kiszolgálása nem futtat alkalmazás-route-ot és nem hoz létre sessiont.
+
+\section{CMS-példa: hero kép feltöltése}
+
+Egy szerkesztői felületnél a gyakorlati folyamat általában két üzleti lépésből áll:
+
+\begin{enumerate}
+  \item a szerkesztő feltölti a validált képet;
+  \item az alkalmazás az így kapott typed képreferenciát az adott cikkhez rendeli.
+\end{enumerate}
+
+A route legalább autentikált legyen, admin/szerkesztő funkciónál pedig role policy is indokolt:
+
+\begin{lstlisting}[language=RWLang]
+route saveHero POST "/admin/articles/:id<Int>/hero"
+    upload hero<Image> to "media"
+    auth role Editor
+    => saveHero;
+\end{lstlisting}
+
+Ne abból indulj ki, hogy ``csak kép, tehát veszélytelen''. Az upload route ugyanúgy state-changing POST: auth, CSRF/origin védelem, request-limit és auditálható üzleti művelet tartozhat hozzá.
+
+\section{Adatbázis és AppFs együtt alkothat üzleti állapotot}
+
+Ha egy adatbázissor egy AppFs-ben tárolt képre hivatkozik, akkor a két tároló együtt alkotja a helyreállítandó állapotot. Ez közvetlenül érinti a backup-stratégiát.
+
+Például nem tekinthető automatikusan konzisztens mentésnek az, ha délelőtt készül egy DB dump, délután pedig külön tar a data rootról. Közben létrejöhetett vagy törlődhetett olyan referencia, amely csak az egyik snapshotban szerepel.
+
+Production baseline-ként kontrollált stop/drain melletti, összerendelt application DB + local-auth DB + AppFs snapshotot kezelj egy recovery pontként. Redis session/cache/rate-limit állapota ezzel szemben nem üzleti source of truth.
+
+\section{Statikus asset és feltöltött fájl nem ugyanaz}
+
+A programhoz tartozó CSS, JavaScript, ikon és egyéb verziózott asset más életciklusú, mint a felhasználói feltöltés. A static root legyen read-only deploy-artifact; az AppFs data root pedig külön, kontrolláltan írható runtime adat.
+
+Ez a szétválasztás több hibát megelőz:
+
+\begin{itemize}
+  \item deploy nem írja felül a felhasználói médiát;
+  \item upload nem módosíthat alkalmazáskódot vagy verziózott assetet;
+  \item backupnál egyértelmű, mi üzleti adat és mi újratelepíthető release-artifact;
+  \item a reverse proxy szabályai is tisztábban kialakíthatók.
+\end{itemize}
+
+\section{Mit ne csinálj?}
+
+\begin{itemize}
+  \item Ne használd a kliens fájlnevét közvetlen filesystem pathként.
+  \item Ne bízz a multipart \code{Content-Type} értékében.
+  \item Ne tedd publikussá a teljes AppFs data rootot Apache/Nginx aliasszal.
+  \item Ne interpolálj \code{Image} értéket kézzel URL-be vagy HTML-be.
+  \item Ne kezeld a DB-t és az AppFs-t egymástól független recovery state-ként, ha vannak köztük referenciák.
+  \item Ne kerüld meg az operátori upload- és pixel-limiteket alkalmazáskódból.
+\end{itemize}
+
+\section{A jelenlegi media surface határai}
+
+A V1 media felülete tudatosan kicsi. Ne építs dokumentálatlan feltételezésekre. A jelenlegi alap nem ígér automatikus thumbnail/resize pipeline-t, WebP/AVIF konverziót, EXIF-normalizálást vagy metadata strippinget, teljes admin media browsert, S3/object-storage backendet vagy általános Markdown image syntaxot.
+
+Ha az alkalmazásnak ezek valamelyike szükséges, azt külön architekturális feladatként kezeld, saját erőforrás-, security- és lifecycle-szabályokkal.
+
+\section{Fejlesztői ellenőrzőlista feltöltéshez}
+
+{\small
+\begin{tabularx}{\textwidth}{@{}Y Y@{}}
+1. Auth/authorization rendben? & 2. AppFs root elkülönített és nem publikus? \\
+3. Ésszerű byte-limit? & 4. Képnél pixel-limit is? \\
+5. Képhez \code{Image}? & 6. Filename/MIME csak metaadat? \\
+7. DB-ben typed referencia? & 8. HTML-ben \code{@image}? \\
+9. DB + AppFs együtt mentve? & 10. Nincs reverse-proxy data-root alias? \\
+\end{tabularx}
+}

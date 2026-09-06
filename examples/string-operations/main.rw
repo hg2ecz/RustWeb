@@ -1,0 +1,42 @@
+page fn strings(ctx: PageContext, text: String) -> Result<Html, PageError> {
+    let cleaned = trim(text);
+    let left_cleaned = trimStart(text);
+    let right_cleaned = trimEnd(text);
+    let lower_text = lower(cleaned);
+    let upper_text = upper(cleaned);
+    let chars = stringLen(cleaned);
+    let has_rust = contains(lower_text, "rust");
+    let starts_rw = startsWith(lower_text, "rw");
+    let ends_lang = endsWith(lower_text, "lang");
+    let dashed = replace(lower_text, " ", "-");
+    let prefix = substring(cleaned, 0, 3);
+    let first_rust = indexOf(lower_text, "rust");
+    let last_a = lastIndexOf(lower_text, "a");
+    let second_char = charAt("RWLang", 1);
+    let repeated = repeat("rw", 3);
+
+    return Ok(html {
+        <h1>String operations</h1>
+        <p>Original: {{ text }}</p>
+        <p>Trimmed: {{ cleaned }}</p>
+        <p>Trim start: {{ left_cleaned }}</p>
+        <p>Trim end: {{ right_cleaned }}</p>
+        <p>Lower: {{ lower_text }}</p>
+        <p>Upper: {{ upper_text }}</p>
+        <p>Characters: {{ chars }}</p>
+        <p>Contains rust: {{ has_rust }}</p>
+        <p>Starts with rw: {{ starts_rw }}</p>
+        <p>Ends with lang: {{ ends_lang }}</p>
+        <p>Spaces replaced: {{ dashed }}</p>
+        <p>First three characters: {{ prefix }}</p>
+        <p>First rust index: {{ first_rust }}</p>
+        <p>Last a index: {{ last_a }}</p>
+        <p>Second character of RWLang: {{ second_char }}</p>
+        <p>Repeated: {{ repeated }}</p>
+    });
+}
+
+route strings GET "/strings"
+    query text<String>
+    validate text length 1 512
+    => strings;

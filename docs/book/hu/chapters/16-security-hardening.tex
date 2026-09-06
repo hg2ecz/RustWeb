@@ -1,0 +1,281 @@
+\chapter{Security hardening: a trust boundaryk összekapcsolása}
+
+Az előző fejezetek külön-külön megtanították az autentikációt, az objektumszintű authorizationt, a CSRF- és CORS-védelmet, a typed SQL-t, az AppFs-t, a megosztott runtime state alapjait és az outbound egress policyt. A production konfiguráció részletes kulcsreferenciája később jön; itt azt foglaljuk össze, milyen biztonsági határokat kell annak kikényszerítenie. Production átadáskor azonban ezek nem különálló feature-ként számítanak, hanem egyetlen biztonsági modellként.
+
+A security hardening célja ezért nem új szintaxis bevezetése, hanem annak ellenőrzése, hogy minden külső adat és minden érzékeny művelet egyértelmű trust boundaryn haladjon át, és sehol ne legyen olyan kerülőút, amely megkerüli a fordító, a runtime vagy a szerver policyját.
+
+\section{Az öt legfontosabb trust boundary}
+
+Egy tipikus RWLang alkalmazásban legalább az alábbi határokat érdemes külön kezelni:
+
+\begin{longtable}{L{0.25\textwidth}L{0.31\textwidth}L{0.34\textwidth}}
+\toprule
+Határ & Nem megbízható oldal & Authority / ellenőrzés \\
+\midrule
+HTTP bemenet & path, query, header, form, JSON & typed route/input, parser limitek, CSRF/CORS \\
+Identity & cookie, login mezők, kliens role & trusted auth backend, session, MFA \\
+Adat & kliens érték, rekordazonosító & typed query, bind, transaction, authorization \\
+Fájlrendszer & filename, MIME, upload byte-ok & AppFs confinement, server-owned destination, limitek \\
+Külső hálózat & URL, DNS, peer, response & named egress target, CIDR/port/TLS/timeout policy \\
+\bottomrule
+\end{longtable}
+
+A legfontosabb szemléleti szabály: \textbf{az adat attól még nem lesz megbízható, hogy egyszer már átment egy korábbi rétegen}. Egy autentikált felhasználó formadata továbbra is user input; egy valid rekordazonosító nem jelent automatikus authorizationt; egy DNS-ben feloldott host nem jelenti azt, hogy a tényleges peer IP is engedélyezett.
+
+\section{HTTP edge: Host, proxy és parser}
+
+Közvetlen HTTPS esetén maga az RWLang server a publikus HTTP trust boundary. Apache vagy Nginx mögött két réteg van: a publikus proxy és az RWLang listener.
+
+Productionban a forwarding headereket csak deklarált trusted proxy hálózatból szabad elfogadni. A kliens által közvetlenül küldött \code{X-Forwarded-For}, \code{X-Forwarded-Proto} vagy hasonló header nem lehet authority.
+
+A public host szintén trusted konfigurációból származzon. A redirect célját ne a tetszőleges kliens \code{Host} headeréből építsd fel.
+
+Az RWLang HTTP parser szándékosan szigorú. A kétértelmű kérésformákat elutasítja. Ide tartozik például a több kritikus header, az obs-fold és a GET/HEAD body. A request \code{Transfer-Encoding} és az ismeretlen connection token szintén tiltott. A fejlesztői szabály egyszerű: \textbf{ne próbáld alkalmazáskódból lazítani az edge parser invariánsait}.
+
+\subsection*{Fail-closed döntés és security audit}
+
+A trust-boundary tiltás ne csak a kliensválaszban jelenjen meg. A szerver ugyanazzal a saját request ID-val access logot és -- ahol security-döntés történt -- strukturált \code{security_audit} eseményt képez. A fontosabb osztályozás:
+
+\begin{longtable}{L{0.30\textwidth}L{0.12\textwidth}L{0.46\textwidth}}
+\toprule
+Határ & HTTP & Audit category/outcome \\
+\midrule
+forwarding metadata & 400 & \code{proxy/invalid_forwarding} \\
+Host pinning & 421 & \code{host/mismatch} \\
+HTTPS policy & 426 & \code{transport/https_required} \\
+auth hiány API-n & 401 & \code{auth/unauthorized} \\
+CSRF & 403 & \code{csrf/denied} \\
+CORS & 403 & \code{cors/denied} \\
+Origin/Fetch Metadata & 403 & \code{origin/denied} \\
+route/object policy & 403 & \code{policy/forbidden} \\
+rate limit & 429 & \code{rate_limit/denied} \\
+\bottomrule
+\end{longtable}
+
+A security auditba ne kerüljön token, cookie, credential, teljes URL vagy request body. A category/outcome azt mondja meg, \emph{melyik trust boundary döntött}, a részletes request-forenzikához pedig a request ID-val kapcsolódó access/server logot használd.
+
+\section{TLS és secret kezelés}
+
+A privát kulcs, adatbázis-credential, Redis URL, LDAP credential vagy más secret ne legyen:
+
+\begin{itemize}
+  \item forráskódban;
+  \item Git repositoryban;
+  \item parancssori argumentumban;
+  \item plaintext TOML secret értékként;
+  \item access/server/audit logban.
+\end{itemize}
+
+A production minta a \code{*_file} hivatkozás:
+
+\begin{lstlisting}
+[tls]
+cert_file = "/run/secrets/tls/fullchain.pem"
+key_file = "/run/secrets/tls/privkey.pem"
+
+[database]
+url_file = "/run/secrets/rwlang/database-url"
+\end{lstlisting}
+
+A config megmondja, \emph{hol} található a secret; maga az érték külön jogosultsági határ mögött marad. A secret fájlok legyenek a service user számára olvashatók, más számára pedig a lehető legszűkebben hozzáférhetők.
+
+\section{Identity: authentication nem authorization}
+
+A sikeres login csak azt bizonyítja, hogy van trusted principal. Azt nem, hogy az adott cikket, számlát vagy admin műveletet elérheti.
+
+A helyes rétegek:
+
+\begin{enumerate}
+  \item authentication: ki a felhasználó;
+  \item route authorization: beléphet-e ebbe a handlerbe;
+  \item object authorization: hozzáférhet-e ehhez a konkrét rekordhoz;
+  \item üzleti invariáns: a művelet ebben az állapotban megengedett-e.
+\end{enumerate}
+
+Kliens által küldött role, owner, tenant vagy ár soha ne legyen authority. Role csak trusted auth backendből, owner csak trusted rekordból, üzleti döntés pedig szerveroldali állapotból származzon.
+
+\Needspace{0.38\textheight}
+Objektumszintű módosításnál a tipikus sorrend:
+
+\begin{lstlisting}[language=RWLang]
+let article = Article.byId(db, id)?;
+authorize article owner authorUsername or role Publisher;
+
+transaction db {
+    Article.publishChanged(tx, id, version)?;
+    audit Article id action publish;
+        from article.status
+        to ArticleStatus.Published
+}
+\end{lstlisting}
+
+Az authorization guard nem helyettesíti az optimistic lockingot, és az optimistic locking nem helyettesíti az authorizationt.
+
+\section{Session, CSRF és CORS együtt}
+
+A session cookie önmagában nem CSRF-védelem. State-changing form vagy JSON kérésnél session-bound CSRF védelem szükséges; JSON POST-nál a token külön headerben vihető.
+
+A böngészőoldali védelmet defense-in-depthként érdemes kezelni:
+
+\begin{lstlisting}
+session-bound CSRF token
++ same-origin Origin/Referer check
++ Sec-Fetch-Site cross-site deny
+\end{lstlisting}
+
+CORS csak explicit, pontos origin allowlistből nyíljon meg. Credentialed CORS esetén a wildcard különösen nem megfelelő. A CORS nem authentication és nem authorization: csak azt szabályozza, hogy a böngésző mely origin számára teszi olvashatóvá a választ.
+
+\section{SQL és üzleti mutáció}
+
+A compiler-owned SQL és typed bind paraméter a V1 egyik legerősebb biztonsági alapja. Felhasználói input ne kerüljön SQL string-összefűzésbe, dinamikus oszlop- vagy táblanévbe.
+
+Mutáció transactionben történjen. A transaction itt nem csak konzisztenciaeszköz: security szempontból is fontos, mert az authorization után végzett több írás együtt sikerüljön vagy együtt bukjon el, az üzleti audit pedig ugyanahhoz az állapotváltozáshoz tartozzon.
+
+A runtime DB credential legyen least privilege. A migration credential külön operátori capability: ne fusson a webserver folyamatosan olyan jogosultsággal, amellyel sémát is módosíthat.
+
+\section{Upload, média és AppFs}
+
+A feltöltött fájl minden byte-ja nem megbízható. A kliens filename és MIME csak metadata; storage kulcsnak, elérési útnak vagy file-type authoritynek ne használd.
+
+A production baseline:
+
+\begin{itemize}
+  \item server-owned célkönyvtár;
+  \item byte limit;
+  \item képnél pixel/decode limit és byte-alapú format validation;
+  \item AppFs confinement;
+  \item symlink/magic-link escape tiltása;
+  \item runtime data külön a release/static fájloktól;
+  \item csak a szükséges \code{r}/\code{w}/\code{c} capability.
+\end{itemize}
+
+A publikus static root és a user upload ne legyen ugyanaz a könyvtár csak azért, mert mindkettőt HTTP-n szeretnéd kiszolgálni. Más a lifecycle, a trust és a cache policy.
+
+\section{Redis és shared runtime state}
+
+Redis runtime-owned infrastructure, nem üzleti source of truth. Session, TOTP replay state, rate limit és public cache élhet benne, de az alkalmazás üzleti rekordjai ne azért kerüljenek oda, mert ``gyorsabb''.
+
+Több instance esetén shared session/rate-limit backend nélkül könnyen eltérő security döntés születne attól függően, melyik node kapta a kérést. Production clusterben ezért a shared state policy a topológia része.
+
+Redis hibánál a security-releváns funkciók ne váljanak automatikusan megengedővé. Rate limit, replay protection vagy session validation esetén a fail-closed irány a biztonságos alap.
+
+\section{Outbound egress és SSRF}
+
+A külső hálózat külön trust boundary. V1-ben nincs korlátlan alkalmazásoldali \code{HttpClient}; a trusted integration adapter named targetet használ.
+
+A célpolicy egyszerre korlátozza a hostot, címtartományt, portot, TLS-t, timeoutot és válaszméretet. DNS feloldás után minden A/AAAA címet ellenőrizni kell, majd a tényleges peer címet kapcsolódás után újra kell validálni.
+
+Tiltott minta:
+
+\begin{lstlisting}
+user input URL -> generic server-side fetch
+\end{lstlisting}
+
+Ajánlott minta:
+
+\begin{lstlisting}
+user/business choice
+        |
+        v
+named integration target
+        |
+        v
+trusted host/CIDR/port/TLS policy
+\end{lstlisting}
+
+Így a felhasználó üzleti választást tehet, de nem választhat tetszőleges hálózati célt.
+
+V1-ben az egress a trusted Rust integration réteg capabilityje, nem általános \code{.rw} HTTP API. Emiatt az \code{IntegrationError::Policy} fail-closed tiltása nem automatikusan a webserver \code{security_audit} eseménye: az adapternek/operatori integrációnak kell a target nevét és a minimális outcome-ot naplóznia, ha erre forenzikus igény van. Secretet, credentialt, arbitrary teljes URL-t vagy response bodyt itt se logolj.
+
+\section{Resource limitek is security kontrollok}
+
+A biztonság nem csak confidentiality és authorization. Egy webalkalmazás akkor is sérülékeny, ha egyetlen kérés korlátlan memóriát, CPU-t, DB-időt vagy upload sávszélességet használhat.
+
+A védelmi rétegek együtt dolgoznak:
+
+\begin{itemize}
+  \item request/parser hard limit;
+  \item upload és response méretlimit;
+  \item query/result limit és timeout;
+  \item rate limit;
+  \item runtime resource profile;
+  \item process/systemd/cgroup hard limit.
+\end{itemize}
+
+Az alkalmazás ne kérjen nagyobb resource profile-t ``hátha kell'' alapon. A nagyobb keret production policy-döntés és auditálható kivétel legyen.
+
+\section{Log hygiene és audit integrity}
+
+A logba kerülő információ maga is adatkiáramlási felület lehet. Ne logolj credentialt, cookie-t, CSRF/TOTP secretet, teljes form- vagy JSON-bodyt.
+
+Security eseményhez inkább minimális, strukturált mezők kellenek: request ID, route, actor ahol indokolt, döntés típusa és státusz. Az üzleti audit pedig legyen tranzakciós és az alkalmazás állapotváltozásához kötött.
+
+A request ID korrelációs azonosító, nem authority. A szerver sajátot generáljon; ne bízz a kliens által küldött azonosítóban.
+
+\section{Process és filesystem hardening}
+
+A production service unprivileged user alatt fusson. A release könyvtár és a konfiguráció legyen runtime szempontból read-only; írható csak az legyen, aminek valóban írhatónak kell lennie.
+
+Ajánlott szétválasztás:
+
+\begin{lstlisting}
+/usr/local/bin/rwlang-server
+/usr/local/bin/rwlang-cli
+/usr/local/etc/rwlang/       # trusted config, read-only
+/srv/rwlang/releases/        # immutable releases
+/srv/rwlang/data/            # declared persistent app data
+/run/secrets/rwlang/         # secret files
+/var/log/rwlang/             # logs
+\end{lstlisting}
+
+A systemd hardening, a cgroup limitek és az RWLang saját resource policyja ne egymás alternatívái legyenek; két külön védelmi réteget adnak.
+
+\section{Dependency és build supply-chain}
+
+Az RWLang deployed server bináris, ezért a dependency graph is release állapot. A committed \code{Cargo.lock} és a \code{--locked} build reprodukálhatóbbá és reviewzhatóvá teszi a dependency felületet.
+
+Intentional dependency update után ne csak compile legyen:
+
+\begin{lstlisting}
+./tools/refresh-lock.sh
+./verify.sh
+./tools/dependency-audit.sh
+\end{lstlisting}
+
+A RustSec audit ismert advisorykra ad bizonyítékot; nem helyettesíti a kódreview-t és az upstream changelog átnézését. Különösen parser, TLS, crypto, auth és database dependency major/minor migráció ne bújjon el más feature diffjében.
+
+\section{Production security gate}
+
+A production átadás előtti minimum ellenőrzés:
+
+\begin{enumerate}
+  \item HTTPS és public host policy ellenőrzött.
+  \item Reverse proxy trust csak explicit CIDR-re nyitott.
+  \item Secret csak file-reference útvonalon jut a processbe.
+  \item Runtime DB credential least privilege; migration credential külön van.
+  \item Session/auth backend megfelel a single-node vagy multi-instance topológiának.
+  \item Minden state-changing böngészős művelet CSRF-védett.
+  \item CORS exact allowlist; credentialed wildcard nincs.
+  \item Object authorizationnál trusted principal/role és stabil owner authority van.
+  \item SQL csak compiler-owned statement + typed bind.
+  \item Upload server-owned destinationre és korlátozott AppFs capabilityvel kerül.
+  \item Redisből semmi üzleti source of truth nem hiányozna restore esetén.
+  \item Outbound integráció csak named egress policy-n keresztül ér el hálózatot.
+  \item Request, upload, DB, runtime és process resource limitek be vannak állítva.
+  \item Logokban nincs secret vagy teljes érzékeny request payload.
+  \item Security-negatív tesztek, config check és deploy smoke zöld.
+\end{enumerate}
+
+\section{Gondolkodási minta code reviewhoz}
+
+Minden új feature-nél öt kérdés sok security hibát korán megfog:
+
+\begin{enumerate}
+  \item \textbf{Mi jön kívülről?} -- Melyik mező, header, fájl, rekordazonosító vagy külső válasz nem megbízható?
+  \item \textbf{Hol válik typed adattá?} -- Route parser, form/JSON schema, model vagy trusted adapter?
+  \item \textbf{Ki az authority?} -- Session backend, adatbázisrekord, trusted config vagy egress policy?
+  \item \textbf{Mi történik hiba esetén?} -- Fail closed, rollback, cleanup, 4xx/5xx és audit?
+  \item \textbf{Mi korlátozza az erőforrást?} -- Méret, idő, darabszám, rate vagy process budget?
+\end{enumerate}
+
+Ha ezekre nincs rövid, egyértelmű válasz, a feature security modellje valószínűleg még nincs kész.

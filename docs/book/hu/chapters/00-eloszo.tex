@@ -1,0 +1,47 @@
+\chapter*{Előszó}
+\addcontentsline{toc}{chapter}{Előszó}
+
+Ez a könyv webalkalmazás-fejlesztőknek szól, akik most találkoznak először az \rwlang{}-gal, és akár a modellközpontú alkalmazástervezéssel is. Nem feltételezi, hogy az olvasó ORM-ek, domain modellek vagy capability-alapú rendszerek fogalmaiban gondolkodik. Az első fejezet ezért nem szintaxissal kezd, hanem azzal, hogy \emph{miből áll egy alkalmazás}: milyen üzleti adatokat kezel, milyen műveletek végezhetők rajtuk, ki végezheti ezeket a műveleteket, és hol lép be mindez a HTTP világába.
+
+A könyv ajánlott olvasási sorrendje tudatosan fokozatos. Először felépítjük a model- és capability-szemléletet, majd lefordítjuk és telepítjük az RWLang programokat. Ezután egy szándékosan kicsi, A--Z alkalmazáson végigmegyünk a modeltől a formon és adatbázison át a HTTP válaszig. Csak ezután bontjuk szét részletesen a nyelvi, adatbázis-, auth-, fájl- és böngészős témákat.
+
+Amikor az olvasó már normál alkalmazást tud írni, következik a nagyobb projektek szervezése, majd egy wiki/CMS példa. A külső integráció és a tesztelés ezután jön, mert ezekhez már érdemes egy teljes alkalmazás fejével gondolkodni. A production részben kerül elő a megosztott Redis state és cache, a security hardening, az observability, a deployment és a disaster recovery. A könyv végén a CLI és a teljes \code{server.toml} referencia már nem tananyagként, hanem visszakereshető operátori segédletként szolgál.
+
+\section*{Hogyan olvasd a könyvet?}
+
+Első olvasáskor ne próbáld megjegyezni az összes konfigurációs kulcsot vagy production limitet. Az első cél az, hogy három kérdésre mindig tudj válaszolni:
+
+\begin{enumerate}
+  \item \emph{Milyen typed adatot kezel ez a feature?}
+  \item \emph{Milyen művelet olvassa vagy módosítja ezt az adatot?}
+  \item \emph{Milyen authority vagy capability engedi ezt a műveletet?}
+\end{enumerate}
+
+Ha ez a három kérdés tiszta, a route, a form, az SQL, az auth és a konfiguráció már ugyanannak a modellnek a különböző határai lesznek, nem egymástól független trükkök.
+
+\section*{Öt visszatérő szó}
+
+A könyv néhány angol eredetű technikai szót következetesen használ. Már az elején érdemes ugyanazt érteni alattuk:
+
+\begin{description}
+  \item[\code{model}] fordító által ismert, névvel ellátott typed adatalak; nem ORM-osztály és nem automatikus adatbázisséma;
+  \item[typed] az adat alakja és típusa a fordító számára ismert, nem csak futás közben derül ki;
+  \item[capability] explicit hozzáférési lehetőség egy erőforráshoz vagy érzékeny művelethez, például \code{Db}, \code{Transaction} vagy \code{AppFs};
+  \item[policy] a külső határon érvényes szabály, például auth, rate limit, CORS vagy trusted proxy;
+  \item[runtime] a lefordított RWLang programot végrehajtó szerveroldali környezet, amely a limiteket és capability-határokat is kikényszeríti.
+\end{description}
+
+A későbbi fejezetek ezeket pontosítják, de a fenti jelentés első olvasásra elég.
+
+\section*{A könyv konvenciói}
+
+\begin{itemize}
+  \item A \code{main.rw} az alkalmazás belépési pontja.
+  \item A production konfiguráció elsődleges felülete a trusted TOML fájl.
+  \item Secret érték nem kerül parancssorba vagy plaintext TOML mezőbe; a konfiguráció \code{*_file} hivatkozásokat használ.
+  \item SQL szöveg compiler-owned, felhasználói érték csak typed bind paraméterként kerülhet lekérdezésbe.
+  \item HTML-ben a \code{{ ... }} interpoláció escape-elt; raw HTML escape hatch nincs.
+  \item Üzleti módosítás transactionben történik.
+\end{itemize}
+
+A könyv a V1 surface-t célozza. Ha egy capability nincs benne ebben a surface-ben, azt nem kerülőúttal kell megvalósítani, hanem külön nyelvi/runtime feature-ként.

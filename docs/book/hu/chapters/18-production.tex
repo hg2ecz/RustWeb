@@ -1,0 +1,71 @@
+\chapter{Production deployment és service lifecycle}
+
+Ez a fejezet nem ismétli meg a konfigurációs referencia és az observability részleteit. A production szempontból azt foglalja össze, hogyan lesz egy ellenőrzött release-ből futó service, hogyan történik a release-váltás, és hogyan marad kontrollált a process lifecycle. A teljes backup/restore és disaster recovery a következő fejezet önálló témája.
+
+\section{Release útvonal}
+
+Ajánlott sorrend:
+
+\begin{lstlisting}
+./verify.sh
+-> cargo build --locked --release
+-> immutable release directory
+-> rwlang-server --config ... --check-config
+-> rwlang-cli migrate verify
+-> approved rwlang-cli migrate apply
+-> rwlang-cli migrate verify
+-> atomic current symlink switch
+-> controlled restart
+-> /health/live
+-> /health/ready
+-> log / metric / audit review
+\end{lstlisting}
+
+A buildelt \code{rwlang-server} és \code{rwlang-cli} bináris, az alkalmazásforrás és a migration legyen ugyanahhoz a release-azonosítóhoz köthető. Ne egy élő \code{/srv/rwlang/current} könyvtár tartalmát módosítsd fájlonként; új immutable release könyvtárat készíts, majd atomikusan válts symlinket.
+
+\section{systemd service}
+
+A \code{rwlang-server} hosszú életű service process. Az \code{rwlang-cli} nem daemon: migration, auth-admin vagy más operátori művelet idejére indul és kilép.
+
+\begin{lstlisting}
+[Service]
+User=rwlang
+Group=rwlang
+ExecStart=/usr/local/bin/rwlang-server \
+  --config /usr/local/etc/rwlang/server.toml
+Restart=on-failure
+NoNewPrivileges=true
+PrivateTmp=true
+\end{lstlisting}
+
+A service fusson unprivileged user alatt. A pontos systemd hardening és cgroup limitek igazodjanak a \code{server.toml} resource policy-jához; a két réteg célja ugyanaz: egy hibás vagy drága kérés ne vehesse át a gépet.
+
+\section{Controlled restart és readiness}
+
+Process-szintű konfigurációmódosítás után előbb fusson \code{--check-config}, majd controlled restart. Behind-proxy módban a SIGHUP a logok újranyitása mellett tranzakciósan újraépíti a domain/application hosting állapotot, de listener, DB/Redis/auth kapcsolat, cgroup policy, logging sink és más process-szintű beállítás továbbra is restartot igényel.
+
+Az alkalmazás-forrás kiadásának van könnyebb útja. A közös source-reload supervisor minden betöltött alkalmazás entrypointját és teljes tranzitív modulgráfját \code{mtime + size} alapján figyeli. Konfigurálható debounce után candidate runtime-ot fordít és validál, majd csak siker esetén cseréli le atomikusan az adott domaint. Hibás feltöltésnél a korábbi generáció fut tovább, a reload-hiba pedig naplózódik. A logikai entrypoint útvonal is figyelt, ezért az immutable release-ek közötti atomikus \code{current} symlink-csere automatikusan aktiválja az új kódot. Sikeres kódreload a public-cache generationöket is előrelépteti, ezért a régi renderelt tartalom nem marad életben pusztán a korábbi TTL miatt.
+
+A forgalomterelő csak ready instance-ra küldjön kérést. Rolling deploymentnél az új instance előbb induljon el, legyen ready, és csak utána kerüljön ki a régi. A health endpointok és a hozzájuk tartozó diagnosztika részletesen az observability fejezetben szerepel.
+
+\section{Migration és rollback nem ugyanaz}
+
+Az alkalmazás binárisának vagy forrásának visszaváltása egyszerű lehet, az adatbázis-séma visszaállítása viszont nem. Ezért production migrationnél preferáld az expand/contract mintát: az új release előbb backward-compatible sémát vezessen be, az inkompatibilis takarítás csak későbbi release-ben történjen.
+
+Ne kapcsolj automatikus reverse SQL-t az alkalmazás symlink visszaállításához. Ha a migration adatot alakított át vagy törölt, a valódi recovery pont a bizonyított backup lehet.
+
+\section{Recovery gate a deployment előtt}
+
+Destruktív vagy schema-kompatibilitást érintő release előtt legyen ismert recovery point és friss restore-evidence. A backup tartalma, a DB/AppFs konzisztencia, az RPO/RTO, valamint a rollback és restore döntési fa a következő fejezetben szerepel. A deployment felelőssége itt az, hogy a release-váltás előtt ez a gate teljesüljön.
+
+\section{Deploy utáni minimum ellenőrzés}
+
+\begin{enumerate}
+  \item az új process fut és ready;
+  \item a publikus főoldal vagy smoke route válaszol;
+  \item nincs új error spike a server logban;
+  \item access logban a státuszkód-eloszlás normális;
+  \item audit log írható;
+  \item DB/Redis dependency metrikák nem romlottak;
+  \item egy rollback döntéshez ismert a release hash és az adatbázis migration állapota.
+\end{enumerate}

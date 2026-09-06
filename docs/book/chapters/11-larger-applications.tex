@@ -1,0 +1,268 @@
+\chapter{Organizing larger applications}
+
+In an application with only a few routes, it may still be convenient to keep every model, query, and handler in a single \code{main.rw}. In a wiki, CMS, or line-of-business system, however, \emph{structure} soon matters more than the syntax of individual language features. RWLang provides two complementary tools: \code{mod} organizes source files, while \code{object} defines the namespace of a domain API.
+
+\section{Three separate questions}
+
+Treat the structure of a larger application as three distinct layers:
+
+\begin{center}
+\begin{tabularx}{\textwidth}{@{}l Y@{}}
+\toprule
+\textbf{Tool} & \textbf{Responsibility} \\
+\midrule
+\code{mod} & In which file or source module does the code live? \\
+\code{object} & Which business concept owns the model, query, page, or action? \\
+\code{route} & What HTTP surface and what auth/cache/rate-limit policy expose it? \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+This separation is deliberate. A domain object does not automatically receive a database, current user, filesystem, or network access, and a module does not imply HTTP policy.
+
+\section{\code{mod} is not textual include}
+
+A small multi-file project might look like:
+
+\begin{lstlisting}
+myapp/
+|-- main.rw
+|-- models.rw
+|-- queries.rw
+|-- components.rw
+|-- pages.rw
+|-- actions.rw
+|-- migrations/
+`-- public/
+\end{lstlisting}
+
+The entry point:
+
+\begin{lstlisting}[language=RWLang]
+mod models;
+mod queries;
+mod components;
+mod pages;
+mod actions;
+\end{lstlisting}
+
+\code{mod} is not C-style textual inclusion and it does not inject declarations into a global namespace. The compiler loads, validates, and compiles the explicit source graph into one program. A module owns a namespace: declarations from \code{queries.rw}, for example, are referenced as \code{queries::name} across module boundaries. Module paths are application-root relative, so nested source files must be loaded explicitly with paths such as \code{mod article::admin;}.
+
+\section{When should you switch to feature-based structure?}
+
+Splitting by technical type -- \code{models.rw}, \code{queries.rw}, \code{pages.rw} -- is a good first step, but in a larger application it can mean opening five or six files for one feature change. At that point, organize by business area instead:
+
+\begin{lstlisting}
+main.rw
+article.rw
+article/
+|-- admin.rw
+`-- components.rw
+account.rw
+account/
+`-- profile.rw
+invoice.rw
+invoice/
+`-- admin.rw
+routes.rw
+migrations/
+public/
+\end{lstlisting}
+
+Then \code{main.rw} becomes mostly application composition:
+
+\begin{lstlisting}[language=RWLang]
+mod article;
+mod article::admin;
+mod article::components;
+mod account;
+mod account::profile;
+mod invoice;
+mod invoice::admin;
+mod routes;
+\end{lstlisting}
+
+The goal is not to maximize file count. The goal is for one business change to remain mostly inside one feature directory.
+
+\section{Domain object: a business namespace, not an OOP class}
+
+\code{object} groups related business names inside a domain namespace. For example:
+
+\needspace{30\baselineskip}
+\begin{lstlisting}[language=RWLang]
+object Article {
+    model {
+        id: Int
+        slug: Slug
+        title: String
+        body: String
+        authorUsername: String
+    }
+
+    query fn bySlug(db: Db, slug: Slug)
+        -> Result<Article, DbError> sql {
+        SELECT id, slug, title, body, authorUsername
+        FROM articles
+        WHERE slug = :slug
+    }
+
+    page fn show(ctx: PageContext, db: Db, slug: Slug)
+        -> Result<Html, PageError> {
+        let article = Article.bySlug(db, slug)?;
+        return Ok(html {
+            <article>
+                <h1>{{ article.title }}</h1>
+                @markdown(article.body)
+            </article>
+        });
+    }
+}
+\end{lstlisting}
+
+Usage becomes expressive:
+
+\begin{lstlisting}[language=RWLang]
+let article = Article.bySlug(db, slug)?;
+\end{lstlisting}
+
+Short domain names become natural too, for example \path{Invoice.approve}, \path{Invoice.cancel}, and \path{UserAccount.disable}.
+
+\subsection*{What may an object contain?}
+
+A V1 domain object can group operations around one model. The following is only a structural sketch, not standalone compilable RWLang source:
+
+\begin{lstlisting}
+object Article {
+    model { ... }
+    query fn bySlug(...) ...
+    page fn show(...) ...
+    action fn publish(...) ...
+    component fn Card(...) ...
+    layout fn EditorLayout(...) ...
+}
+\end{lstlisting}
+
+Exactly one model block belongs to an object. An object is not a classic object-oriented class: there is no inheritance, mutable \code{self}, constructor magic, virtual dispatch, or reflection.
+
+\section{Dependencies remain explicit}
+
+The domain namespace does not hide capabilities. This is good:
+
+\needspace{11\baselineskip}
+\begin{lstlisting}[language=RWLang]
+query fn byId(db: Db, id: Int)
+    -> Result<Article, DbError> sql {
+    SELECT id, slug, title, body, authorUsername
+    FROM articles
+    WHERE id = :id
+}
+\end{lstlisting}
+
+An action receives the capabilities it needs just as explicitly. The following is intentionally abbreviated structural code; the concrete typed state-changing query is shown in the CRUD and business-audit sections:
+
+\needspace{12\baselineskip}
+\begin{lstlisting}
+action fn publish(ctx: ActionContext, db: Db, id: Int)
+    -> Result<Redirect, PageError> {
+    let article = Article.byId(db, id)?;
+    authorize article owner authorUsername or role Publisher;
+    // ... state transition inside a transaction ...
+    return Ok(redirect("/admin/articles"));
+}
+\end{lstlisting}
+
+The handler signature still reveals database access. The same principle applies to AppFs, auth, and later network egress: a domain object must not become a hidden service locator.
+
+\section{Why should routes remain top-level?}
+
+Routes deliberately do not disappear entirely into objects:
+
+\begin{lstlisting}[language=RWLang]
+route articleShow GET "/article/:slug<Slug>"
+    cache public ttl 60
+    => article::Article.show;
+
+route articlePublish POST "/admin/article/:id<Int>/publish"
+    auth role Publisher
+    invalidate cache articleShow
+    => article::Article.publish;
+\end{lstlisting}
+
+A route registry or code review can then see in one place:
+
+\begin{itemize}
+  \item URL and HTTP method;
+  \item authentication/authorization requirement;
+  \item cache policy and invalidation;
+  \item rate limit or resource profile;
+  \item the global route name used in logs and audit.
+\end{itemize}
+
+A domain member name may be short and locally meaningful, such as \code{Article.publish} inside its own module; from a separate \code{routes.rw}, use \code{article::Article.publish}. The route name should remain globally descriptive, such as \code{articlePublish}.
+
+\section{Recommended naming convention}
+
+\begin{center}
+\begin{tabularx}{\textwidth}{@{}l l Y@{}}
+\toprule
+\textbf{Element} & \textbf{Form} & \textbf{Example} \\
+\midrule
+object & PascalCase business noun & \code{Article}, \code{Invoice}, \code{UserAccount} \\
+member & camelCase, short inside domain & \code{bySlug}, \code{publish}, \code{approve} \\
+route & globally auditable name & \code{articleShow}, \code{invoiceApprove} \\
+module & feature or technical unit & \code{article}, \code{account}, \code{routes} \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\section{One possible CMS structure}
+
+A medium-size CMS might use:
+
+\needspace{18\baselineskip}
+\begin{lstlisting}
+main.rw
+routes.rw
+article.rw            # Article object + base queries
+article/
+|-- admin.rw          # edit/publish
+`-- components.rw     # Card, lists
+media.rw
+media/
+`-- admin.rw
+account.rw
+migrations/
+public/
+`-- app.css
+\end{lstlisting}
+
+Public and admin HTTP policy remain in the route layer. The article feature keeps the article business model and its operations together.
+
+\section{What not to do}
+
+\subsection*{Do not create one file per declaration}
+
+Overly small modules create more navigation than structure. A fifty-line feature does not need eight files.
+
+\subsection*{Do not build a hidden ``service'' layer}
+
+If an operation uses DB, AppFs, or auth context, keep that visible in the typed signature. One of RWLang's strengths is precisely that capability boundaries are explicit.
+
+\subsection*{Do not duplicate route policy inside handlers}
+
+Route-level auth, cache, rate limit, and resource policy are declarative contracts. Domain-specific object authorization naturally remains in the handler because it depends on the business record.
+
+\subsection*{Do not use free-form String for business state}
+
+If a domain has \code{Draft}, \code{Review}, \code{Published}, or \code{Cancelled} states, use an enum. Project structure helps most when the domain contract is typed too.
+
+\section{Refactoring path: from one file to a larger application}
+
+You do not need to design the final directory hierarchy on day one. A good evolutionary path is:
+
+\begin{enumerate}
+  \item Start with one \code{main.rw} while the application is small.
+  \item Separate model/query/page/action groups when the file becomes hard to navigate.
+  \item If one feature is scattered across many technical files, switch to feature-based modules.
+  \item If too many global business names appear, group them under \code{object} namespaces.
+\end{enumerate}

@@ -1,0 +1,291 @@
+\chapter{A-tól Z-ig: egy minimális webalkalmazás}
+
+Az előző fejezetekben felépítettük az RWLang model- és capability-szemléletét, majd lefordítottuk és telepítettük a rendszert. A teljes szerverkonfigurációt még nem kell ismernünk: ehhez a példához csak a minimális development beállításokat használjuk. Mielőtt a nyelv egyes részeit külön-külön részleteznénk, készítsünk el egy teljes, de szándékosan kicsi alkalmazást. A cél nem egy kész webshop, hanem annak megmutatása, hogyan áll össze egy RWLang webalkalmazás a forrásfájltól az adatbázison és a HTTP kérésen át a production telepítésig.
+
+A példa egy mini terméklista. A kezdőoldal kilistázza az adatbázisban lévő termékeket, és ugyanott egy formmal új terméket is fel lehet venni. Ezzel egyetlen példában megjelenik a model, typed SQL, GET page, POST action, form validation, CSRF, transaction, migration, konfiguráció és a reverse proxy mögötti futtatás.
+
+A repositoryban a kész példa itt található:
+
+\begin{lstlisting}
+examples/a-z-products/
+  main.rw
+  migrations/0001_create_products.sql
+  server.toml.example
+  README.md
+\end{lstlisting}
+
+\section{A könyvtár létrehozása}
+
+Fejlesztéshez legyen egy külön alkalmazáskönyvtárunk:
+
+\begin{lstlisting}
+mkdir -p my-products/migrations
+cd my-products
+\end{lstlisting}
+
+Ebben a példában minden RWLang kód egyetlen \code{main.rw} fájlban marad. Nagyobb alkalmazásnál később \code{mod} fájlokra bontjuk.
+
+\section{Az adatbázis-séma}
+
+A \code{migrations/0001_create_products.sql} tartalma SQLite esetén:
+
+\begin{lstlisting}[language=SQL]
+CREATE TABLE products (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    price INTEGER NOT NULL CHECK (price >= 0)
+);
+\end{lstlisting}
+
+Ez a migration hozza létre azt a táblát, amelyet az alkalmazás typed SQL lekérdezései használnak. Productionban a migráció külön deploy lépés; a server nem módosítja automatikusan a sémát induláskor.
+
+\section{A model és a lekérdezések}
+
+A \code{main.rw} elején a modellközpontú fejezetben megismert módon először a typed üzleti adatalakot írjuk le:
+
+\begin{lstlisting}[language=RWLang]
+model Product {
+    id: Int
+    name: String
+    price: Int
+}
+\end{lstlisting}
+
+A lista lekérdezése:
+
+\begin{lstlisting}[language=RWLang]
+query fn listProducts(db: Db) -> Result<List<Product>, DbError> sql {
+    SELECT id, name, price
+    FROM products
+    ORDER BY id DESC
+    LIMIT 50
+}
+\end{lstlisting}
+
+A \code{List<Product>} azt mondja ki, hogy a query nulla vagy több \code{Product} sort adhat vissza. A \code{SELECT} oszlopai pontosan a model mezőinek nevét és sorrendjét követik.
+
+Az INSERT transaction capabilityt kap:
+
+\begin{lstlisting}[language=RWLang]
+query fn createProduct(
+    tx: Transaction,
+    name: String,
+    price: Int
+) -> Result<Void, DbError> sql {
+    INSERT INTO products(name, price)
+    VALUES (:name, :price)
+}
+\end{lstlisting}
+
+A \code{:name} és \code{:price} bind paraméter. Nem szövegkonkatenációval építünk SQL-t felhasználói inputból.
+
+\section{A GET oldal}
+
+A kezdőoldal lekéri a termékeket, megjelenít egy formot és kilistázza az eredményt:
+
+\begin{lstlisting}[language=RWLang]
+page fn home(ctx: PageContext, db: Db) -> Result<Html, PageError> {
+    let products = listProducts(db)?;
+
+    return Ok(html {
+        <main>
+            <h1>Mini termeklista</h1>
+
+            <form method="post" @action(create)>
+                <input type="hidden" name="_csrf" value="{{ csrfToken }}">
+                <label>
+                    Nev
+                    <input name="name" maxlength="100">
+                </label>
+                <label>
+                    Ar
+                    <input name="price">
+                </label>
+                <button type="submit">Hozzaadas</button>
+            </form>
+
+            <ul>
+                @for product in products {
+                    <li>
+                        #{{ product.id }} - {{ product.name }} - {{ product.price }}
+                    </li>
+                }
+            </ul>
+        </main>
+    });
+}
+\end{lstlisting}
+
+A dinamikus szövegek HTML-escape-elve kerülnek a válaszba. A form action nem kézzel írt URL, hanem az \code{@action(create)} helperből származik. A rejtett \code{_csrf} mező a POST kérés CSRF-védelméhez kell.
+
+\section{A POST action}
+
+A form sikeres beküldése transactionben ír az adatbázisba, majd redirectel vissza a kezdőoldalra:
+
+\begin{lstlisting}[language=RWLang]
+action fn create(
+    ctx: ActionContext,
+    db: Db,
+    name: String,
+    price: Int
+) -> Result<Redirect, PageError> {
+    transaction db {
+        createProduct(tx, name, price)?;
+    }
+    return Ok(redirect("/"));
+}
+\end{lstlisting}
+
+Ez a Post/Redirect/Get minta. Ha a felhasználó frissíti a visszakapott oldalt, a böngésző nem küldi be újra automatikusan az INSERT-et.
+
+\section{A route-ok és a validáció}
+
+A fájl végén két route köti össze a HTTP felületet a handlerekkel:
+
+\begin{lstlisting}[language=RWLang]
+route home GET "/" => home;
+
+route create POST "/products"
+    form name<String> price<Int>
+    validate name length 1 100 price range 0 100000000
+    => create;
+\end{lstlisting}
+
+A POST route már a handler előtt typed inputtá alakítja a két mezőt. Üres vagy 100 karakternél hosszabb név, negatív ár, túl nagy ár vagy nem egész szám esetén a kérés nem jut el érvényes üzleti műveletként az INSERT-ig.
+
+\section{A teljes alkalmazás egy helyen}
+
+Az előző részek együtt alkotják a teljes alkalmazást: \code{model} + két \code{query fn} + \code{page fn} + \code{action fn} + két \code{route}. Nem ismételjük meg még egyszer ugyanazt a hosszú listinget; a repositoryban a pontos, egyfájlos változat közvetlenül megnyitható:
+
+\begin{lstlisting}
+examples/a-z-products/main.rw
+\end{lstlisting}
+
+Ez szándékos könyvszerkesztési döntés is: a következő fejezetekben az egyes nyelvi elemeket már részletesen tárgyaljuk, itt viszont az alkalmazás teljes útvonalán akarunk végigmenni.
+
+\section{SQLite kapcsolat developmenthez}
+
+A database URL-t ne írjuk a forrásba. Készítsünk külön fájlt, abszolút SQLite pathszal:
+
+\begin{lstlisting}
+printf '%s\n' 'sqlite:///tmp/rwlang-a-z-products.db' > dev-db-url
+chmod 600 dev-db-url
+\end{lstlisting}
+
+A fájl itt nem valódi titkot tartalmaz, de ugyanazt a \code{*_file} mintát használjuk, mint productionben a jelszavas database URL esetén.
+
+\section{Forrásellenőrzés és migration}
+
+Ha a release binárisokat már telepítettük például \code{/usr/local/bin} alá:
+
+\begin{lstlisting}
+/usr/local/bin/rwlang-cli check main.rw
+
+/usr/local/bin/rwlang-cli migrate verify \
+  --dir migrations \
+  --db-url-file "$PWD/dev-db-url"
+
+/usr/local/bin/rwlang-cli migrate apply \
+  --dir migrations \
+  --db-url-file "$PWD/dev-db-url"
+\end{lstlisting}
+
+A \code{check} a nyelvi és statikus szerződést ellenőrzi. A migration CLI külön folyamat; ettől még az alkalmazásszerver nem indult el.
+
+\section{Minimális development konfiguráció}
+
+A \code{server.toml} legyen például:
+
+\begin{lstlisting}
+[server]
+app = "/ABS/PATH/my-products/main.rw"
+listen = "127.0.0.1:8080"
+insecure_dev_cookies = true
+
+[database]
+url_file = "/ABS/PATH/my-products/dev-db-url"
+\end{lstlisting}
+
+A két \code{/ABS/PATH} helyére valódi abszolút útvonal kell. Az \code{insecure_dev_cookies} csak loopback developmenthez elfogadható; productionben ne kapcsold be.
+
+Először ellenőrizzük a konfigurációt:
+
+\begin{lstlisting}
+/usr/local/bin/rwlang-server --config "$PWD/server.toml" --check-config
+\end{lstlisting}
+
+Majd indulhat a szerver:
+
+\begin{lstlisting}
+/usr/local/bin/rwlang-server --config "$PWD/server.toml"
+\end{lstlisting}
+
+\section{Az első HTTP kérés}
+
+Másik terminálból:
+
+\begin{lstlisting}
+curl -i http://127.0.0.1:8080/
+\end{lstlisting}
+
+Böngészőben nyisd meg ugyanazt az URL-t. A form beküldése után a folyamat:
+
+\begin{enumerate}
+  \item a böngésző POST-ot küld a \code{/products} route-ra;
+  \item a runtime ellenőrzi a request schema-t, a typed mezőket, a validációt és a CSRF tokent;
+  \item a \code{create} action transactiont nyit;
+  \item a \code{createProduct} bind paraméterekkel INSERT-et futtat;
+  \item siker esetén commit történik;
+  \item a handler redirectet ad a \code{/} URL-re;
+  \item az új GET már az adatbázisból visszaolvasott sort rendereli.
+\end{enumerate}
+
+Ez az egyszerű lánc a későbbi wiki és CMS alkalmazásban is ugyanaz marad; csak több model, query, route, jogosultság és komponens kerül köré.
+
+\section{Mit történik hibás inputnál?}
+
+Próbálj negatív árat vagy nem numerikus értéket megadni. A fontos elv az, hogy a böngésző HTML attribútumai csak felhasználói kényelmet adnak; a valódi szerződést a szerveroldali route schema és validation adja. Az SQL query csak már typed értéket kap.
+
+Érdemes még a következőket kipróbálni:
+
+\begin{itemize}
+  \item küldj hiányzó \code{name} mezőt;
+  \item küldj ismeretlen extra form mezőt;
+  \item módosítsd a migrationt alkalmazás után, majd futtasd újra a \code{migrate verify} parancsot;
+  \item állítsd le az adatbázis elérését, és figyeld meg a readiness illetve a szerverlog viselkedését.
+\end{itemize}
+
+\section{Developmentből production felé}
+
+A példa alkalmazáskódja ugyanaz marad release környezetben is; nem kell újraírni csak azért, mert a szervert már telepített binárissal futtatjuk. A \\ref{ch:telepites}. fejezetben bemutatott build és telepítés után a szerver tipikusan így indul:
+
+\begin{lstlisting}
+/usr/local/bin/rwlang-server \\
+  --config /usr/local/etc/rwlang/server.toml
+\end{lstlisting}
+
+Az alkalmazás entrypointja lehet például \code{/srv/rwlang/current/main.rw}. Apache vagy Nginx esetén a publikus TLS kapcsolatot a proxy terminálja, az RWLang pedig loopbacken hallgat. A teljes Apache/Nginx mintát nem ismételjük meg itt: a telepítési fejezet mutatja be a trust boundaryt, a könyv végi függelék pedig copy/paste-közeli production konfigurációt ad.
+
+\section{Mit tanultunk ebből az egy példából?}
+
+Egy mindössze néhány tucat soros alkalmazásban már láttuk az RWLang teljes alap útvonalát:
+
+\begin{lstlisting}
+HTTP GET
+  -> route
+  -> page
+  -> typed query
+  -> database
+  -> escaped HTML
+
+HTTP POST
+  -> route schema + validation + CSRF
+  -> action
+  -> transaction
+  -> typed SQL bind
+  -> commit
+  -> redirect
+  -> GET
+\end{lstlisting}
+
+A következő fejezetek ezt a képet bontják szét. Amikor egy-egy nyelvi vagy runtime részlet technikainak tűnik, érdemes visszagondolni erre a két kérésre: \emph{hol lép be az adat a rendszerbe, és milyen typed/capability határokon halad át, mielőtt tartós állapot vagy HTTP válasz lesz belőle?}

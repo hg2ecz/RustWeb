@@ -1,0 +1,239 @@
+\chapter{How to think about an RWLang application}
+
+Before installing anything, writing routes, or connecting a database, it is worth settling one design question. In many web stacks the natural starting point is a page, endpoint, or controller: \emph{``we need a \code{/products} URL, so let's write a handler.''} In RWLang it is more useful to ask first: \emph{``what business data exists, what shape does it have, what operations may be performed on it, and within what boundaries?''}
+
+This is not an academic distinction. Several of the language's security and correctness guarantees come from making important data shapes, inputs, queries, and resource access explicit contracts.
+
+\section{Concepts first, pages second}
+
+Consider a simple product list. One possible way to start is:
+
+\begin{quote}
+We need a GET page, a POST endpoint, and an SQL INSERT.
+\end{quote}
+
+In RWLang it is better to think in this order:
+
+\begin{enumerate}
+  \item There is a business concept: \emph{Product}.
+  \item The program knows its data shape: \code{id}, \code{name}, \code{price}.
+  \item There are read and mutation operations: list and create.
+  \item Mutation requires a database transaction.
+  \item The HTTP layer supplies typed input to the operation and attaches policy to it.
+  \item Rendering then turns the typed result into HTML or JSON.
+\end{enumerate}
+
+The direction of thought is therefore approximately:
+
+\begin{lstlisting}
+business concept
+    -> typed data shape
+        -> operations
+            -> capabilities and policies
+                -> HTTP route
+                    -> HTML / JSON
+\end{lstlisting}
+
+You do not need to write this chain down for every application. The order is nevertheless useful because it prevents business rules from being scattered accidentally across routes, templates, and hand-built SQL strings.
+
+\section{What does \code{model} mean?}
+
+The book uses two closely related ideas:
+
+\begin{itemize}
+  \item \textbf{data model or domain model}: the human description of the business concepts and relationships in the application;
+  \item \textbf{\code{model} declaration}: RWLang's concrete data shape known to the compiler.
+\end{itemize}
+
+For example:
+
+\begin{lstlisting}[language=RWLang]
+model Product {
+    id: Int
+    name: String
+    price: Int
+}
+\end{lstlisting}
+
+This tells the compiler that a \code{Product} record has exactly these fields and types. A typed SQL query that returns a product must match this contract, and the same typed value can later be used in HTML or JSON output.
+
+\subsection*{A \code{model} is not an automatic database schema}
+
+The declaration above does not create a \code{products} table. The persistent database schema is created by a migration, for example:
+
+\begin{lstlisting}[language=SQL]
+CREATE TABLE products (
+    id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL,
+    price INTEGER NOT NULL
+);
+\end{lstlisting}
+
+The two layers are related, but they are not the same thing. This separation is intentional:
+
+\begin{itemize}
+  \item the migration owns the lifecycle of the persistent database schema;
+  \item the \code{model} is the application's typed data contract;
+  \item the query states explicitly how database rows become model records.
+\end{itemize}
+
+RWLang therefore does not assume that every model is automatically an ORM entity or a table with the same name.
+
+\subsection*{A \code{model} is not a mutable object}
+
+\code{Product} is not a traditional object-oriented class. It has no hidden \code{save()} method, implicit database connection, or mutable object lifecycle. To change data, the program uses an explicit operation and an explicit resource.
+
+Reading, for example:
+
+\begin{lstlisting}[language=RWLang]
+query fn listProducts(db: Db) -> Result<List<Product>, DbError> sql {
+    SELECT id, name, price
+    FROM products
+    ORDER BY id DESC
+    LIMIT 50
+}
+\end{lstlisting}
+
+Mutation is separate and transaction-bound:
+
+\begin{lstlisting}[language=RWLang]
+query fn createProduct(
+    tx: Transaction,
+    name: String,
+    price: Int
+) -> Result<Void, DbError> sql {
+    INSERT INTO products(name, price)
+    VALUES (:name, :price)
+}
+\end{lstlisting}
+
+The function signatures make it visible which operation only reads and which one receives a transaction that can mutate state.
+
+\section{The model is a contract between layers}
+
+It is useful to think of a \code{model} not merely as a database-oriented structure, but as a typed contract that moves between layers.
+
+\begin{lstlisting}
+Database row
+    |  typed query
+    v
+Product model
+    |-------------------|
+    v                   v
+HTML page            JSON API
+    |
+    v
+user
+\end{lstlisting}
+
+This is why the compiler can catch errors early that a dynamic system might discover only at runtime. If a query promises to return \code{Product}, the selected/returned columns must match the model shape. The goal is not for the program to ``figure out somehow'' what the result means later.
+
+The same idea reappears in object authorization and the JSON API: the system works with known typed records instead of passing arbitrary runtime-shaped objects around.
+
+\section{Business concepts have operations}
+
+A model by itself is rarely interesting. Real applications attach operations to it:
+
+\begin{itemize}
+  \item \code{Product.list};
+  \item \code{Product.byId};
+  \item \code{Product.create};
+  \item in a CMS, for example, \code{Article.publish};
+  \item in a wiki, \code{WikiPage.update}.
+\end{itemize}
+
+In a small program these may be top-level functions. In a larger program the \code{object} domain namespace introduced later groups them around the business concept they belong to.
+
+A useful distinction is:
+
+\begin{center}
+\begin{tabularx}{\textwidth}{@{}lY@{}}
+\toprule
+Element & Question it answers \\
+\midrule
+\code{model} & What shape does \code{Product} data have? \\
+\code{query fn} & How do we read or mutate persistent data? \\
+\code{object} & Which business concept owns these operations? \\
+\code{page}/\code{action} & How does the business operation connect to a web handler? \\
+\code{route} & On what HTTP path, with what input and policy, is it reachable? \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\section{Capability: access is part of the model too}
+
+RWLang makes not only data types explicit but also the resources an operation may access. A function does not obtain the database, filesystem, or current user from an invisible global source.
+
+\begin{lstlisting}[language=RWLang]
+page fn home(ctx: PageContext, db: Db)
+    -> Result<Html, PageError> {
+    let products = listProducts(db)?;
+    return Ok(html {
+        <ul>
+            @for product in products {
+                <li>{{ product.name }}</li>
+            }
+        </ul>
+    });
+}
+\end{lstlisting}
+
+The \code{db: Db} capability is visible in the signature. File handling uses an AppFs capability, mutating database work uses a Transaction, and authenticated operations depend on auth policy and the corresponding typed context.
+
+This leads to a useful design rule:
+
+\begin{quote}
+If an operation needs a sensitive resource, that requirement should be visible in the code and policy.
+\end{quote}
+
+\section{A route is not the business model}
+
+A route matters, but it is the external boundary of the system. For example:
+
+\begin{lstlisting}[language=RWLang]
+route create POST "/products"
+    form name<String> price<Int>
+    validate name length 1 100 price range 0 100000000
+    => create;
+\end{lstlisting}
+
+This states how an HTTP request enters the system: method, path, typed input, validation, and later authentication/cache/rate-limit policy.
+
+The business concept, however, is not the \code{/products} URL. The same \code{Product} can later be used by an HTML page, JSON API, admin interface, or another route.
+
+For larger applications, the following boundary is especially useful:
+
+\begin{lstlisting}
+domain/model     : what is the data and what operations make sense on it?
+HTTP route       : who may call it, how, and under what policy?
+runtime config   : within what infrastructure and resource limits may it run?
+\end{lstlisting}
+
+\section{A simple design method}
+
+When starting a new feature, these five questions are a good default:
+
+\begin{enumerate}
+  \item \textbf{What is the business noun?} -- Product, Article, Invoice, WikiPage.
+  \item \textbf{What typed data is actually needed?} -- do not automatically mirror the full database row.
+  \item \textbf{Which operations read, and which mutate?}
+  \item \textbf{Which capabilities do they need?} -- Db, Transaction, AppFs, auth, and later network egress.
+  \item \textbf{Through what HTTP/policy surface do we expose them?} -- route, input, validation, auth, cache, rate limit.
+\end{enumerate}
+
+For a simple CRUD feature this is a few minutes of thought. For a CMS or line-of-business application it prevents the system from turning, a few months later, into a difficult-to-follow collection of routes, SQL fragments, and implicit authorization conditions.
+
+\section{What to carry into the next chapters}
+
+You do not need to design every application using full ``domain-driven design'' vocabulary, and a three-field record does not need an elaborate object hierarchy. The model-centered approach in this book is simpler:
+
+\begin{itemize}
+  \item name the important business data;
+  \item define its typed shape;
+  \item describe data movement with explicit queries;
+  \item bind mutation to explicit transactions;
+  \item make resource access visible as capabilities;
+  \item treat HTTP and security policy as an external boundary.
+\end{itemize}
+
+In the next chapters we compile, install, and minimally configure the system, then follow the same approach through a working \code{Product} application from end to end. After that, each part of the model is explored in depth.

@@ -1,0 +1,21 @@
+model Article {
+    id: Int
+    title: String
+    body: String
+}
+
+query fn articleById(db: Db, id: Int) -> Result<Article, DbError> sql {
+    SELECT id, title, body FROM articles WHERE id = :id
+}
+
+page fn article(ctx: PageContext, db: Db, id: Int) -> Result<Html, PageError> {
+    let article = articleById(db, id)?;
+    return Ok(html {
+        <article>
+            <h1>{{ article.title }}</h1>
+            <div class="article-body">@markdown(article.body)</div>
+        </article>
+    });
+}
+
+route article GET "/articles/:id<Int>" => article;

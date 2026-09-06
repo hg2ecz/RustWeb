@@ -1,0 +1,123 @@
+\chapter{Adatbevitel: typed SQL, CRUD, formok és PRG}
+
+Egy klasszikus webalkalmazás alapciklusa: adatot olvasunk az adatbázisból, HTML formon typed inputot fogadunk, validálunk, tranzakcióban módosítunk, majd redirect után újra GET-tel olvasunk. Ebben a fejezetben ezt a teljes ciklust egy helyen kezeljük.
+
+\section{Typed SQL és CRUD}
+
+\subsection*{Lekérdezés}
+
+\begin{lstlisting}[language=RWLang]
+query fn articleBySlug(db: Db, slug: Slug)
+    -> Result<Article, DbError> sql {
+    SELECT id, slug, title, body
+    FROM articles
+    WHERE slug = :slug
+}
+\end{lstlisting}
+
+Az SQL szöveg statikus és compiler-owned. Felhasználói érték csak typed bindként, például \code{:slug}, kerülhet bele.
+
+\subsection*{Mutáció transactionben}
+
+\begin{lstlisting}[language=RWLang]
+query fn updateArticle(
+    tx: Transaction,
+    id: Int,
+    title: String,
+    body: String
+) -> Result<Void, DbError> sql {
+    UPDATE articles
+    SET title = :title, body = :body
+    WHERE id = :id
+}
+\end{lstlisting}
+
+Az action:
+
+\begin{lstlisting}[language=RWLang]
+action fn update(
+    ctx: ActionContext,
+    db: Db,
+    id: Int,
+    title: String,
+    body: String
+) -> Result<Redirect, PageError> {
+    transaction db {
+        updateArticle(tx, id, title, body)?;
+    }
+    return Ok(redirect("/admin/articles"));
+}
+\end{lstlisting}
+
+Siker esetén commit, hiba esetén rollback. A \code{Transaction} capability nem escape-elhet a blokkból.
+
+\subsection*{Portable adatbázis-séma}
+
+A V1 SQLite, PostgreSQL és MariaDB irányban is hordozható mintát céloz. \code{Date}, \code{DateTime}, \code{Uuid} és \code{Decimal} portable reprezentációja canonical text lehet.
+
+\subsection*{Migration}
+
+A szerver nem migrál automatikusan startupkor. Ajánlott folyamat:
+
+\begin{lstlisting}
+migrate verify
+migrate apply
+migrate verify
+\end{lstlisting}
+
+A migration credential legyen elkülönítve a normál application runtime credentialtől.
+
+
+\section{Formok, validáció és PRG}
+
+\subsection*{Named form schema}
+
+\begin{lstlisting}[language=RWLang]
+form ArticleForm {
+    title<String>
+    body<String>
+    published<Bool>
+    validate title length 2 200 body length 1 200000
+}
+\end{lstlisting}
+
+Route:
+
+\begin{lstlisting}[language=RWLang]
+route articleCreate POST "/admin/articles"
+    form ArticleForm
+    auth role Editor
+    => create;
+\end{lstlisting}
+
+A handler paramétersorrendje és típusa kövesse a form mezőit.
+
+\subsection*{Hibás beküldés}
+
+Named formnál a hiányzó kötelező mező, a mezőszintű typed decode hiba vagy a deklarált validation hibája 422 \emph{Unprocessable Content}. A runtime a mezőértékeket escape-elve tölti vissza, mezőhibát ad és CSRF tokent illeszt a formba. Ismeretlen vagy duplikált mező viszont 400, mert az request-schema megsértése.
+
+Ez szándékosan más, mint az inline form- vagy JSON-schema: ott a typed decode/validation hibája request-contract sértésként \code{400}. Named formot akkor használj, amikor a hibát ugyanazon felhasználói űrlapon, mezőszintű visszajelzéssel akarod kezelni.
+
+\subsection*{Sikeres POST és PRG}
+
+Sikeres módosítás után redirectet adj vissza; így a böngésző GET-tel tölti be a céloldalt. Ez a Post/Redirect/Get minta megszünteti a véletlen újraküldés tipikus problémáját.
+
+\subsection*{Egyszerű teljes form-action minta}
+
+\begin{lstlisting}[language=RWLang]
+action fn create(
+    ctx: ActionContext,
+    db: Db,
+    title: String,
+    body: String,
+    published: Bool
+) -> Result<Redirect, PageError> {
+    let articleSlug = slug(title);
+    transaction db {
+        insertArticle(tx, articleSlug, title, body)?;
+    }
+    return Ok(redirect("/admin/articles"));
+}
+\end{lstlisting}
+
+A checkbox-szerű hiányzó \code{Bool} mező named form esetén \code{false}.

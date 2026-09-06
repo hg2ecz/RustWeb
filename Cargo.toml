@@ -1,0 +1,15 @@
+[workspace]
+members = [
+  "crates/migrations",
+  "crates/observability",
+  "crates/language-core",
+  "crates/compiler",
+  "crates/runtime",
+  "crates/auth",
+  "crates/data",
+  "crates/integrations",
+  "crates/storage",
+  "crates/server",
+  "crates/cli",
+]
+resolver = "2"

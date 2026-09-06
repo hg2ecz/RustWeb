@@ -1,0 +1,29 @@
+# Example only. Retention must follow the organization's documented legal/risk policy.
+/var/log/rwlang/server.log /var/log/rwlang/access.log {
+    daily
+    rotate 14
+    compress
+    delaycompress
+    missingok
+    notifempty
+    create 0640 rwlang rwlang
+    sharedscripts
+    postrotate
+        systemctl kill -s HUP --kill-who=main rwlang.service >/dev/null 2>&1 || true
+    endscript
+}
+
+# Audit/user-activity usually warrants a longer local retention and central forwarding.
+/var/log/rwlang/audit.log {
+    daily
+    rotate 90
+    compress
+    delaycompress
+    missingok
+    notifempty
+    create 0640 rwlang rwlang
+    sharedscripts
+    postrotate
+        systemctl kill -s HUP --kill-who=main rwlang.service >/dev/null 2>&1 || true
+    endscript
+}

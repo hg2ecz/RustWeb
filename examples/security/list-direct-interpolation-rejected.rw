@@ -1,0 +1,13 @@
+model Product {
+    id: Int
+    name: String
+    price: Int
+}
+query fn listProducts(db: Db) -> Result<List<Product>, DbError> sql {
+    SELECT id, name, price FROM products
+}
+page fn products(ctx: PageContext, db: Db) -> Result<Html, PageError> {
+    let products = listProducts(db)?;
+    return Ok(html {<p>{{ products }}</p>});
+}
+route products GET "/products" => products;

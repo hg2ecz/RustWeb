@@ -1,0 +1,5 @@
+model Article {
+    id: Int
+    slug: Slug
+    title: String
+}

@@ -1,0 +1,16 @@
+page fn dict_demo(ctx: PageContext, key: String) -> Result<Json, PageError> {
+    let headers = dict();
+    set headers["Content-Type"] = "text/plain";
+    set headers["X-App"] = "rwlang";
+
+    if containsKey(headers, key) {
+        let value = headers[key];
+        return Ok(json(value));
+    }
+
+    return Ok(json("missing"));
+}
+
+route dict_demo GET "/dict"
+    query key<String>
+    => dict_demo;

@@ -1,0 +1,122 @@
+\chapter{Data entry: typed SQL, CRUD, forms, and PRG}
+
+A classic web-application cycle is: read data from the database, accept typed input through an HTML form, validate it, mutate state in a transaction, then redirect and read again with GET. This chapter treats that entire cycle as one unit.
+
+\section{Typed SQL and CRUD}
+
+\subsection*{Query}
+
+\begin{lstlisting}[language=RWLang]
+query fn articleBySlug(db: Db, slug: Slug)
+    -> Result<Article, DbError> sql {
+    SELECT id, slug, title, body
+    FROM articles
+    WHERE slug = :slug
+}
+\end{lstlisting}
+
+The SQL text is static and compiler-owned. A user-provided value may enter only as a typed bind, such as \code{:slug}.
+
+\subsection*{Mutation in a transaction}
+
+\begin{lstlisting}[language=RWLang]
+query fn updateArticle(
+    tx: Transaction,
+    id: Int,
+    title: String,
+    body: String
+) -> Result<Void, DbError> sql {
+    UPDATE articles
+    SET title = :title, body = :body
+    WHERE id = :id
+}
+\end{lstlisting}
+
+The action:
+
+\begin{lstlisting}[language=RWLang]
+action fn update(
+    ctx: ActionContext,
+    db: Db,
+    id: Int,
+    title: String,
+    body: String
+) -> Result<Redirect, PageError> {
+    transaction db {
+        updateArticle(tx, id, title, body)?;
+    }
+    return Ok(redirect("/admin/articles"));
+}
+\end{lstlisting}
+
+Success commits; failure rolls back. A \code{Transaction} capability cannot escape the block.
+
+\subsection*{Portable database schema}
+
+V1 aims for patterns that can remain portable across SQLite, PostgreSQL, and MariaDB. Canonical text may be used as the portable representation for \code{Date}, \code{DateTime}, \code{Uuid}, and \code{Decimal}.
+
+\subsection*{Migration}
+
+The server does not migrate automatically at startup. The recommended flow is:
+
+\begin{lstlisting}
+migrate verify
+migrate apply
+migrate verify
+\end{lstlisting}
+
+Keep migration credentials separate from normal application-runtime credentials.
+
+\section{Forms, validation, and PRG}
+
+\subsection*{Named form schema}
+
+\begin{lstlisting}[language=RWLang]
+form ArticleForm {
+    title<String>
+    body<String>
+    published<Bool>
+    validate title length 2 200 body length 1 200000
+}
+\end{lstlisting}
+
+Route:
+
+\begin{lstlisting}[language=RWLang]
+route articleCreate POST "/admin/articles"
+    form ArticleForm
+    auth role Editor
+    => create;
+\end{lstlisting}
+
+The handler parameter order and types should follow the form fields.
+
+\subsection*{Invalid submission}
+
+For a named form, a missing required field, a field-level typed decode failure, or a declared validation failure results in 422 \emph{Unprocessable Content}. The runtime refills field values in escaped form, attaches field errors, and inserts a CSRF token into the form. An unknown or duplicate field is instead a 400 because it violates the request schema.
+
+This intentionally differs from inline form or JSON schemas: there a typed decode/validation failure is a request-contract violation and returns \code{400}. Use a named form when you want to report the error on the same user-facing form with field-level feedback.
+
+\subsection*{Successful POST and PRG}
+
+After a successful mutation, return a redirect so the browser loads the destination with GET. This Post/Redirect/Get pattern eliminates the common accidental resubmission problem.
+
+\subsection*{A complete simple form-action pattern}
+
+\begin{lstlisting}[language=RWLang]
+action fn create(
+    ctx: ActionContext,
+    db: Db,
+    title: String,
+    body: String,
+    published: Bool
+) -> Result<Redirect, PageError> {
+    let articleSlug = slug(title);
+    transaction db {
+        insertArticle(tx, articleSlug, title, body)?;
+    }
+    return Ok(redirect("/admin/articles"));
+}
+\end{lstlisting}
+
+For a named form, a missing checkbox-like \code{Bool} field is interpreted as \code{false}.

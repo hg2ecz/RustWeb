@@ -1,0 +1,64 @@
+\chapter{Fejlesztői referencia és továbblépés}
+
+\section{Melyik témát hol keresd?}
+
+\begin{longtable}{L{0.34\textwidth}L{0.58\textwidth}}
+\toprule
+Téma & Részletes projekt-dokumentáció \\
+\midrule
+Routing, input, validáció & \code{docs/hu/04-routing-input.md} \\
+Adatbázis és SQL & \code{docs/hu/05-adatbazis.md} \\
+CRUD, tranzakció & \code{docs/hu/06-crud.md} \\
+Auth és Redis & \code{docs/hu/07-auth-redis.md} \\
+Route rate limiting & \code{docs/hu/08-rate-limiting.md} \\
+JSON API és CORS & \code{docs/hu/05-json-api-cors.md} \\
+Statikus assetek & \code{docs/hu/06-static-assets.md} \\
+Public page cache & \code{docs/hu/13-cache.md} \\
+HTTPS és proxy security & \code{docs/hu/08-https-security.md} \\
+Upload/AppFs & \code{docs/hu/09-upload-appfs.md} \\
+Migration & \code{docs/hu/10-database-migrations.md} \\
+Formok & \code{docs/hu/12-forms.md} \\
+Komponensek/layoutok & \code{docs/hu/14-components-layouts.md} \\
+Security checklist & \code{docs/hu/15-security-checklist.md} \\
+Dependency security & \code{docs/19-dependency-security.md} \\
+Server config & \code{docs/hu/15-server-config.md} \\
+Markdown & \code{docs/hu/16-markdown-rich-text.md} \\
+Media library & \code{docs/hu/17-media-library.md} \\
+Object authorization & \code{docs/hu/20-object-authorization.md} \\
+Projektstruktúra/modulok & \code{docs/hu/21-modules-slugs-project-layout.md} \\
+Modulok és névterek & \code{docs/21-modules-and-namespaces.md} \\
+Aritmetika, F32 matematika, időmérés & \code{docs/44-math-and-timing.md} \\
+String builtinok & \code{docs/46-string-builtins.md} \\
+Typed string listák & \code{docs/47-string-lists.md} \\
+Typed string dictionaryk & \code{docs/48-string-dictionaries.md} \\
+Reguláris kifejezések & \code{docs/49-regular-expressions.md} \\
+Domain objectek & \code{docs/hu/22-domain-objects.md} \\
+Enumok & \code{docs/hu/23-enums.md} \\
+Optimistic locking & \code{docs/24-optimistic-locking.md} \\
+Business audit & \code{docs/hu/25-business-audit-trail.md} \\
+Domain-validáció & \code{docs/hu/26-domain-validation.md} \\
+Canonical URL & \code{docs/hu/27-canonical-url.md} \\
+PRG/flash/conflict UX & \code{docs/hu/28-prg-flash-conflict.md} \\
+Production deployment & \code{docs/hu/29-production-deployment.md} \\
+Backup/restore/upgrade & \path{docs/hu/30-backup-restore-upgrade-rollback.md} \\
+V1 átadási lista & \path{docs/hu/31-v1-developer-guide.md} \\
+IPv6-ready outbound egress & \code{docs/32-ipv6-egress.md} \\
+CLI és napi workflow & \code{docs/hu/33-cli-workflow.md} \\
+Server TOML referencia & \code{docs/hu/34-server-toml-reference.md} \\
+Production checklist és minták & \code{docs/hu/35-production-checklist.md} \\
+Debian csomag és dpkg telepítés & \code{docs/hu/36-debian-csomag.md} \\
+\bottomrule
+\end{longtable}
+
+\section{Napi fejlesztési ellenőrzőlista}
+
+\begin{enumerate}
+  \item Typed route/input és zárt választásnál enum.
+  \item User input nem kerül raw SQL-be vagy raw HTML-be.
+  \item Mutáció transactionben.
+  \item Sikeres POST után PRG redirect.
+  \item User/session dependent oldal nem public cache.
+  \item Secret csak \code{*_file} formában.
+  \item Release előtt \code{./verify.sh}, config check és migration verify.
+  \item Production után live/ready, log, metric és audit review.
+\end{enumerate}

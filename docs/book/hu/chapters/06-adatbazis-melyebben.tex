@@ -1,0 +1,393 @@
+\chapter{Adatbázis mélyebben: tranzakció, migráció és konkurencia}
+
+Az előző fejezetben már láttuk a typed SQL és a CRUD alapmintáját. Egy valódi wiki, CMS vagy ügyviteli alkalmazás azonban hamar eljut oda, ahol már nem az a kérdés, hogy \emph{hogyan futtatunk egy SELECT-et}, hanem az, hogy hogyan őrizzük meg az adat integritását több kérés, több szerverpéldány és több release között.
+
+Ez a fejezet erre ad fejlesztői modellt. A cél: az adatbázist ne rejtett globális szolgáltatásként, hanem explicit capabilityként, a sémát pedig verziózott release-komponensként kezeld.
+
+\section{Három külön felelősség}
+
+RWLang alkalmazásnál érdemes három réteget szétválasztani:
+
+\begin{description}
+\item[alkalmazáskód] statikus typed SQL queryket deklarál, bindokat ad át és tranzakciót kér;
+\item[runtime] kapcsolatot pooloz, bindol, timeoutot és eredménykorlátot alkalmaz, majd a visszakapott sorokat a deklarált típushoz ellenőrzi;
+\item[operator] DB credentialt, TLS-t, adatbázis-kapacitást, backupot és migrációs folyamatot birtokol.
+\end{description}
+
+Az alkalmazás tehát nem nyit tetszőleges socketet az adatbázishoz és nem épít saját connection poolt. A \code{Db} és a \code{Transaction} capability az a felület, amelyen keresztül adatbázis-művelet történhet.
+
+A V1 data layer secure defaultjai jelenleg többek között 32 maximális poolkapcsolatot, 5 másodperces connection-acquire timeoutot, 10 másodperces query timeoutot, 10\,000 soros és 16 MiB-os eredménykorlátot használnak. Ezeket ne alkalmazáslogikaként kezeld: a helyes query ettől függetlenül legyen rövid, paginált és indexelhető.
+
+Több szerverpéldánynál a DB connection budgetet az operatornak összesítve kell méreteznie:
+
+\begin{lstlisting}
+ossz DB kapcsolat ~= RWLang instance-ok szama
+                    * instance-onkenti pool
+                    + admin/maintenance tartalek
+\end{lstlisting}
+
+\section{A query visszatérési típusa szerződés}
+
+Egy lekérdezés cardinalityje már a függvény típusában látszik:
+
+\begin{lstlisting}[language=RWLang]
+query fn articleById(db: Db, id: Int)
+    -> Result<Article, DbError> sql {
+    SELECT id, slug, title, body, version
+    FROM articles
+    WHERE id = :id
+}
+
+query fn articleBySlug(db: Db, slug: Slug)
+    -> Result<Article?, DbError> sql {
+    SELECT id, slug, title, body, version
+    FROM articles
+    WHERE slug = :slug
+}
+
+query fn recentArticles(db: Db, limit: Int, offset: Int)
+    -> Result<List<Article>, DbError> sql {
+    SELECT id, slug, title, body, version
+    FROM articles
+    ORDER BY id DESC
+    LIMIT :limit OFFSET :offset
+}
+\end{lstlisting}
+
+A három forma jelentése:
+
+\begin{center}
+\begin{tabularx}{\textwidth}{@{}L{0.23\textwidth}YY@{}}
+\toprule
+Típus & Elvárt eredmény & Cardinality sérülése \\
+\midrule
+\code{Article} & pontosan egy sor & 0 sor: \code{404}; több sor: DB-hiba \\
+\code{Article?} & nulla vagy egy sor & több sor: DB-hiba \\
+\code{List<Article>} & nulla vagy több sor & a runtime eredménylimitei érvényesek \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+Ez több egyszerű kényelmi jelölésnél: a lekérdezés eredményének alakja része a program futás közben is kikényszerített szerződésének. Az \code{Article?} nem azt jelenti, hogy ``vedd az első sort, ha van'': ha a query kettő vagy több sort ad, az invariáns sérült, ezért a runtime fail-closed DB-hibát ad. Ugyanezért egy \code{Article} query nulla sor esetén \code{404 Not Found}, több sor esetén pedig nem választ önkényesen rekordot.
+
+\subsection*{A row shape legyen explicit}
+
+A \code{SELECT} mezőinek neve és sorrendje egyezzen a modellel. Ne használj \code{SELECT *}-ot alkalmazásqueryben.
+
+\begin{lstlisting}[language=RWLang]
+model Article {
+    id: Int
+    slug: Slug
+    title: String
+    body: String
+    version: Int
+}
+
+// jo: ugyanaz az ot mezo, ugyanebben a sorrendben
+SELECT id, slug, title, body, version
+FROM articles
+\end{lstlisting}
+
+Az explicit projection két okból fontos. Először is a fordító ellenőrizni tudja a modell és a query kapcsolatát. Másodszor egy későbbi schema-bővítés nem változtatja meg észrevétlenül egy régi query result shape-jét.
+
+\section{Bindolj, ne SQL-t építs}
+
+A kliensből származó érték typed bindként kerüljön az SQL-be:
+
+\begin{lstlisting}[language=RWLang]
+query fn findByEmail(db: Db, email: String)
+    -> Result<User?, DbError> sql {
+    SELECT id, email, display_name
+    FROM users
+    WHERE email = :email
+}
+\end{lstlisting}
+
+A \code{:email} nem string-helyettesítés. A runtime backend-specifikus placeholderre fordítja és paraméterként bindolja.
+
+Amit ne próbálj meg:
+
+\begin{lstlisting}
+// rossz gondolkodasmod:
+// "SELECT ... ORDER BY " + userOrder
+// "WHERE " + userFilter
+\end{lstlisting}
+
+Oszlopnév, \code{ORDER BY} irány, SQL operator vagy teljes WHERE-fragment ne érkezzen user inputból. Ha több rendezést akarsz támogatni, az alkalmazáskódban válassz néhány statikus query közül.
+
+\section{Olvasás és mutáció authority-határa}
+
+Olvasó query \code{Db} capabilityt kap. Adatmódosító query \code{Transaction}-t:
+
+\begin{lstlisting}[language=RWLang]
+query fn renameArticle(
+    tx: Transaction,
+    id: Int,
+    title: String
+) -> Result<Void, DbError> sql {
+    UPDATE articles
+    SET title = :title
+    WHERE id = :id
+}
+\end{lstlisting}
+
+A hívó action explicit tranzakciós blokkot nyit:
+
+\begin{lstlisting}[language=RWLang]
+action fn rename(
+    ctx: ActionContext,
+    db: Db,
+    id: Int,
+    title: String
+) -> Result<Redirect, PageError> {
+    transaction db {
+        renameArticle(tx, id, title)?;
+    }
+    return Ok(redirect("/admin/articles"));
+}
+\end{lstlisting}
+
+A tranzakció sikeres blokk után commitol; hiba esetén rollbackel. A \code{Transaction} nem escape-elhet a blokkból, ezért nem lehet véletlenül egy lezárt tranzakció handle-jét később felhasználni.
+
+\subsection*{Egy üzleti művelet legyen egy tranzakció}
+
+Több, összetartozó módosítást ne külön actionök vagy külön tranzakciók végezzenek:
+
+\begin{lstlisting}[language=RWLang]
+transaction db {
+    Article.publishChanged(tx, id, version)?;
+    audit Article id action publish;
+        from article.status to ArticleStatus.Published
+}
+\end{lstlisting}
+
+Ebben a mintában a cikk publikálása és a business audit trail együtt commitol. Ha az audit nem írható, a publikálás is rollbackel. Így nem jön létre olyan állapot, amelyben az üzleti módosítás megtörtént, de a hozzá kötelező audit rekord hiányzik.
+
+\section{Optimistic locking: ne írd felül más munkáját}
+
+CMS-ben és wikiben gyakori helyzet, hogy két szerkesztő ugyanazt a rekordot nyitja meg. A klasszikus
+
+\begin{lstlisting}
+UPDATE articles SET title = :title WHERE id = :id
+\end{lstlisting}
+
+az utoljára mentő felhasználót teszi nyertessé, és csendben elveszhet az első szerkesztő módosítása.
+
+Ehhez használható verziómező és \code{Changed}:
+
+\begin{lstlisting}[language=RWLang]
+model Article {
+    id: Int
+    title: String
+    version: Int
+}
+
+query fn updateArticle(
+    tx: Transaction,
+    id: Int,
+    title: String,
+    version: Int
+) -> Result<Changed, DbError> sql {
+    UPDATE articles
+    SET title = :title,
+        version = version + 1
+    WHERE id = :id AND version = :version
+}
+\end{lstlisting}
+
+Az edit form elküldi azt a \code{version} értéket, amelyet a felhasználó az oldal megnyitásakor látott. A \code{Changed} szerződése szigorú: a mutációnak \textbf{pontosan egy sort} kell módosítania. Egy módosított sor siker; nulla módosított sor \code{409 Conflict}; kettő vagy több módosított sor DB-hiba, mert a query a saját invariánsát sértette meg. \code{Changed} csak mutáló query visszatérési típusa lehet, és V1-ben nem használható \code{RETURNING} klauzussal.
+
+Optimistic lockingnál, ha időközben más már mentett, a \code{WHERE id = :id AND version = :version} nulla sort talál, ezért a kérés konfliktusra fut. A helyes UX ilyenkor nem az automatikus újrapróbálás. Mutasd meg, hogy az adat közben változott, töltsd be az új verziót, és a felhasználó döntsön az összeolvasztásról.
+
+Optimistic locking tipikus helyei:
+
+\begin{itemize}
+\item wiki oldalak és CMS cikkek;
+\item ticket vagy ügyfélrekord;
+\item workflow-állapotot tartalmazó üzleti objektum;
+\item ritkán módosított admin konfiguráció.
+\end{itemize}
+
+Append-only eseményekhez vagy adatbázis-oldali atomi számlálókhoz általában nincs rá szükség.
+
+\section{Indexet a hozzáférési mintához tervezz}
+
+A jó index nem attól jó, hogy sok van belőle, hanem attól, hogy a tényleges queryt szolgálja ki.
+
+Egy CMS-ben például természetes hozzáférési minták lehetnek:
+
+\begin{lstlisting}[language=SQL]
+CREATE UNIQUE INDEX articles_slug_uq
+    ON articles(slug);
+
+CREATE INDEX articles_status_id_idx
+    ON articles(status, id);
+\end{lstlisting}
+
+Ha a publikus oldal slug alapján kér le egy cikket, a slug legyen unique/indexelt. Ha az admin lista státusz szerint szűr és azon belül azonosító szerint lapoz, ehhez illeszkedő összetett index kellhet.
+
+Néhány szabály:
+
+\begin{itemize}
+\item minden nagy listát paginálj;
+\item a rendszeresen használt lookup mező legyen indexelhető;
+\item az indexek sorrendje kövesse a WHERE/ORDER BY mintát;
+\item ne indexelj automatikusan minden oszlopot: az index írási és storage költség;
+\item teljesítményproblémát valós backend \code{EXPLAIN} tervével vizsgálj.
+\end{itemize}
+
+Az RWLang typed SQL-ja a query alakját védi; az adatbázis optimalizálóját nem helyettesíti.
+
+\section{Migration: a séma a release része}
+
+Productionban a server nem futtat automatikus migrációt startupkor. Ez szándékos: egy schema-változás külön operátori művelet, külön credentialdel és külön hibahatárral.
+
+Tipikus könyvtár:
+
+\begin{lstlisting}
+migrations/
+  0001_create_articles.sql
+  0002_articles_slug_index.sql
+  0003_articles_add_version.sql
+\end{lstlisting}
+
+A fájlnév alakja:
+
+\begin{lstlisting}
+NNNN_name.sql
+\end{lstlisting}
+
+Már alkalmazott migration fájlt ne módosíts. A CLI SHA-256 checksumot tárol, és eltérésnél megáll.
+
+A production parancsok a telepített CLI-val:
+
+\begin{lstlisting}
+/usr/local/bin/rwlang-cli migrate status \
+  --dir /srv/myapp/current/migrations \
+  --db-url-file /run/secrets/migration-db-url
+
+/usr/local/bin/rwlang-cli migrate verify \
+  --dir /srv/myapp/current/migrations \
+  --db-url-file /run/secrets/migration-db-url
+
+/usr/local/bin/rwlang-cli migrate apply \
+  --dir /srv/myapp/current/migrations \
+  --db-url-file /run/secrets/migration-db-url \
+  --lock-timeout-secs 30
+\end{lstlisting}
+
+A migration credential magasabb jogosultságú lehet, mint az alkalmazás DML credentialje. Emiatt a server process ne kapja meg.
+
+\subsection*{Mit garantál a migration CLI?}
+
+\begin{itemize}
+\item ellenőrzi az alkalmazott fájl nevét és checksumát;
+\item nem enged észrevétlenül régi verziószám alá új migrationt beszúrni;
+\item adatbázis-szintű migration lockot kér;
+\item a state csak sikeres alkalmazás után halad tovább.
+\end{itemize}
+
+Backend-specifikus különbség viszont marad. PostgreSQL migrationonként tranzakciót használ; SQLite \code{BEGIN IMMEDIATE} writer lockkal a batch-et tranzakcióban tartja; MariaDB DDL nem minden esetben tranzakcionális, ezért részleges DDL-hibánál operator repair is szükséges lehet.
+
+\section{Expand/contract: tartsd meg a rollback lehetőségét}
+
+Egy gyors application rollback csak akkor egyszerű, ha az új schema a régi programmal is kompatibilis.
+
+Ezért nagyobb változtatásnál használj expand/contract mintát:
+
+\begin{enumerate}
+\item \textbf{expand}: adj hozzá új nullable/defaultolt mezőt vagy új táblát úgy, hogy a régi app még működjön;
+\item deployold az új alkalmazást;
+\item szükség esetén végezz kontrollált backfillt;
+\item csak későbbi release-ben \textbf{contract}: töröld a régi mezőt vagy constraintet, amikor a rollback window lezárult.
+\end{enumerate}
+
+Az azonnali rename/drop, új kötelező mező vagy inkompatibilis adattípus-váltás könnyen forward-only release-t eredményez. Ezt release review során explicit döntésként kezeld.
+
+\section{Adatbázis-hiba kezelése}
+
+A \code{DbError} technikai hiba. A végfelhasználónak ne jeleníts meg driver message-et, SQL szöveget, hostnevet vagy connection stringet.
+
+Alkalmazási szinten különítsd el legalább ezeket a helyzeteket:
+
+\begin{description}
+\item[nincs ilyen rekord] normál domain-állapot, opcionális queryvel kezelhető;
+\item[409 konkurens módosítás] optimistic-locking konfliktus, a felhasználó újratöltéssel/összevetéssel oldja fel;
+\item[adatbázis nem elérhető] infrastruktúrahiba; readiness is jelezheti, a logban request ID-val kereshető;
+\item[constraint/domain hiba] inkább validációval előzd meg, de az adatbázis constraint maradjon utolsó integritási védővonal.
+\end{description}
+
+Ne építs automatikus, korlátlan retry loopot egy teljes mutáló action köré. Egy megismételt kérésnek mellékhatása lehet, és a tranzakciós konfliktus sem feltétlen átmeneti hiba.
+
+\section{SQLite, PostgreSQL vagy MariaDB?}
+
+RWLang V1 mindhárom backendet támogatja, de ez nem jelenti azt, hogy minden SQL dialektusfeature hordozható.
+
+\begin{description}
+\item[SQLite] kiváló egyszerű vagy egygépes telepítéshez; az application DB fájl backupját SQLite-aware módszerrel készítsd, ne élő fájl egyszerű másolásával.
+\item[PostgreSQL] erős alap többpéldányos és nagyobb production rendszerekhez; TLS-t használj remote kapcsolathoz.
+\item[MariaDB] szintén támogatott, de különösen migrációknál számolj a DDL tranzakciós különbségeivel.
+\end{description}
+
+Portable alkalmazásnál a queryk közös SQL-részhalmazra épüljenek. Backend-specifikus funkciót csak tudatosan használj, és akkor a projekt dokumentációjában rögzítsd, hogy az alkalmazás mely backendhez kötött.
+
+\section{Backup szempont adatbázis-fejlesztőként}
+
+Adatbázis-fejlesztőként itt egy dolgot kell rögzíteni: a migráció és a backup két külön életciklus. A migration leírja, hogyan változik a séma; a backup/restore azt bizonyítja, hogy a tartós állapot visszaállítható. PostgreSQLnél, MariaDB-nél és SQLite-nál a backend saját konzisztens mentési eszközét használd, és ne tekints egy egyszerű fájlmásolást automatikusan érvényes backupnak.
+
+A teljes alkalmazásállapot -- adatbázis, AppFs, local-auth store, recovery manifest, RPO/RTO és restore drill -- a \\ref{ch:recovery}. fejezet témája. Itt azért utalunk rá, mert egy schema-változtatás tervezésekor már tudni kell, hogy rollbackhez vagy restore-hoz milyen állapot áll rendelkezésre.
+
+\section{Egy CMS adatbázis-rétegének mintája}
+
+Egy kisebb CMS-nél jó kiindulás:
+
+\begin{lstlisting}
+Article
+  id
+  slug          UNIQUE
+  title
+  body
+  status
+  hero_image
+  version
+  created_at
+  updated_at
+
+migrations/
+  0001_create_articles.sql
+  0002_article_indexes.sql
+  0003_add_version.sql
+\end{lstlisting}
+
+Az alkalmazási minták:
+
+\begin{itemize}
+\item publikus olvasás: \code{Article?} slug alapján;
+\item admin lista: paginált \code{List<Article>};
+\item szerkesztés: \code{Changed} + \code{version};
+\item publish/archive: egy transactionben üzleti módosítás + audit;
+\item schema-változás: külön CLI migration;
+\item deploy előtt: migration verify + backup/restore readiness;
+\item deploy után: readiness, log, metrics és smoke test.
+\end{itemize}
+
+Ezzel a modellel a database layer nem különálló SQL-gyűjtemény lesz, hanem a webalkalmazás típus-, konkurencia-, release- és recovery-szerződésének része.
+
+\section{Fejezet végi ellenőrzőlista}
+
+Mielőtt egy adatbázisos funkciót késznek tekintesz, ellenőrizd:
+
+\begin{itemize}
+\item minden user érték typed bindként kerül SQL-be;
+\item nincs \code{SELECT *}; a projection egyezik a modellel;
+\item nagy lista paginált;
+\item a fontos lookup és rendezési minta mögött van megfelelő index;
+\item minden mutáció \code{Transaction} capabilityvel fut;
+\item több összetartozó módosítás egy tranzakcióban van;
+\item ember által párhuzamosan szerkeszthető rekordnál van optimistic locking;
+\item már alkalmazott migration immutable;
+\item a migration credential nincs az application servernél;
+\item destructive schema-változásnál ismert a rollback következménye;
+\item a DB hiba nem szivárogtat SQL-t vagy credentialt a kliensnek;
+\item a backuphoz tartozik rendszeresen bizonyított restore.
+\end{itemize}

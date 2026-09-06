@@ -1,0 +1,22 @@
+[package]
+name = "runtime"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+chrono = { version = "0.4", default-features = false, features = ["std", "clock"] }
+uuid = { version = "1", features = ["std", "v4"] }
+rust_decimal = { version = "1", default-features = false, features = ["std"] }
+
+language-core = { path = "../language-core" }
+data = { path = "../data" }
+futures-util = "0.3"
+tokio = { version = "1", features = ["sync"] }
+serde_json = "1"
+regex = "1"
+url = "2"
+
+[dev-dependencies]
+compiler = { path = "../compiler" }
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+

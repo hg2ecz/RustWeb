@@ -1,0 +1,16 @@
+page fn string_list_demo(ctx: PageContext, text: String) -> Result<Html, PageError> {
+    let parts = split(text, ",");
+    let count = len(parts);
+    let first = parts[0];
+
+    return Ok(html {
+        <h1>Typed String List</h1>
+        <p>Input: {{ text }}</p>
+        <p>Items: {{ count }}</p>
+        <p>First item: {{ first }}</p>
+    });
+}
+
+route string_list_demo GET "/string-list"
+    query text<String>
+    => string_list_demo;

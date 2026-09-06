@@ -1,0 +1,1 @@
+mariadb://rwlang:SECRET@db.example/rwlang?ssl-mode=verify_identity

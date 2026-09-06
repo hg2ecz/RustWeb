@@ -1,0 +1,281 @@
+\chapter{Appendix and production checklist}
+
+This chapter introduces no new language elements. It is a compact operations aid assembled from the preceding chapters: directory layout, reverse-proxy examples, a systemd unit, logrotate configuration, a pre-release gate, and a troubleshooting map. Treat the examples as starting points; adapt domains, certificates, permissions, and resource limits to your environment.
+
+\section{Recommended production directory layout}
+
+RWLang is locally installed software, so this book consistently uses the \code{/usr/local} hierarchy for programs and configuration. Application state and logs live separately.
+
+\begin{lstlisting}
+/usr/local/bin/
+  rwlang-server
+  rwlang-cli
+
+/usr/local/etc/rwlang/
+  server.toml
+  rate-limits.toml
+  resource-profiles.toml
+
+/run/secrets/rwlang/
+  database-url
+  redis-url
+  local-auth-database-url
+
+/srv/rwlang/
+  current/                 # current application release
+  releases/
+    2026-09-04.1/
+  data/                    # AppFs / durable application data
+
+/var/log/rwlang/
+  server.log
+  access.log
+  audit.log
+\end{lstlisting}
+
+Keep release contents read-only where possible. The server should have write permission only where durable state or logs actually need to be written. Secret files must not live inside the application release directory or source control.
+
+\section{Complete minimal Apache reverse-proxy example}
+
+This example assumes one Apache reverse proxy. Apache owns public TLS; RWLang listens only on loopback.
+
+The corresponding minimum RWLang configuration is:
+
+\begin{lstlisting}
+[server]
+listen = "127.0.0.1:8080"
+insecure_dev_cookies = false
+
+[tls]
+public_host = "www.example.com"
+
+[web]
+trusted_proxy_cidrs = ["127.0.0.1/32", "::1/128"]
+\end{lstlisting}
+
+In reverse-proxy production mode the certificate and key stay on the proxy, but trusted \code{public_host} is still required for Host/Origin pinning. The proxy must produce authoritative \code{X-Forwarded-Proto: https} metadata.
+
+\begin{lstlisting}
+<VirtualHost *:80>
+    ServerName www.example.com
+    Redirect permanent / https://www.example.com/
+</VirtualHost>
+
+<VirtualHost *:443>
+    ServerName www.example.com
+
+    SSLEngine on
+    SSLCertificateFile \
+      /etc/letsencrypt/live/www.example.com/fullchain.pem
+    SSLCertificateKeyFile \
+      /etc/letsencrypt/live/www.example.com/privkey.pem
+
+    ProxyPreserveHost On
+    ProxyPass        / http://127.0.0.1:8080/
+    ProxyPassReverse / http://127.0.0.1:8080/
+
+    RequestHeader set X-Forwarded-Proto "https"
+</VirtualHost>
+\end{lstlisting}
+
+Typical Apache modules are \code{proxy}, \code{proxy_http}, \code{headers}, and \code{ssl}. The RWLang trusted-proxy list should contain only the real proxy. For a loopback proxy this normally means \code{127.0.0.1/32} and, if needed, \code{::1/128}. An Internet-sized trusted-proxy range is a configuration error.
+
+\section{Complete minimal Nginx reverse-proxy example}
+
+\begin{lstlisting}
+server {
+    listen 80;
+    server_name www.example.com;
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl;
+    server_name www.example.com;
+
+    ssl_certificate
+      /etc/letsencrypt/live/www.example.com/fullchain.pem;
+    ssl_certificate_key
+      /etc/letsencrypt/live/www.example.com/privkey.pem;
+
+    location / {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Forwarded-For $remote_addr;
+    }
+}
+\end{lstlisting}
+
+Here Nginx directly sees the client, so it creates the forwarded client address itself. Do not pass through arbitrary Internet-supplied \code{X-Forwarded-*} values as authority. With multiple proxies, design the trust chain explicitly.
+
+\section{systemd service example}
+
+The repository contains the complete example at \code{examples/systemd/rwlang.service}. Its essential shape is:
+
+\begin{lstlisting}
+[Unit]
+Description=RWLang application
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=rwlang
+Group=rwlang
+WorkingDirectory=/srv/rwlang/current
+ExecStartPre=/usr/local/bin/rwlang-server \
+  --config /usr/local/etc/rwlang/server.toml \
+  --check-config
+ExecStart=/usr/local/bin/rwlang-server \
+  --config /usr/local/etc/rwlang/server.toml
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=on-failure
+RestartSec=2s
+TimeoutStopSec=45s
+
+MemoryMax=1G
+MemorySwapMax=0
+CPUQuota=200%
+TasksMax=256
+LimitNOFILE=8192
+# For direct TLS on 80/443 add only:
+# AmbientCapabilities=CAP_NET_BIND_SERVICE
+# CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+ReadWritePaths=/srv/rwlang/data /var/log/rwlang
+
+[Install]
+WantedBy=multi-user.target
+\end{lstlisting}
+
+Systemd hard limits and RWLang request/runtime resource policy are complementary defense layers. In the systemd baseline, systemd itself is the process cgroup authority, so do not also enable RWLang's \code{[cgroup]} writer mode. For direct binds to 80/443 grant only \code{CAP_NET_BIND_SERVICE}; behind a reverse proxy on a high loopback port, omit it. \code{TimeoutStopSec} should exceed the configured graceful-shutdown window. In behind-proxy mode SIGHUP can transactionally reload domain/application hosting state, while process-level configuration changes still require a controlled restart; application source alone is normally activated by the automatic source-reload supervisor.
+
+\section{logrotate example}
+
+\begin{lstlisting}
+/var/log/rwlang/server.log /var/log/rwlang/access.log {
+    daily
+    rotate 14
+    compress
+    delaycompress
+    missingok
+    notifempty
+    create 0640 rwlang rwlang
+    sharedscripts
+    postrotate
+        systemctl kill -s HUP --kill-who=main \
+          rwlang.service >/dev/null 2>&1 || true
+    endscript
+}
+
+/var/log/rwlang/audit.log {
+    daily
+    rotate 90
+    compress
+    delaycompress
+    missingok
+    notifempty
+    create 0640 rwlang rwlang
+    sharedscripts
+    postrotate
+        systemctl kill -s HUP --kill-who=main \
+          rwlang.service >/dev/null 2>&1 || true
+    endscript
+}
+\end{lstlisting}
+
+Retention is a legal and risk decision. Audit logs usually deserve longer retention and central forwarding; the numbers above are examples, not universal requirements.
+
+\section{Pre-release production gate}
+
+The following list is intentionally short and executable. The earlier chapters provide the rationale.
+
+\begin{enumerate}
+  \item \textbf{Source and build:} identify the release commit; pin \code{Cargo.lock}; build the platform with \code{cargo build --locked --release -p rwlang-server -p rwlang-cli}; pass \code{rwlang-cli check} on application source.
+  \item \textbf{Migration:} run \code{migrate status} and \code{migrate verify} before production; apply approved schema changes explicitly; verify again afterward.
+  \item \textbf{Configuration:} pass config-check on the real production \code{server.toml}; review the redacted effective configuration.
+  \item \textbf{Secrets:} keep DB/Redis/auth secret files out of the repository, with narrow filesystem permissions, and out of logs and release records.
+  \item \textbf{HTTP edge:} verify domain, TLS, and Host handling; the trusted-proxy list contains only real proxies.
+  \item \textbf{Auth:} production cookie policy is active; local-auth/LDAP configuration is verified; admin/MFA recovery is documented.
+  \item \textbf{CSRF and CORS:} state-changing browser requests are CSRF protected; CORS allowlists are explicit; credentialed CORS has no wildcard origin.
+  \item \textbf{Database:} the application DB user is least privilege; pool/budget matches backend capacity; important query indexes are understood.
+  \item \textbf{Storage/upload:} AppFs confinement is correct; byte/pixel limits are active; the application cannot write release content.
+  \item \textbf{Redis/cache/rate limit:} multi-instance shared security/runtime state lives in Redis; Redis outage behavior is known and tested.
+  \item \textbf{Egress:} only named outbound targets are allowed; host/CIDR/port/TLS/timeout/size policy is explicit; secrets do not appear in URLs or logs.
+  \item \textbf{Resources:} request/runtime limits and process hard limits are consistent; cgroup authority is either systemd or a separately delegated RWLang cgroup, not both.
+  \item \textbf{Observability:} server/access/audit logs are writable; request IDs work; metrics and readiness are reachable from the correct management network; minimum alerts are defined.
+  \item \textbf{Backup/recovery:} recent verified DB + AppFs + identity backups exist; a recovery manifest exists; restore drills are real rather than theoretical.
+  \item \textbf{Deploy/rollback:} release artifact and checksum are known; the previous release can be restored; schema changes have an explicit app-rollback versus full-restore decision.
+  \item \textbf{Post-start evidence:} liveness, readiness, and at least one business smoke request succeed; logs show no startup fallback or unexpected policy failure.
+\end{enumerate}
+
+\section{Quick troubleshooting map}
+
+\begin{longtable}{L{0.23\textwidth}L{0.30\textwidth}L{0.38\textwidth}}
+\toprule
+Symptom & First place to look & Next question \\
+\midrule
+\endhead
+Service does not start & config-check, server log & Config/secret/path/policy or dependency readiness? \\
+\addlinespace
+502/504 at proxy & proxy log, RWLang listener/readiness & Is the process running, loopback port correct, readiness green? \\
+\addlinespace
+400/415 & access log + route body contract & Malformed input, wrong schema, or wrong Content-Type? \\
+\addlinespace
+401 & auth/session audit event & No session, expired, invalidated, or MFA missing? \\
+\addlinespace
+403 & route/object authorization, CSRF/CORS & Who is the actor, and which policy denied access? \\
+\addlinespace
+404/405/406 & route map + request method/Accept & Does the route exist, and is the method/representation acceptable? \\
+\addlinespace
+409 & optimistic-lock/business state & Did the record change, or did a \code{Changed} query modify zero rows? \\
+\addlinespace
+413/431 & request hard limits & Did body/upload or headers exceed configured limits? \\
+\addlinespace
+421/426 & Host/proxy/TLS policy & Are public host, trusted proxy, and effective HTTPS correct? \\
+\addlinespace
+422 & named-form rerender & Which field failed typed decode or validation? \\
+\addlinespace
+429 & rate-limit metrics/audit & Which limiter and identity/IP bucket was exhausted? \\
+\addlinespace
+500 & server log by request ID & Was there a real internal invariant failure? \\
+\addlinespace
+503 & readiness + server log & Did DB/Redis/auth/storage or a request resource limit make service temporarily unavailable? \\
+\addlinespace
+DB error & DB readiness + query context & Connection, timeout, schema drift, lock, or constraint? \\
+\addlinespace
+File/media error & AppFs path/permissions/limits & Is the storage root writable, with confinement and byte/pixel limits correct? \\
+\addlinespace
+External API error & egress policy + adapter log & DNS, CIDR, port, TLS, timeout, or response-size denial? \\
+\addlinespace
+Logs disappear after rotation & \code{rw_log_fallback_total}, service log & Did SIGHUP arrive, and are new-file permissions correct? \\
+\bottomrule
+\end{longtable}
+
+\section{What to carry into production}
+
+The most important practical rules from this book are:
+
+\begin{itemize}
+  \item define typed data and explicit policy before exposing an HTTP surface;
+  \item keep stable production policy in \code{server.toml}, not a long service flag list;
+  \item load secret values from files, not the command line or repository;
+  \item treat schema change as an explicit operator step, not a server-startup side effect;
+  \item accept proxy headers as authority only from trusted proxies;
+  \item treat Redis as runtime/security state, not business source of truth;
+  \item remember that DB and AppFs may jointly form one recovery state;
+  \item do not consider a backup proven until an isolated restore drill succeeds;
+  \item check before release, then measure and smoke-test after deployment;
+  \item if external data or a resource is not explicitly bounded, the boundary is not finished.
+\end{itemize}

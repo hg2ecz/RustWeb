@@ -1,0 +1,230 @@
+\chapter{Files, uploads, and the media library}
+
+In a web application, file handling is not simply a matter of copying a client-provided filename into a directory. Uploading touches request processing, resource limits, filesystem security, the database, authorization, backup, and -- for images -- HTML output as well.
+
+\rwlang{} therefore provides two distinct levels. The general \code{Upload} value carries upload metadata for a file streamed into AppFs, while \code{Image} is a stricter validated image type that is preferable for CMS and wiki interfaces.
+
+\section{The mental model: three different things}
+
+Keep these three concepts separate during upload handling:
+
+\begin{enumerate}
+  \item \textbf{client metadata}: original filename and client-declared MIME type;
+  \item \textbf{storage}: the server-side file selected by the runtime inside AppFs;
+  \item \textbf{business reference}: the value the application stores in the database and uses later.
+\end{enumerate}
+
+The client filename is not a storage path, and the client's \code{Content-Type} header is not security evidence. Treat both at most as display or audit metadata.
+
+\section{General file upload: \code{Upload}}
+
+The route declaration tells the runtime that a multipart file is expected and names the static AppFs subdirectory that receives it:
+
+\begin{lstlisting}[language=RWLang]
+route uploadFile POST "/upload"
+    upload file<Upload> to "uploads"
+    => uploadFile;
+\end{lstlisting}
+
+\newpage
+The action does not receive the whole file in memory. \code{Upload} exposes upload metadata:
+
+\begin{lstlisting}[language=RWLang]
+action fn uploadFile(ctx: ActionContext, file: Upload)
+    -> Result<Redirect, PageError> {
+    let savedPath = file.path;
+    let originalName = file.filename;
+    let contentType = file.contentType;
+    let byteCount = file.bytes;
+    return Ok(redirect("/uploaded"));
+}
+\end{lstlisting}
+
+This is an important resource-protection property: the runtime streams multipart content, so a large file does not automatically become an equally large VM heap allocation.
+
+\section{AppFs: the application's writable filesystem}
+
+AppFs is the restricted filesystem area assigned to the application. Give it a dedicated data root in production; do not mix it with the program binary, static assets, or other writable system areas.
+
+Example server configuration:
+
+\begin{lstlisting}
+[storage]
+data_root = "/srv/rwlang/data"
+fs_mode = "rwc"
+max_upload_bytes = 16777216
+max_image_pixels = 40000000
+\end{lstlisting}
+
+The short capability letters mean:
+
+\begin{description}
+  \item[\code{r}] read;
+  \item[\code{w}] write;
+  \item[\code{c}] create and the operations required to commit an upload.
+\end{description}
+
+Uploads typically require \code{rwc}. The byte limit is an operator hard limit; application code cannot raise it arbitrarily for one route.
+
+On Linux, AppFs confinement is intended to prevent an application from escaping the assigned root through path traversal, symlinks, or magic-link tricks. Normal Unix ownership and permissions are still required: the service user should have write access only to directories it actually needs.
+
+\section{What happens during an upload?}
+
+From a developer perspective, the safe upload path is:
+
+\begin{enumerate}
+  \item the runtime checks request-size limits and the route upload schema;
+  \item it streams the file into a confined staging location;
+  \item the server generates the storage key rather than deriving it from the client filename;
+  \item typed uploads perform additional server-side content validation;
+  \item after successful processing the file can be committed atomically;
+  \item on handler/runtime failure the runtime attempts cleanup.
+\end{enumerate}
+
+Do not build your own ``sanitize the filename and write it somewhere'' mechanism beside AppFs. That would bypass the security boundary provided by the language/runtime.
+
+\section{Image upload: prefer the \code{Image} type}
+
+For images in a CMS, wiki, news site, or admin interface, use \code{Image} rather than the general \code{Upload} surface:
+
+\begin{lstlisting}[language=RWLang]
+route saveHero POST "/admin/hero"
+    upload hero<Image> to "media"
+    auth role Editor
+    => saveHero;
+\end{lstlisting}
+
+\code{Image} uses the same streaming multipart and AppFs path, but the server also validates actual file content. V1 accepts PNG and JPEG. The client-declared MIME type is not authority.
+
+SVG is intentionally not a general image-upload format because it can carry active content and script/XSS surface. Do not assume GIF, WebP, or AVIF support unless the documentation for the runtime version explicitly states it.
+
+\section{Byte limits and pixel limits are different}
+
+Images have two distinct resource risks. A file may be small in bytes but decode into an enormous number of pixels. The pixel ceiling (\path{max_image_pixels}) is therefore separate from the upload-byte ceiling (\path{max_upload_bytes}).
+
+\begin{lstlisting}
+max_upload_bytes = 16777216
+max_image_pixels = 40000000
+\end{lstlisting}
+
+The second limit caps \code{width * height}. Set both consciously for the application's requirements; a ``16 MB upload limit'' alone is not image-decode protection.
+
+\section{Image references in the database}
+
+\code{Image} is a first-class scalar, so it can be stored as a model field and in the database using a canonical representation. The application does not need -- and should not attempt -- to assemble or parse internal storage-path components manually.
+
+A typical business model:
+
+\begin{lstlisting}[language=RWLang]
+model Article {
+    id: Int
+    slug: Slug
+    title: String
+    body: String
+    hero: Image
+}
+\end{lstlisting}
+
+The important point is that the database stores a \emph{reference}, not a client filename and not a hand-built public URL. Storage and HTTP-serving policy therefore remain under runtime control.
+
+\newpage
+\section{Safe rendering in HTML}
+
+A validated image is rendered using the dedicated renderer rather than direct string interpolation:
+
+\begin{lstlisting}[language=RWLang]
+page fn article(ctx: PageContext, article: Article)
+    -> Result<Html, PageError> {
+    return Ok(html {
+        <article>
+            <h1>{{ article.title }}</h1>
+            @image(article.hero, article.title)
+            @markdown(article.body)
+        </article>
+    });
+}
+\end{lstlisting}
+
+\code{@image(image, alt)} generates HTML from the validated image reference. It escapes the alt text, uses validated dimensions, and targets the built-in read-only media endpoint. Direct \code{{ image }} interpolation of an \code{Image} is a compiler error, so the typed reference cannot accidentally become a raw URL or markup value.
+
+\section{The built-in media endpoint}
+
+The runtime reserves this URL prefix:
+
+\begin{lstlisting}
+/__rw/media/
+\end{lstlisting}
+
+Applications cannot declare conflicting routes. The media endpoint does not make the entire \code{data_root} browsable over HTTP; it serves images only from AppFs directories declared by an \code{upload ...<Image> to "..."} route in the program.
+
+When serving media, the server re-detects content based on the image detector rather than trusting the client's original MIME type. Responses receive security and cache headers; media serving does not run an application route and does not create a session.
+
+\section{CMS example: uploading a hero image}
+
+An editor workflow normally consists of two business steps:
+
+\begin{enumerate}
+  \item the editor uploads a validated image;
+  \item the application associates the resulting typed image reference with the article.
+\end{enumerate}
+
+The route should at least require authentication; an admin/editor function normally also deserves role policy:
+
+\begin{lstlisting}[language=RWLang]
+route saveHero POST "/admin/articles/:id<Int>/hero"
+    upload hero<Image> to "media"
+    auth role Editor
+    => saveHero;
+\end{lstlisting}
+
+Do not assume that ``it is only an image, so it is harmless.'' An upload route is still a state-changing POST: authentication, CSRF/origin protection, request limits, and an auditable business operation may all apply.
+
+\section{Database and AppFs may form one business state}
+
+If a database row references an image stored in AppFs, the two stores together form the state that must be recoverable. This directly affects backup strategy.
+
+For example, a database dump taken in the morning and an unrelated data-root archive taken in the afternoon are not automatically a consistent recovery point. A reference may have been created or deleted between the two snapshots and exist in only one of them.
+
+As a production baseline, treat a coordinated application DB + local-auth DB + AppFs snapshot taken under controlled stop/drain as one recovery point. Redis session/cache/rate-limit state, by contrast, is not business source of truth.
+
+\section{Static assets and uploaded files are different}
+
+CSS, JavaScript, icons, and other versioned assets shipped with the program have a different lifecycle from user uploads. The static root should be a read-only deployment artifact; the AppFs data root should be a separate, controlled writable runtime area.
+
+This separation prevents several classes of mistakes:
+
+\begin{itemize}
+  \item deployment cannot overwrite user media;
+  \item upload cannot modify application code or versioned assets;
+  \item backup clearly distinguishes business data from reinstallable release artifacts;
+  \item reverse-proxy rules can be designed more cleanly.
+\end{itemize}
+
+\section{What not to do}
+
+\begin{itemize}
+  \item Do not use the client filename directly as a filesystem path.
+  \item Do not trust multipart \code{Content-Type}.
+  \item Do not expose the entire AppFs data root through an Apache/Nginx alias.
+  \item Do not manually interpolate an \code{Image} into a URL or HTML.
+  \item Do not treat DB and AppFs as unrelated recovery states when references exist between them.
+  \item Do not bypass operator upload/pixel limits from application code.
+\end{itemize}
+
+\section{Current media-surface limits}
+
+The V1 media surface is intentionally small. Do not build on undocumented assumptions. The current baseline does not promise an automatic thumbnail/resize pipeline, WebP/AVIF conversion, EXIF normalization or metadata stripping, a complete admin media browser, S3/object-storage backends, or general Markdown image syntax.
+
+If an application needs one of these, treat it as a separate architectural feature with its own resource, security, and lifecycle rules.
+
+\section{Developer upload checklist}
+
+{\small
+\begin{tabularx}{\textwidth}{@{}Y Y@{}}
+1. Auth/authorization correct? & 2. AppFs root separate and non-public? \\
+3. Reasonable byte limit? & 4. Pixel limit for images too? \\
+5. Using \code{Image} for images? & 6. Filename/MIME treated only as metadata? \\
+7. Typed reference in DB? & 8. \code{@image} in HTML? \\
+9. DB + AppFs backed up together? & 10. No reverse-proxy alias for data root? \\
+\end{tabularx}
+}

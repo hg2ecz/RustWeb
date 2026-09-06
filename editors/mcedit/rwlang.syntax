@@ -1,0 +1,86 @@
+# Midnight Commander editor syntax for RWLang (*.rw)
+context default
+    keyword whole mod brightcyan
+    keyword whole model brightcyan
+    keyword whole enum brightcyan
+    keyword whole object brightcyan
+    keyword whole form brightcyan
+    keyword whole route brightcyan
+    keyword whole page yellow
+    keyword whole action yellow
+    keyword whole query yellow
+    keyword whole component yellow
+    keyword whole layout yellow
+    keyword whole fn yellow
+    keyword whole let yellow
+    keyword whole set yellow
+    keyword whole while yellow
+    keyword whole if yellow
+    keyword whole return yellow
+    keyword whole with yellow
+    keyword whole resource yellow
+    keyword whole transaction yellow
+    keyword whole authorize yellow
+    keyword whole canonical yellow
+    keyword whole GET brightgreen
+    keyword whole POST brightgreen
+    keyword whole PUT brightgreen
+    keyword whole PATCH brightgreen
+    keyword whole DELETE brightgreen
+    keyword whole validate brightmagenta
+    keyword whole length brightmagenta
+    keyword whole range brightmagenta
+    keyword whole pattern brightmagenta
+    keyword whole same brightmagenta
+    keyword whole String brightcyan
+    keyword whole Email brightcyan
+    keyword whole Url brightcyan
+    keyword whole Slug brightcyan
+    keyword whole Int brightcyan
+    keyword whole F32 brightcyan
+    keyword whole Bool brightcyan
+    keyword whole Date brightcyan
+    keyword whole DateTime brightcyan
+    keyword whole Uuid brightcyan
+    keyword whole Decimal brightcyan
+    keyword whole Image brightcyan
+    keyword whole Upload brightcyan
+    keyword whole Db brightcyan
+    keyword whole Transaction brightcyan
+    keyword whole Html brightcyan
+    keyword whole Json brightcyan
+    keyword whole Redirect brightcyan
+    keyword whole true brightred
+    keyword whole false brightred
+    keyword => brightmagenta
+    keyword -> brightmagenta
+    keyword whole stringLen brightgreen
+    keyword whole trim brightgreen
+    keyword whole lower brightgreen
+    keyword whole upper brightgreen
+    keyword whole contains brightgreen
+    keyword whole startsWith brightgreen
+    keyword whole endsWith brightgreen
+    keyword whole replace brightgreen
+    keyword whole split brightgreen
+    keyword whole dict brightgreen
+    keyword whole containsKey brightgreen
+    keyword whole removeKey brightgreen
+    keyword whole regexMatch brightgreen
+    keyword whole regexReplace brightgreen
+    keyword whole regexCaptures brightgreen
+
+context // \n brown
+    keyword TODO brightred
+    keyword FIXME brightred
+
+context " " green
+    keyword whole sin brightgreen
+    keyword whole cos brightgreen
+    keyword whole sqrt brightgreen
+    keyword whole abs brightgreen
+    keyword whole monotonicNanos brightgreen
+    keyword whole toF32 brightgreen
+    keyword whole arrayF32 brightgreen
+    keyword whole len brightgreen
+    keyword whole slug brightgreen

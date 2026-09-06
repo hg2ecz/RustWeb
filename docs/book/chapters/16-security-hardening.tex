@@ -1,0 +1,281 @@
+\chapter{Security hardening: connecting the trust boundaries}
+
+Earlier chapters taught authentication, object-level authorization, CSRF and CORS protection, typed SQL, AppFs, shared runtime state, and outbound egress policy separately. The detailed production configuration key reference comes later; here we summarize the security boundaries that configuration must enforce. In production handoff, these are not independent features but one security model.
+
+Security hardening therefore does not introduce new syntax. Its purpose is to verify that every external value and every sensitive operation crosses a clear trust boundary and that no shortcut bypasses compiler, runtime, or server policy.
+
+\section{The five most important trust boundaries}
+
+A typical RWLang application should treat at least these boundaries separately:
+
+\begin{longtable}{L{0.25\textwidth}L{0.31\textwidth}L{0.34\textwidth}}
+\toprule
+Boundary & Untrusted side & Authority / validation \\
+\midrule
+HTTP input & path, query, header, form, JSON & typed route/input, parser limits, CSRF/CORS \\
+Identity & cookie, login fields, client role & trusted auth backend, session, MFA \\
+Data & client value, record identifier & typed query, bind, transaction, authorization \\
+Filesystem & filename, MIME, upload bytes & AppFs confinement, server-owned destination, limits \\
+External network & URL, DNS, peer, response & named egress target, CIDR/port/TLS/timeout policy \\
+\bottomrule
+\end{longtable}
+
+The most important mental rule is: \textbf{data does not become trusted merely because it already passed through an earlier layer}. An authenticated user's form data is still user input; a valid record identifier does not imply authorization; a host resolved by DNS does not prove that the actual peer IP is allowed.
+
+\section{HTTP edge: Host, proxy, and parser}
+
+With direct HTTPS, the RWLang server itself is the public HTTP trust boundary. Behind Apache or Nginx there are two layers: the public proxy and the RWLang listener.
+
+In production, forwarding headers may be accepted only from explicitly trusted proxy networks. A directly client-supplied \code{X-Forwarded-For}, \code{X-Forwarded-Proto}, or similar header must not become authority.
+
+The public host should also come from trusted configuration. Do not construct redirect targets from an arbitrary client \code{Host} header.
+
+The RWLang HTTP parser is intentionally strict and rejects ambiguous request forms. Examples include duplicate critical headers, obs-fold, and bodies on GET/HEAD. Request \code{Transfer-Encoding} and unknown connection tokens are also rejected. The developer rule is simple: \textbf{do not attempt to loosen edge-parser invariants from application code}.
+
+\subsection*{Fail-closed decisions and security audit}
+
+A trust-boundary denial should not exist only as a client response. The server uses the same server-generated request ID for access logs and, where a security decision occurred, a structured \code{security_audit} event. Important classifications are:
+
+\begin{longtable}{L{0.30\textwidth}L{0.12\textwidth}L{0.46\textwidth}}
+\toprule
+Boundary & HTTP & Audit category/outcome \\
+\midrule
+forwarding metadata & 400 & \code{proxy/invalid_forwarding} \\
+Host pinning & 421 & \code{host/mismatch} \\
+HTTPS policy & 426 & \code{transport/https_required} \\
+missing auth on API & 401 & \code{auth/unauthorized} \\
+CSRF & 403 & \code{csrf/denied} \\
+CORS & 403 & \code{cors/denied} \\
+Origin/Fetch Metadata & 403 & \code{origin/denied} \\
+route/object policy & 403 & \code{policy/forbidden} \\
+rate limit & 429 & \code{rate_limit/denied} \\
+\bottomrule
+\end{longtable}
+
+Do not put tokens, cookies, credentials, full URLs, or request bodies into the security audit. Category/outcome says \emph{which trust boundary decided}; use the request ID to correlate access/server logs for detailed request forensics.
+
+\section{TLS and secret handling}
+
+Private keys, database credentials, Redis URLs, LDAP credentials, and other secrets must not live in:
+
+\begin{itemize}
+  \item source code;
+  \item the Git repository;
+  \item command-line arguments;
+  \item plaintext TOML secret values;
+  \item access/server/audit logs.
+\end{itemize}
+
+The production pattern is a \code{*_file} reference:
+
+\begin{lstlisting}
+[tls]
+cert_file = "/run/secrets/tls/fullchain.pem"
+key_file = "/run/secrets/tls/privkey.pem"
+
+[database]
+url_file = "/run/secrets/rwlang/database-url"
+\end{lstlisting}
+
+Configuration states \emph{where} the secret is; the secret value itself remains behind a separate permission boundary. Secret files should be readable by the service user and as inaccessible as practical to everyone else.
+
+\section{Identity: authentication is not authorization}
+
+Successful login proves only that a trusted principal exists. It does not prove that the principal may access a particular article, invoice, or admin operation.
+
+The correct layers are:
+
+\begin{enumerate}
+  \item authentication: who is the user;
+  \item route authorization: may the user enter this handler;
+  \item object authorization: may the user access this particular record;
+  \item business invariant: is this operation allowed in the current state.
+\end{enumerate}
+
+Client-supplied role, owner, tenant, or price is never authority. Roles come from the trusted auth backend, owner comes from a trusted record, and business decisions come from server-side state.
+
+\Needspace{0.38\textheight}
+A typical object-level mutation order is:
+
+\begin{lstlisting}[language=RWLang]
+let article = Article.byId(db, id)?;
+authorize article owner authorUsername or role Publisher;
+
+transaction db {
+    Article.publishChanged(tx, id, version)?;
+    audit Article id action publish;
+        from article.status
+        to ArticleStatus.Published
+}
+\end{lstlisting}
+
+The authorization guard does not replace optimistic locking, and optimistic locking does not replace authorization.
+
+\section{Session, CSRF, and CORS together}
+
+A session cookie is not CSRF protection by itself. State-changing form or JSON requests require session-bound CSRF protection; JSON POST may carry the token in a dedicated header.
+
+Treat browser-side protection as defense in depth:
+
+\begin{lstlisting}
+session-bound CSRF token
++ same-origin Origin/Referer check
++ Sec-Fetch-Site cross-site deny
+\end{lstlisting}
+
+Open CORS only to an explicit exact-origin allowlist. Credentialed CORS must never use a wildcard. CORS is not authentication or authorization; it only controls which browser origins can read a response.
+
+\section{SQL and business mutation}
+
+Compiler-owned SQL plus typed bind parameters are among V1's strongest security foundations. User input must not enter SQL string concatenation, dynamic column names, or dynamic table names.
+
+Mutations run inside transactions. A transaction is not only a consistency tool: it also matters for security because multiple writes performed after authorization should succeed or fail together, and a business audit should belong to the same state transition.
+
+The runtime DB credential should follow least privilege. Migration credentials are a separate operator capability; the web server should not run continuously with schema-modification privileges.
+
+\section{Uploads, media, and AppFs}
+
+Every byte of an uploaded file is untrusted. Client filename and MIME type are metadata only; do not use them as storage keys, paths, or file-type authority.
+
+The production baseline is:
+
+\begin{itemize}
+  \item server-owned destination directory;
+  \item byte limit;
+  \item for images, pixel/decode limit and byte-based format validation;
+  \item AppFs confinement;
+  \item no symlink/magic-link escape;
+  \item runtime data separated from release/static files;
+  \item only the required \code{r}/\code{w}/\code{c} capability.
+\end{itemize}
+
+Do not use the same directory for public static root and user uploads merely because both need to be served over HTTP. Their lifecycle, trust, and cache policies are different.
+
+\section{Redis and shared runtime state}
+
+Redis is runtime-owned infrastructure, not business source of truth. Sessions, TOTP replay state, rate limits, and public cache may live there; business records should not move there simply because Redis is ``faster.''
+
+With multiple instances, missing shared session/rate-limit state can produce different security decisions depending on which node receives a request. Shared-state policy is therefore part of the production topology.
+
+When Redis fails, security-relevant functions should not become automatically permissive. Fail closed for rate limits, replay protection, and session validation.
+
+\section{Outbound egress and SSRF}
+
+The external network is a separate trust boundary. V1 has no unrestricted application-side \code{HttpClient}; the trusted integration adapter uses named targets.
+
+Target policy constrains host, address range, port, TLS, timeouts, and response size together. After DNS resolution, every A/AAAA address is checked, then the actual peer address is validated again after connection.
+
+Forbidden pattern:
+
+\begin{lstlisting}
+user input URL -> generic server-side fetch
+\end{lstlisting}
+
+Recommended pattern:
+
+\begin{lstlisting}
+user/business choice
+        |
+        v
+named integration target
+        |
+        v
+trusted host/CIDR/port/TLS policy
+\end{lstlisting}
+
+The user may choose a business option, but not an arbitrary network destination.
+
+In V1, egress is a capability of the trusted Rust integration layer, not a general \code{.rw} HTTP API. Therefore a fail-closed \code{IntegrationError::Policy} denial is not automatically a webserver \code{security_audit} event: the adapter/operator integration must log the target name and minimal outcome if forensic evidence is required. Never log secrets, credentials, arbitrary full URLs, or response bodies there either.
+
+\section{Resource limits are security controls too}
+
+Security is not only confidentiality and authorization. A web application is also vulnerable if one request can consume unbounded memory, CPU, DB time, or upload bandwidth.
+
+The defensive layers work together:
+
+\begin{itemize}
+  \item request/parser hard limits;
+  \item upload and response size limits;
+  \item query/result limits and timeouts;
+  \item rate limits;
+  \item runtime resource profiles;
+  \item process/systemd/cgroup hard limits.
+\end{itemize}
+
+Do not request a larger resource profile ``just in case.'' Larger budgets should be a production policy decision and an auditable exception.
+
+\section{Log hygiene and audit integrity}
+
+Logs are themselves a data-exfiltration surface. Do not log credentials, cookies, CSRF/TOTP secrets, or entire form/JSON bodies.
+
+Security events need minimal structured fields: request ID, route, actor when appropriate, decision type, and status. Business audit should be transactional and tied to the application state change.
+
+A request ID is a correlation identifier, not authority. The server should generate its own; do not trust a client-supplied identifier.
+
+\section{Process and filesystem hardening}
+
+Run the production service as an unprivileged user. Release directories and configuration should be runtime read-only; only genuinely writable areas should be writable.
+
+Recommended separation:
+
+\begin{lstlisting}
+/usr/local/bin/rwlang-server
+/usr/local/bin/rwlang-cli
+/usr/local/etc/rwlang/       # trusted config, read-only
+/srv/rwlang/releases/        # immutable releases
+/srv/rwlang/data/            # declared persistent app data
+/run/secrets/rwlang/         # secret files
+/var/log/rwlang/             # logs
+\end{lstlisting}
+
+Systemd hardening, cgroup limits, and RWLang resource policy are not alternatives; they are separate defensive layers.
+
+\section{Dependency and build supply chain}
+
+The deployed RWLang server is a binary, so the dependency graph is release state too. A committed \code{Cargo.lock} and \code{--locked} builds make the dependency surface more reproducible and reviewable.
+
+After an intentional dependency update, do more than compile:
+
+\begin{lstlisting}
+./tools/refresh-lock.sh
+./verify.sh
+./tools/dependency-audit.sh
+\end{lstlisting}
+
+RustSec audit provides evidence about known advisories; it does not replace code review or upstream changelog review. Major/minor migrations of parser, TLS, crypto, auth, or database dependencies should not be hidden inside unrelated feature diffs.
+
+\section{Production security gate}
+
+Minimum checks before production handoff:
+
+\begin{enumerate}
+  \item HTTPS and public-host policy are verified.
+  \item Reverse-proxy trust is open only to explicit CIDRs.
+  \item Secrets enter the process only through file references.
+  \item Runtime DB credentials are least privilege; migration credentials are separate.
+  \item Session/auth backend matches the single-node or multi-instance topology.
+  \item Every state-changing browser operation has CSRF protection.
+  \item CORS uses exact allowlists; no credentialed wildcard exists.
+  \item Object authorization uses trusted principal/role and stable owner authority.
+  \item SQL is compiler-owned statement + typed binds only.
+  \item Upload uses a server-owned destination and restricted AppFs capability.
+  \item No business source of truth would disappear if Redis were empty after restore.
+  \item Outbound integrations reach the network only through named egress policy.
+  \item Request, upload, DB, runtime, and process resource limits are configured.
+  \item Logs contain no secrets or full sensitive request payloads.
+  \item Security-negative tests, config check, and deployment smoke tests are green.
+\end{enumerate}
+
+\section{A code-review thinking pattern}
+
+Five questions catch many security problems early in every new feature:
+
+\begin{enumerate}
+  \item \textbf{What comes from outside?} -- Which field, header, file, record identifier, or external response is untrusted?
+  \item \textbf{Where does it become typed data?} -- Route parser, form/JSON schema, model, or trusted adapter?
+  \item \textbf{Who is the authority?} -- Session backend, database record, trusted config, or egress policy?
+  \item \textbf{What happens on failure?} -- Fail closed, rollback, cleanup, 4xx/5xx, audit?
+  \item \textbf{What limits the resource?} -- Size, time, count, rate, or process budget?
+\end{enumerate}
+
+If these questions do not have short, unambiguous answers, the feature's security model is probably not finished.

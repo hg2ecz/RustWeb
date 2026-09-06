@@ -1,0 +1,13 @@
+model Article {
+    id: Int
+    authorUsername: String
+}
+query fn loadArticle(db: Db, id: Int) -> Result<Article, DbError> sql {
+    SELECT id, authorUsername FROM articles WHERE id = :id
+}
+page fn article(ctx: PageContext, db: Db, id: Int) -> Result<Json, PageError> {
+    let article = loadArticle(db, id)?;
+    authorize article owner authorUsername;
+    return Ok(json(article));
+}
+route article GET "/articles/:id<Int>" => article;

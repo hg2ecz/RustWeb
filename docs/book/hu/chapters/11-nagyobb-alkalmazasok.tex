@@ -1,0 +1,268 @@
+\chapter{Nagyobb alkalmazások szervezése}
+
+Egy néhány route-os alkalmazásban még kényelmes lehet minden modellt, lekérdezést és handlert egyetlen \code{main.rw} fájlban tartani. Wiki, CMS vagy ügyviteli rendszer esetén azonban gyorsan fontosabbá válik a \emph{szerkezet}, mint az egyes nyelvi elemek szintaxisa. Az RWLang ehhez két egymást kiegészítő eszközt ad: a \code{mod} a forrásfájlok szervezésére, az \code{object} pedig a domain API névterének kialakítására szolgál.
+
+\section{Három külön kérdés}
+
+A nagyobb alkalmazás szerkezetét érdemes három külön rétegként kezelni:
+
+\begin{center}
+\begin{tabularx}{\textwidth}{@{}l Y@{}}
+\toprule
+\textbf{Eszköz} & \textbf{Feladata} \\
+\midrule
+\code{mod} & Melyik fájlban, illetve forrásmodulban található a kód? \\
+\code{object} & Melyik üzleti fogalomhoz tartozik a model, query, page vagy action? \\
+\code{route} & Milyen HTTP felület és milyen auth/cache/rate-limit policy teszi elérhetővé? \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+Ez a szétválasztás tudatos. Egy domain object nem kap automatikusan adatbázist, current usert, fájlrendszert vagy hálózati hozzáférést, és egy modul sem jelent HTTP policy-t.
+
+\section{A \code{mod} nem szöveges include}
+
+Egy kisebb, többfájlos projekt már így nézhet ki:
+
+\begin{lstlisting}
+myapp/
+|-- main.rw
+|-- models.rw
+|-- queries.rw
+|-- components.rw
+|-- pages.rw
+|-- actions.rw
+|-- migrations/
+`-- public/
+\end{lstlisting}
+
+A belépési pont:
+
+\begin{lstlisting}[language=RWLang]
+mod models;
+mod queries;
+mod components;
+mod pages;
+mod actions;
+\end{lstlisting}
+
+A \code{mod} nem C-szerű szövegbeillesztés, és nem önti a deklarációkat globális névtérbe. A compiler az explicit source graphot tölti be, ellenőrzi és egyetlen programmá fordítja. Egy modul saját névteret birtokol: például a \code{queries.rw} deklarációira más modulból \code{queries::name} alakban kell hivatkozni. A modulútvonal application-root relatív; nested forrásfájlt explicit, például \code{mod article::admin;} deklarációval kell felvenni. Nincs automatikus almappa-discovery vagy relatív \code{../} modulútvonal.
+
+\section{Mikor válts feature-alapú szerkezetre?}
+
+A \code{models.rw}, \code{queries.rw}, \code{pages.rw} típus szerinti bontás jó első lépés, de nagyobb alkalmazásnál könnyen azt eredményezi, hogy egyetlen feature módosításakor öt-hat fájlt kell párhuzamosan megnyitni. Ilyenkor jobb üzleti terület szerint bontani:
+
+\begin{lstlisting}
+main.rw
+article.rw
+article/
+|-- admin.rw
+`-- components.rw
+account.rw
+account/
+`-- profile.rw
+invoice.rw
+invoice/
+`-- admin.rw
+routes.rw
+migrations/
+public/
+\end{lstlisting}
+
+A \code{main.rw} ilyenkor inkább alkalmazás-kompozíció:
+
+\begin{lstlisting}[language=RWLang]
+mod article;
+mod article::admin;
+mod article::components;
+mod account;
+mod account::profile;
+mod invoice;
+mod invoice::admin;
+mod routes;
+\end{lstlisting}
+
+A cél nem a lehető legtöbb fájl. A cél az, hogy egy üzleti változtatás kódja többnyire egy feature könyvtáron belül maradjon.
+
+\section{Domain object: üzleti névtér, nem OOP-osztály}
+
+A globális nevek számát az \code{object} csökkenti. Például:
+
+\needspace{30\baselineskip}
+\begin{lstlisting}[language=RWLang]
+object Article {
+    model {
+        id: Int
+        slug: Slug
+        title: String
+        body: String
+        authorUsername: String
+    }
+
+    query fn bySlug(db: Db, slug: Slug)
+        -> Result<Article, DbError> sql {
+        SELECT id, slug, title, body, authorUsername
+        FROM articles
+        WHERE slug = :slug
+    }
+
+    page fn show(ctx: PageContext, db: Db, slug: Slug)
+        -> Result<Html, PageError> {
+        let article = Article.bySlug(db, slug)?;
+        return Ok(html {
+            <article>
+                <h1>{{ article.title }}</h1>
+                @markdown(article.body)
+            </article>
+        });
+    }
+}
+\end{lstlisting}
+
+A használat így beszédes:
+
+\begin{lstlisting}[language=RWLang]
+let article = Article.bySlug(db, slug)?;
+\end{lstlisting}
+
+Később ugyanilyen természetesek a rövid domainnevek: \code{Invoice.approve}, \code{Invoice.cancel}, illetve \code{UserAccount.disable}.
+
+\subsection*{Mit tartalmazhat egy object?}
+
+A V1 domain object egy model köré rendezheti a hozzá tartozó műveleteket. Az alábbi blokk csak szerkezeti váz, nem önmagában fordítható RWLang forrás:
+
+\begin{lstlisting}
+object Article {
+    model { ... }
+    query fn bySlug(...) ...
+    page fn show(...) ...
+    action fn publish(...) ...
+    component fn Card(...) ...
+    layout fn EditorLayout(...) ...
+}
+\end{lstlisting}
+
+Pontosan egy model blokk tartozik hozzá. Az object nem klasszikus objektumorientált osztály: nincs öröklés, mutable \code{self}, constructor-mágia, virtual dispatch vagy reflection.
+
+\section{A dependency továbbra is explicit}
+
+A domain namespace nem rejt el capabilityket. Ez jó:
+
+\needspace{11\baselineskip}
+\begin{lstlisting}[language=RWLang]
+query fn byId(db: Db, id: Int)
+    -> Result<Article, DbError> sql {
+    SELECT id, slug, title, body, authorUsername
+    FROM articles
+    WHERE id = :id
+}
+\end{lstlisting}
+
+Az action ugyanilyen explicit módon kapja meg a szükséges capabilityket. A következő blokk szándékosan rövidített szerkezeti példa; az állapotváltás konkrét typed queryjét a CRUD és üzleti-audit fejezetek mutatják be:
+
+\needspace{12\baselineskip}
+\begin{lstlisting}
+action fn publish(ctx: ActionContext, db: Db, id: Int)
+    -> Result<Redirect, PageError> {
+    let article = Article.byId(db, id)?;
+    authorize article owner authorUsername or role Publisher;
+    // ... allapotvaltas tranzakcioban ...
+    return Ok(redirect("/admin/articles"));
+}
+\end{lstlisting}
+
+A handler aláírásából továbbra is látszik, hogy adatbázishoz fér hozzá. Ugyanez igaz AppFs-re, authra és később hálózati egressre is: a domain object nem válhat rejtett service locatorrá.
+
+\section{Miért maradjon a route top-level?}
+
+A route tudatosan nem olvad bele teljesen az objectbe:
+
+\begin{lstlisting}[language=RWLang]
+route articleShow GET "/cikk/:slug<Slug>"
+    cache public ttl 60
+    => article::Article.show;
+
+route articlePublish POST "/admin/cikk/:id<Int>/publish"
+    auth role Publisher
+    invalidate cache articleShow
+    => article::Article.publish;
+\end{lstlisting}
+
+Így egy route-registry vagy egy code review során egy helyen látszik:
+
+\begin{itemize}
+  \item az URL és a HTTP method;
+  \item az authentication/authorization követelmény;
+  \item a cache policy és invalidáció;
+  \item a rate limit vagy resource profile;
+  \item a logokban és auditban megjelenő globális route-név.
+\end{itemize}
+
+A domain member neve lehet rövid és helyi jelentésű, például \code{Article.publish} a saját modulján belül; külön \code{routes.rw} fájlból \code{article::Article.publish} szükséges. A route neve viszont maradjon globálisan beszédes, például \code{articlePublish}.
+
+\section{Ajánlott névkonvenció}
+
+\begin{center}
+\begin{tabularx}{\textwidth}{@{}l l Y@{}}
+\toprule
+\textbf{Elem} & \textbf{Forma} & \textbf{Példa} \\
+\midrule
+object & PascalCase üzleti főnév & \code{Article}, \code{Invoice}, \code{UserAccount} \\
+member & camelCase, domainen belül rövid & \code{bySlug}, \code{publish}, \code{approve} \\
+route & globálisan auditálható név & \code{articleShow}, \code{invoiceApprove} \\
+module & feature vagy technikai egység & \code{article}, \code{account}, \code{routes} \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\section{Egy CMS lehetséges szerkezete}
+
+Egy közepes CMS-nél jó kompromisszum lehet:
+
+\needspace{18\baselineskip}
+\begin{lstlisting}
+main.rw
+routes.rw
+article.rw            # Article object + alap queryk
+article/
+|-- admin.rw          # szerkesztes/publikalas
+`-- components.rw     # Card, listak
+media.rw
+media/
+`-- admin.rw
+account.rw
+migrations/
+public/
+`-- app.css
+\end{lstlisting}
+
+A publikus és admin HTTP policy továbbra is a route-rétegben marad. Az article feature viszont együtt tartja a cikk üzleti modelljét és műveleteit.
+
+\section{Mit ne csinálj?}
+
+\subsection*{Ne készíts minden deklarációból külön fájlt}
+
+A túl apró modulok több navigációt okoznak, mint amennyi szerkezetet adnak. Egy ötven soros feature-nek nem kell nyolc fájl.
+
+\subsection*{Ne építs rejtett ``service'' réteget}
+
+Ha egy művelet DB-t, AppFs-t vagy auth contextet használ, az maradjon látható a typed aláírásban. Az RWLang egyik értéke éppen az, hogy a capability-határ explicit.
+
+\subsection*{Ne duplikáld a route policy-t a handlerben}
+
+A route-level auth, cache, rate limit és resource policy deklaratív szerződés. A domain-specifikus objektumszintű authorization természetesen a handlerben maradhat, mert az üzleti rekordtól függ.
+
+\subsection*{Ne használj szabad Stringet üzleti állapotnak}
+
+Ha egy domain \code{Draft}, \code{Review}, \code{Published} vagy \code{Cancelled} állapotokból áll, használd az enumot. A projektstruktúra akkor segít igazán, ha a domain contract is typed.
+
+\section{Refaktorálási út: egy fájlból nagyobb alkalmazás}
+
+Nem kell a projekt első napján végleges könyvtárhierarchiát tervezni. Jó evolúciós út:
+
+\begin{enumerate}
+  \item Kezdj egy \code{main.rw} fájllal, amíg az alkalmazás kicsi.
+  \item Válaszd külön a model/query/page/action csoportokat, amikor a fájl már nehezen áttekinthető.
+  \item Ha egy feature több technikai fájlon szétszóródik, válts feature-alapú modulokra.
+  \item Ha sok globális üzleti név keletkezik, rendezd őket \code{object} namespace-be.
+\end{enumerate}

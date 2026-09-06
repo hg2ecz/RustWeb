@@ -1,0 +1,6 @@
+page fn home(ctx: PageContext) -> Result<Html, PageError> {
+    return Ok(html {<a @href(product, "not-an-int")>bad</a>});
+}
+page fn product(ctx: PageContext, id: Int) -> Result<Html, PageError> { return Ok(html {ok}); }
+route home GET "/" => home;
+route product GET "/products/:id<Int>" => product;
