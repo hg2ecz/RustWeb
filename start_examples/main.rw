@@ -1,0 +1,47 @@
+mod getpost;
+mod calculator;
+mod catalog;
+
+// === Simplest example ===
+// http://<server>:<port>/
+
+page fn simplest(ctx: PageContext) -> Result<Html, PageError> {
+    return Ok(html {
+        <!doctype html>
+        <html lang="hu">
+            <head>
+                <meta charset="utf-8">
+                <title>RWLang</title>
+            </head>
+            <body>
+                <h1>Hello RWLang!</h1>
+                <p>A szerver működik.</p>
+            </body>
+        </html>
+    });
+}
+
+route home GET "/" => simplest;
+
+// === Example with get parameter ===
+// http://<server>:<port>/hello/Peter
+
+page fn hello_with_name(ctx: PageContext, name: String) -> Result<Html, PageError> {
+    return Ok(html {
+        <!doctype html>
+        <html lang="hu">
+            <head>
+                <meta charset="utf-8">
+                <title>Köszönés</title>
+            </head>
+            <body>
+                <h1>Szia, {{name}}!</h1>
+                <p>Ez már egy paraméterezett RWLang oldal.</p>
+            </body>
+        </html>
+    });
+}
+
+route hello GET "/hello/:name<String>" => hello_with_name;
+// Types: String, Email, Url, Slug, Int, Bool, Date, DateTime, Uuid, Decimal, Image
+// Slug a subset of String. This usable a keyword with filtered character set (validated).

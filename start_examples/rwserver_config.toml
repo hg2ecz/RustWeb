@@ -1,0 +1,9 @@
+[server]
+app = "/var/www/01_basic_examples/main.rw"
+listen = "[::]:8080"
+insecure_dev_cookies = true
+
+[reload]
+enabled = true
+poll_interval_ms = 1000
+debounce_ms = 250
