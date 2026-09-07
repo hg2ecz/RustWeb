@@ -109,3 +109,12 @@ When adding a document:
 - [Function-level permissions](75-function-level-permissions.md) - named business permissions with compiler-enforced handler contracts and role-backed runtime authorization.
 
 - [MFA elevation proofs](76-mfa-elevation-proofs.md) - handler-level MFA contracts composable with named permissions.
+
+- [Route budget profiles](78-route-budget-profiles.md) - secure-by-default route resource profiles with operator-owned limits.
+
+- [Bounded request collections](79-bounded-request-collections.md) - bounded `List<String>` query/form/JSON inputs with safe defaults.
+
+- [Tenant membership authority](81-tenant-membership-authority.md)
+- [Compiler-enforced tenant isolation](82-compiler-enforced-tenant-isolation.md) - active-tenant proofs, scoped models, and SQL tenant guards.
+
+- [Safe file-upload state machine](84-safe-file-upload-state-machine.md) - staged private uploads, byte-authoritative image inspection, and explicit publish transitions.

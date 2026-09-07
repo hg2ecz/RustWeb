@@ -37,6 +37,11 @@ pub(crate) enum AuthSetupError {
         line: usize,
         role: String,
     },
+    InvalidTenant {
+        path: PathBuf,
+        line: usize,
+        tenant: String,
+    },
 }
 
 impl fmt::Display for AuthSetupError {
@@ -68,6 +73,9 @@ impl fmt::Display for AuthSetupError {
             ),
             Self::InvalidRole { path, line, role } => {
                 write!(f, "{}:{line} invalid role `{role}`", path.display())
+            }
+            Self::InvalidTenant { path, line, tenant } => {
+                write!(f, "{}:{line} invalid tenant `{tenant}`", path.display())
             }
         }
     }

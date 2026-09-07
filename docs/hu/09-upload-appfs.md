@@ -44,7 +44,7 @@ Action/DB hiba esetén a runtime cleanupot kísérel meg.
 For CMS/media use, prefer `Image` over generic `Upload`:
 
 ```rwlang
-route uploadHero POST "/admin/hero" upload hero<Image> to "media" auth user => uploadHero;
+route uploadHero POST "/admin/hero" upload hero<Image> to "media" publish auth user => uploadHero;
 ```
 
 The server validates PNG/JPEG bytes after streaming them into the confined AppFs location. Client MIME and filename are not trusted. Image routes require `rwc` AppFs mode. See [Biztonságos képek és media library](17-media-library.md).

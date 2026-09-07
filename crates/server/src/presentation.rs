@@ -211,7 +211,7 @@ pub(super) fn authorize_route(
     json_api: bool,
 ) -> Option<Response> {
     match policy {
-        RouteAuth::Public => None,
+        RouteAuth::Public | RouteAuth::Webhook(_) => None,
         RouteAuth::User if session.is_authenticated() => None,
         RouteAuth::Mfa if session.is_authenticated() && session.mfa_verified => None,
         RouteAuth::Role(role) if session.is_authenticated() && session.has_role(role) => None,
@@ -367,6 +367,7 @@ mod permission_auth_tests {
             principal: Some("alice".into()),
             mfa_verified,
             roles: roles.iter().map(|role| (*role).to_string()).collect(),
+            memberships: vec![],
             auth_generation: 0,
         }
     }

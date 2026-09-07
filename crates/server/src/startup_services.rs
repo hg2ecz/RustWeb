@@ -1,17 +1,18 @@
 use crate::AuthRuntime;
 use crate::auth_setup::{build_ldap_config, load_roles, load_totp_secrets};
 use crate::bootstrap_config::{PublicPageCache, load_rate_policies, validate_route_rate_policies};
+use crate::membership_setup::load_memberships;
 use crate::rate_limit::RouteRateLimiter;
 use crate::server_config_file::{DomainRuntime, HostingRuntime};
 use crate::server_errors::StartupError;
 use crate::source_reload::spawn_source_reload_supervisor;
-use crate::{AuthCliConfig, CacheCliConfig, LifecycleCliConfig};
+use crate::{AuthCliConfig, CacheCliConfig, LifecycleCliConfig, WebSecurityCliConfig};
 use auth::{
     LocalUserStore, LoginRateLimiter, RedisSessionStore, SessionBackend, SessionStore,
     TotpReplayGuard,
 };
 use data::{Database, DbConfig, RedisConfig, RedisStore};
-use language_core::{RouteAuth, ServerConfig};
+use language_core::ServerConfig;
 use observability::server_log;
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
@@ -29,6 +30,7 @@ pub(super) struct ServicePreparation<'a> {
     pub(super) allow_memory_rate_limit: bool,
     pub(super) cache: &'a CacheCliConfig,
     pub(super) lifecycle: &'a LifecycleCliConfig,
+    pub(super) web: &'a WebSecurityCliConfig,
 }
 
 pub(super) struct PreparedServices {
@@ -37,6 +39,7 @@ pub(super) struct PreparedServices {
     pub(super) auth_runtime: Arc<AuthRuntime>,
     pub(super) route_rate_limiter: Arc<RouteRateLimiter>,
     pub(super) public_cache: Arc<PublicPageCache>,
+    pub(super) idempotency_redis: Option<RedisStore>,
     pub(super) source_reload_task: Option<JoinHandle<()>>,
 }
 
@@ -54,9 +57,15 @@ pub(super) async fn prepare(
     )?;
     let public_cache =
         build_public_cache(&all_domains, input.auth, redis.as_ref(), input.cache).await?;
+    crate::startup_security::validate_replay_guard_requirements(
+        &all_domains,
+        redis.is_some(),
+        input.web,
+    )?;
     let sessions = build_sessions(redis.clone(), input.config);
+    let idempotency_redis = redis.clone();
     let auth_runtime = build_auth_runtime(input.auth, redis).await?;
-    validate_auth_requirements(&all_domains, &auth_runtime)?;
+    crate::startup_security::validate_auth_requirements(&all_domains, &auth_runtime)?;
     let source_reload_task = build_source_reload_task(
         input.hosting,
         &all_domains,
@@ -66,6 +75,8 @@ pub(super) async fn prepare(
         input.cache,
         &auth_runtime,
         database.is_some(),
+        idempotency_redis.is_some(),
+        input.web.webhook_secrets_dir.is_some(),
     );
 
     Ok(PreparedServices {
@@ -74,6 +85,7 @@ pub(super) async fn prepare(
         auth_runtime,
         route_rate_limiter,
         public_cache,
+        idempotency_redis,
         source_reload_task,
     })
 }
@@ -238,10 +250,12 @@ async fn build_auth_runtime(
         ));
     }
     if auth.local_auth_db_url.is_some()
-        && (auth.totp_secrets_file.is_some() || auth.roles_file.is_some())
+        && (auth.totp_secrets_file.is_some()
+            || auth.roles_file.is_some()
+            || auth.memberships_file.is_some())
     {
         return Err(StartupError::invalid(
-            "--totp-secrets-file/--auth-roles-file belong to LDAP mode and cannot be combined with local auth",
+            "--totp-secrets-file/--auth-roles-file/--auth-memberships-file belong to LDAP mode and cannot be combined with local auth",
         ));
     }
     let local = if let Some(url) = auth.local_auth_db_url.as_deref() {
@@ -257,6 +271,7 @@ async fn build_auth_runtime(
     };
     let totp_secrets = load_totp_secrets(auth.totp_secrets_file.as_deref())?;
     let roles = load_roles(auth.roles_file.as_deref())?;
+    let memberships = load_memberships(auth.memberships_file.as_deref())?;
     let limiter = match redis.clone() {
         Some(store) => {
             LoginRateLimiter::redis(store, auth.login_max_attempts, auth.login_window_secs)
@@ -269,30 +284,12 @@ async fn build_auth_runtime(
         local,
         totp_secrets,
         roles,
+        memberships,
         require_totp: auth.require_totp,
         redis,
         local_totp: TotpReplayGuard::default(),
         limiter,
     }))
-}
-
-fn validate_auth_requirements(
-    all_domains: &[Arc<DomainRuntime>],
-    auth_runtime: &AuthRuntime,
-) -> Result<(), StartupError> {
-    let protected_routes = all_domains.iter().any(|domain| {
-        domain
-            .program
-            .routes
-            .iter()
-            .any(|route| !matches!(route.auth, RouteAuth::Public))
-    });
-    if protected_routes && auth_runtime.ldap.is_none() && auth_runtime.local.is_none() {
-        return Err(StartupError::invalid(
-            "application declares protected routes, but no authentication backend is configured",
-        ));
-    }
-    Ok(())
 }
 
 fn build_source_reload_task(
@@ -304,6 +301,8 @@ fn build_source_reload_task(
     cache: &CacheCliConfig,
     auth_runtime: &AuthRuntime,
     database_available: bool,
+    idempotency_available: bool,
+    webhook_secrets_available: bool,
 ) -> Option<JoinHandle<()>> {
     if !all_domains.iter().any(|domain| domain.reload.enabled) {
         return None;
@@ -320,5 +319,7 @@ fn build_source_reload_task(
         cache_available,
         auth_enabled,
         database_available,
+        idempotency_available,
+        webhook_secrets_available,
     ))
 }

@@ -48,7 +48,9 @@ pub fn random_hex(bytes: usize) -> String {
 }
 
 mod session;
+mod tenant;
 pub use session::{RedisSessionStore, SessionBackend, SessionFlash, SessionSnapshot, SessionStore};
+pub use tenant::{TenantId, validate_memberships};
 
 pub struct TotpReplayGuard {
     accepted: Mutex<HashMap<String, u64>>,
@@ -279,7 +281,7 @@ mod tests {
         let s = SessionStore::new(Duration::from_secs(60), 10);
         let a = s.create().unwrap();
         let b = s
-            .rotate_authenticated(&a.id, "alice".into(), true, vec!["Admin".into()], 1)
+            .rotate_authenticated(&a.id, "alice".into(), true, vec!["Admin".into()], vec![], 1)
             .unwrap();
         assert!(s.get(&a.id).unwrap().is_none());
         assert!(b.has_role("Admin"));
@@ -328,3 +330,6 @@ mod m44_flash_session_tests {
         );
     }
 }
+
+#[cfg(test)]
+mod session_tests;

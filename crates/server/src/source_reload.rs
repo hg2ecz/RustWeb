@@ -80,6 +80,8 @@ fn validate_candidate(
     cache_available: bool,
     auth_enabled: bool,
     database_available: bool,
+    idempotency_available: bool,
+    webhook_secrets_available: bool,
 ) -> Result<(), SourceReloadError> {
     validate_route_rate_policies(&domain.program, route_rate_limiter.policies.as_ref())?;
     for route in domain
@@ -114,7 +116,25 @@ fn validate_candidate(
         .program
         .routes
         .iter()
-        .any(|route| !matches!(route.auth, RouteAuth::Public))
+        .any(|route| route.idempotent || matches!(route.auth, RouteAuth::Webhook(_)))
+        && !idempotency_available
+    {
+        return Err(SourceReloadError::IdempotencyUnavailable);
+    }
+    if domain
+        .program
+        .routes
+        .iter()
+        .any(|route| matches!(route.auth, RouteAuth::Webhook(_)))
+        && !webhook_secrets_available
+    {
+        return Err(SourceReloadError::WebhookSecretsUnavailable);
+    }
+    if domain
+        .program
+        .routes
+        .iter()
+        .any(|route| !matches!(route.auth, RouteAuth::Public | RouteAuth::Webhook(_)))
         && !auth_enabled
     {
         return Err(SourceReloadError::AuthenticationUnavailable);
@@ -130,6 +150,8 @@ fn build_candidate(
     cache_available: bool,
     auth_enabled: bool,
     database_available: bool,
+    idempotency_available: bool,
+    webhook_secrets_available: bool,
 ) -> Result<Arc<DomainRuntime>, SourceReloadError> {
     let candidate = prepare_domain_runtime(
         current.host.clone(),
@@ -153,6 +175,8 @@ fn build_candidate(
         cache_available,
         auth_enabled,
         database_available,
+        idempotency_available,
+        webhook_secrets_available,
     )?;
     Ok(candidate)
 }
@@ -228,6 +252,8 @@ pub(super) fn spawn_source_reload_supervisor(
     cache_available: bool,
     auth_enabled: bool,
     database_available: bool,
+    idempotency_available: bool,
+    webhook_secrets_available: bool,
 ) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
         let mut states: HashMap<String, WatchState> = HashMap::new();
@@ -340,6 +366,8 @@ pub(super) fn spawn_source_reload_supervisor(
                         cache_available,
                         auth_enabled,
                         database_available,
+                        idempotency_available,
+                        webhook_secrets_available,
                     )
                     .map(|candidate: Arc<DomainRuntime>| -> (Arc<DomainRuntime>, Arc<DomainRuntime>) { (old, candidate) })
                     .map_err(|err| err.to_string())

@@ -3,6 +3,7 @@ use thiserror::Error;
 
 #[derive(Debug)]
 pub struct UploadResult {
+    pub(crate) staging_path: String,
     pub bytes_written: u64,
     pub csrf_token: String,
     pub original_filename: Option<String>,
@@ -133,11 +134,8 @@ where
     let staging = staged_path
         .as_deref()
         .ok_or(UploadError::FieldCardinality)?;
-    if let Err(err) = appfs.commit_staged(staging, destination) {
-        appfs.cleanup_staged(staging);
-        return Err(err.into());
-    }
     Ok(UploadResult {
+        staging_path: staging.to_string(),
         bytes_written,
         csrf_token,
         original_filename,
@@ -194,6 +192,8 @@ mod tests {
         .unwrap();
         assert_eq!(result.bytes_written, 5);
         assert_eq!(result.csrf_token, "token123");
+        assert!(fs.read("uploads/u.bin").await.is_err());
+        fs.commit_upload(&result, "uploads/u.bin").unwrap();
         assert_eq!(fs.read("uploads/u.bin").await.unwrap(), b"hello");
         std::fs::remove_dir_all(&root).unwrap();
     }

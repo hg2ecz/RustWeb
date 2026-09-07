@@ -163,18 +163,32 @@ where
         }
         Ok(Err(_)) => Response::text(400, "Bad Request", b"invalid multipart upload\n"),
         Ok(Ok(info)) => {
+            if !upload.image {
+                if fs.commit_upload(&info, &destination).is_err() {
+                    fs.cleanup_upload(&info);
+                    return DispatchOutcome::close_connection(Response::text(
+                        503,
+                        "Service Unavailable",
+                        b"upload commit failed\n",
+                    ));
+                }
+            }
             let uploaded = match build_upload_runtime_value(
                 fs,
                 upload,
                 &destination,
-                info,
+                &info,
                 ctx.max_image_pixels,
             )
             .await
             {
                 Ok(value) => value,
                 Err(_) => {
-                    let _ = fs.remove(&destination);
+                    if upload.image {
+                        fs.cleanup_upload(&info);
+                    } else {
+                        let _ = fs.remove(&destination);
+                    }
                     return DispatchOutcome::close_connection(Response::text(
                         415,
                         "Unsupported Media Type",
@@ -207,12 +221,22 @@ where
                     ),
                 ),
                 (
+                    "__authMemberships".to_string(),
+                    Value::List(
+                        ctx.session
+                            .memberships
+                            .iter()
+                            .map(|tenant| Value::String(tenant.as_str().to_string()))
+                            .collect(),
+                    ),
+                ),
+                (
                     "__requestId".to_string(),
                     Value::String(ctx.request_id.to_string()),
                 ),
                 (upload.name.clone(), uploaded),
             ];
-            match timeout(
+            let execution = timeout(
                 Duration::from_millis(ctx.config.request_timeout_ms),
                 execute_request_with_profiles(
                     ctx.program,
@@ -229,10 +253,29 @@ where
                     ctx.services.database,
                 ),
             )
-            .await
-            {
+            .await;
+
+            if upload.image {
+                match &execution {
+                    Ok(Ok(_)) => {
+                        if fs.commit_upload(&info, &destination).is_err() {
+                            fs.cleanup_upload(&info);
+                            return DispatchOutcome::close_connection(Response::text(
+                                503,
+                                "Service Unavailable",
+                                b"verified image publish failed\n",
+                            ));
+                        }
+                    }
+                    _ => fs.cleanup_upload(&info),
+                }
+            }
+
+            match execution {
                 Err(_) => {
-                    let _ = fs.remove(&destination);
+                    if !upload.image {
+                        let _ = fs.remove(&destination);
+                    }
                     Response::text(503, "Service Unavailable", b"request execution timeout\n")
                 }
                 Ok(Ok(AppResponse::Html(html))) => {
@@ -282,7 +325,9 @@ where
                     )
                 }
                 Ok(Err(error)) => {
-                    let _ = fs.remove(&destination);
+                    if !upload.image {
+                        let _ = fs.remove(&destination);
+                    }
                     app_error_response(error, json_api)
                 }
             }
@@ -344,6 +389,7 @@ where
             ctx.resource_profiles,
             ctx.services.route_rate_limiter,
             ctx.services.public_cache,
+            ctx.services.idempotency_redis,
             ctx.services.metrics,
             ctx.request_id,
             ctx.effective_peer,

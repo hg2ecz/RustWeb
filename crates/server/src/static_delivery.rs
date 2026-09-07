@@ -61,7 +61,7 @@ pub(super) async fn serve_media_image(
         .routes
         .iter()
         .filter_map(|r| r.upload.as_ref())
-        .filter(|u| u.image)
+        .filter(|u| u.image && u.publish)
         .any(|u| {
             let prefix = format!("{}/", u.destination.trim_end_matches('/'));
             relative.starts_with(&prefix) && !relative[prefix.len()..].contains('/')

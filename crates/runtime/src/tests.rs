@@ -1,4 +1,6 @@
 #[cfg(test)]
+mod bounded_request_collection_tests;
+#[cfg(test)]
 mod core_runtime_tests;
 #[cfg(test)]
 mod db_runtime_tests;

@@ -23,16 +23,26 @@ pub(super) fn handler_input_types(
                 && routes
                     .iter()
                     .all(|route| route_validates(route, &param.name, param.ty));
-            (param.name.clone(), external_param_type(param.ty, validated))
+            let active_tenant = validated
+                && !routes.is_empty()
+                && routes
+                    .iter()
+                    .all(|route| route.tenant_field.as_deref() == Some(param.name.as_str()));
+            (
+                param.name.clone(),
+                external_param_type(param.ty, validated, active_tenant),
+            )
         })
         .collect()
 }
 
-fn external_param_type(ty: ValueType, validated: bool) -> StaticType {
+fn external_param_type(ty: ValueType, validated: bool, active_tenant: bool) -> StaticType {
     if ty == ValueType::Upload {
         return StaticType::Upload;
     }
-    let scalar = if validated {
+    let scalar = if active_tenant {
+        ScalarType::active_tenant(ty)
+    } else if validated {
         ScalarType::validated(ty)
     } else {
         ScalarType::untrusted(ty)
@@ -88,6 +98,7 @@ fn route_has_validation(route: &Route, name: &str, ty: ValueType) -> bool {
                 (ValidationKind::Length { .. }, ValueType::String)
                     | (ValidationKind::Pattern { .. }, ValueType::String)
                     | (ValidationKind::Range { .. }, ValueType::Int)
+                    | (ValidationKind::Items { .. }, ValueType::StringList)
                     | (ValidationKind::SameAs { .. }, _)
             )
     })

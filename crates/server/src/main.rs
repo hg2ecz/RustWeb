@@ -40,6 +40,7 @@ struct WebSecurityCliConfig {
     allow_missing_origin: bool,
     cors_origins: Vec<String>,
     cors_allow_credentials: bool,
+    webhook_secrets_dir: Option<PathBuf>,
 }
 
 #[derive(Clone)]
@@ -102,6 +103,7 @@ struct AuthCliConfig {
     ldap_bind_password: Option<String>,
     totp_secrets_file: Option<PathBuf>,
     roles_file: Option<PathBuf>,
+    memberships_file: Option<PathBuf>,
     local_auth_db_url: Option<String>,
     require_totp: bool,
     login_max_attempts: u32,
@@ -113,6 +115,7 @@ struct AuthRuntime {
     local: Option<LocalUserStore>,
     totp_secrets: HashMap<String, Vec<u8>>,
     roles: HashMap<String, Vec<String>>,
+    memberships: HashMap<String, Vec<auth::TenantId>>,
     require_totp: bool,
     redis: Option<RedisStore>,
     local_totp: TotpReplayGuard,
@@ -164,6 +167,7 @@ impl Default for CacheCliConfig {
     }
 }
 
+mod auth_claims;
 mod auth_http;
 mod auth_setup;
 mod backend_support;
@@ -172,6 +176,8 @@ mod connection;
 mod connection_dispatch;
 mod connection_finalize;
 mod http_io;
+mod idempotency;
+mod membership_setup;
 mod operations;
 mod presentation;
 mod rate_limit;
@@ -185,6 +191,7 @@ mod source_reload;
 mod static_delivery;
 mod tls_support;
 mod web_security;
+mod webhook_verification;
 use http_io::Response;
 use operations::install_panic_logging_hook;
 use presentation::endpoint_error;
@@ -289,6 +296,7 @@ mod cli_scan;
 mod http_dispatch;
 mod startup;
 mod startup_args;
+mod startup_security;
 mod startup_services;
 mod startup_transport;
 

@@ -10,7 +10,7 @@ use crate::{
     CacheCliConfig, LifecycleCliConfig, ObservabilityCliConfig, TlsCliConfig, WebSecurityCliConfig,
 };
 use auth::SessionBackend;
-use data::Database;
+use data::{Database, RedisStore};
 use language_core::ServerConfig;
 use observability::{Metrics, flush_logs, reopen_logs, server_event, server_log};
 #[cfg(unix)]
@@ -43,6 +43,7 @@ pub(super) struct TransportRuntime {
     pub(super) auth_runtime: Arc<AuthRuntime>,
     pub(super) route_rate_limiter: Arc<RouteRateLimiter>,
     pub(super) public_cache: Arc<PublicPageCache>,
+    pub(super) idempotency_redis: Option<RedisStore>,
     pub(super) metrics: Arc<Metrics>,
     pub(super) source_reload_task: Option<JoinHandle<()>>,
     pub(super) tls_acceptor: Option<TlsAcceptor>,
@@ -75,6 +76,7 @@ pub(super) async fn serve(runtime: TransportRuntime) -> Result<(), StartupError>
         auth_runtime,
         route_rate_limiter,
         public_cache,
+        idempotency_redis,
         metrics,
         source_reload_task,
         tls_acceptor,
@@ -130,6 +132,7 @@ pub(super) async fn serve(runtime: TransportRuntime) -> Result<(), StartupError>
                 let lifecycle = lifecycle.clone();
                 let route_rate_limiter = Arc::clone(&route_rate_limiter);
                 let public_cache = Arc::clone(&public_cache);
+                let idempotency_redis = idempotency_redis.clone();
                 let metrics = Arc::clone(&metrics);
                 let observability = observability.clone();
                 connections.spawn(async move {
@@ -143,6 +146,7 @@ pub(super) async fn serve(runtime: TransportRuntime) -> Result<(), StartupError>
                         lifecycle: &lifecycle,
                         route_rate_limiter: &route_rate_limiter,
                         public_cache: &public_cache,
+                        idempotency_redis: idempotency_redis.as_ref(),
                         metrics: &metrics,
                         observability: &observability,
                         web: &web,

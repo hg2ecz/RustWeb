@@ -20,6 +20,11 @@ pub(super) struct MutationEvidence {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum TenantEvidence {
+    ActiveRouteTenant,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum LifecycleEvidence {
     IssuedToken(CredentialPurpose),
     PresentedTokenHash(CredentialPurpose),
@@ -33,6 +38,7 @@ pub(super) struct ScalarType {
     pub sensitivity: DataSensitivity,
     pub disclosure: DisclosureEvidence,
     pub mutation: Option<MutationEvidence>,
+    pub tenant: Option<TenantEvidence>,
     pub lifecycle: Option<LifecycleEvidence>,
 }
 
@@ -89,6 +95,7 @@ impl ScalarType {
             sensitivity: source.sensitivity,
             disclosure: source.disclosure,
             mutation: None,
+            tenant: None,
             lifecycle: None,
         }
     }
@@ -121,6 +128,12 @@ impl ScalarType {
         scalar
     }
 
+    pub(super) fn active_tenant(value_type: ValueType) -> Self {
+        let mut scalar = Self::validated(value_type);
+        scalar.tenant = Some(TenantEvidence::ActiveRouteTenant);
+        scalar
+    }
+
     pub(super) fn combine(self, other: Self, result_type: ValueType) -> Self {
         Self::new(
             result_type,
@@ -142,6 +155,7 @@ impl ScalarType {
             sensitivity,
             disclosure,
             mutation: None,
+            tenant: None,
             lifecycle: None,
         }
     }

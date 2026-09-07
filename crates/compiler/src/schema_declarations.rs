@@ -153,7 +153,7 @@ pub(super) fn parse_form_schemas(
             if tokens[i] == "validate" {
                 i += 1;
                 while i < tokens.len() {
-                    let (rule, next) = parse_validation_rule(&tokens, i)?;
+                    let (rule, next) = crate::validation_rules::parse_validation_rule(&tokens, i)?;
                     validations.push(rule);
                     i = next;
                 }
@@ -192,118 +192,6 @@ pub(super) fn parse_form_schemas(
     Ok(())
 }
 
-pub(super) fn parse_validation_rule(
-    tokens: &[String],
-    i: usize,
-) -> Result<(ValidationRule, usize), CompileError> {
-    let field = tokens
-        .get(i)
-        .ok_or_else(|| CompileError::Syntax("validation field expected".into()))?
-        .clone();
-    let kind = tokens
-        .get(i + 1)
-        .ok_or_else(|| CompileError::Syntax("validation kind expected".into()))?
-        .as_str();
-    match kind {
-        "length" => {
-            let a = tokens
-                .get(i + 2)
-                .ok_or_else(|| CompileError::Syntax("length minimum expected".into()))?;
-            let b = tokens
-                .get(i + 3)
-                .ok_or_else(|| CompileError::Syntax("length maximum expected".into()))?;
-            let min: usize = a
-                .parse()
-                .map_err(|_| CompileError::Syntax("length min must be integer".into()))?;
-            let max: usize = b
-                .parse()
-                .map_err(|_| CompileError::Syntax("length max must be integer".into()))?;
-            if min > max {
-                return Err(CompileError::Syntax(
-                    "validation min cannot exceed max".into(),
-                ));
-            }
-            Ok((
-                ValidationRule {
-                    field,
-                    kind: ValidationKind::Length { min, max },
-                },
-                i + 4,
-            ))
-        }
-        "range" => {
-            let a = tokens
-                .get(i + 2)
-                .ok_or_else(|| CompileError::Syntax("range minimum expected".into()))?;
-            let b = tokens
-                .get(i + 3)
-                .ok_or_else(|| CompileError::Syntax("range maximum expected".into()))?;
-            let min: i64 = a
-                .parse()
-                .map_err(|_| CompileError::Syntax("range min must be integer".into()))?;
-            let max: i64 = b
-                .parse()
-                .map_err(|_| CompileError::Syntax("range max must be integer".into()))?;
-            if min > max {
-                return Err(CompileError::Syntax(
-                    "validation min cannot exceed max".into(),
-                ));
-            }
-            Ok((
-                ValidationRule {
-                    field,
-                    kind: ValidationKind::Range { min, max },
-                },
-                i + 4,
-            ))
-        }
-        "pattern" => {
-            let regex = tokens
-                .get(i + 2)
-                .ok_or_else(|| {
-                    CompileError::Syntax(
-                        "pattern validation requires a quoted regular expression".into(),
-                    )
-                })?
-                .clone();
-            if regex.is_empty() || regex.len() > 256 {
-                return Err(CompileError::Syntax(
-                    "pattern regular expression must be 1..256 bytes".into(),
-                ));
-            }
-            regex::Regex::new(&regex).map_err(|_| {
-                CompileError::Syntax(
-                    "pattern validation contains an invalid regular expression".into(),
-                )
-            })?;
-            Ok((
-                ValidationRule {
-                    field,
-                    kind: ValidationKind::Pattern { regex },
-                },
-                i + 3,
-            ))
-        }
-        "same" => {
-            let other = tokens
-                .get(i + 2)
-                .ok_or_else(|| {
-                    CompileError::Syntax("same validation requires another field".into())
-                })?
-                .clone();
-            Ok((
-                ValidationRule {
-                    field,
-                    kind: ValidationKind::SameAs { other },
-                },
-                i + 3,
-            ))
-        }
-        _ => Err(CompileError::Syntax(format!(
-            "unknown validation kind `{kind}`"
-        ))),
-    }
-}
 fn validate_form_rules(
     name: &str,
     fields: &[FormField],
@@ -319,6 +207,7 @@ fn validate_form_rules(
         match &r.kind {
             ValidationKind::Length { .. } if f.ty == ValueType::String => {}
             ValidationKind::Range { .. } if f.ty == ValueType::Int => {}
+            ValidationKind::Items { .. } if f.ty == ValueType::StringList => {}
             ValidationKind::Pattern { .. } if f.ty == ValueType::String => {}
             ValidationKind::SameAs { other } => {
                 let o = fields.iter().find(|x| x.name == *other).ok_or_else(|| {
@@ -358,6 +247,12 @@ fn validate_form_rules(
                     r.field
                 )));
             }
+            ValidationKind::Items { .. } => {
+                return Err(CompileError::Syntax(format!(
+                    "form `{name}` items validation requires List<String> field `{}`",
+                    r.field
+                )));
+            }
             ValidationKind::Pattern { .. } => {
                 return Err(CompileError::Syntax(format!(
                     "form `{name}` pattern validation requires String field `{}`",
@@ -388,10 +283,27 @@ pub(super) fn parse_models(
         if p.models.iter().any(|m| m.name == symbol_name) {
             return Err(CompileError::Syntax(format!("duplicate model `{name}`")));
         }
-        let brace = source[start + name.len()..]
+        let after_name = start + name.len();
+        let brace = source[after_name..]
             .find('{')
-            .map(|v| start + name.len() + v)
+            .map(|v| after_name + v)
             .ok_or_else(|| CompileError::Syntax(format!("model `{name}` has no body")))?;
+        let header = source[after_name..brace].trim();
+        let tenant_field = if header.is_empty() {
+            None
+        } else if let Some(field) = header.strip_prefix("scoped by ") {
+            let field = field.trim();
+            if !is_identifier(field) {
+                return Err(CompileError::Syntax(format!(
+                    "model `{name}` tenant scope must use `scoped by <field>`"
+                )));
+            }
+            Some(field.to_string())
+        } else {
+            return Err(CompileError::Syntax(format!(
+                "model `{name}` expected `{{` or `scoped by <field> {{`"
+            )));
+        };
         let close = matching_brace(source, brace)
             .ok_or_else(|| CompileError::Syntax(format!("model `{name}` body is unclosed")))?;
         let mut fields = Vec::new();
@@ -442,9 +354,33 @@ pub(super) fn parse_models(
                 "model `{name}` must have at least one field"
             )));
         }
+        if let Some(scope_field) = tenant_field.as_deref() {
+            let scope = fields.iter().find(|field| field.name == scope_field).ok_or_else(|| {
+                CompileError::security(
+                    "SEC-A01-030",
+                    format!("tenant-scoped model `{name}` references missing field `{scope_field}`"),
+                    Some("declare the tenant field on the model and use a String-represented nominal domain type such as OrganizationId".into()),
+                )
+            })?;
+            if p.representation_type(scope.ty) != Some(ValueType::String) {
+                return Err(CompileError::security(
+                    "SEC-A01-031",
+                    format!("tenant field `{name}.{scope_field}` must have String representation"),
+                    Some("use a nominal String domain type for tenant identifiers so it can be matched against authenticated membership claims".into()),
+                ));
+            }
+            if scope.sensitivity != language_core::DataSensitivity::Public {
+                return Err(CompileError::security(
+                    "SEC-A01-040",
+                    format!("tenant field `{name}.{scope_field}` must be public identity metadata"),
+                    Some("tenant scope identifiers are authorization selectors, not secrets; keep sensitive tenant data in separate fields".into()),
+                ));
+            }
+        }
         p.models.push(Model {
             name: symbol_name,
             fields,
+            tenant_field,
         });
         off = close + 1;
     }

@@ -32,10 +32,17 @@ mod core_compile_tests;
 mod data_contract_compile_tests;
 mod domain_compile_tests;
 mod f32_tests;
+mod idempotency_compile_tests;
 mod module_namespace_compile_tests;
 mod numeric_string_core_tests;
 mod presentation_compile_tests;
+mod route_budget_compile_tests;
 mod statement_terminator_tests;
 mod web_flow_compile_tests;
 
 mod security_language_tests;
+mod tenant_isolation_tests;
+
+mod public_error_boundary_tests;
+
+mod webhook_compile_tests;

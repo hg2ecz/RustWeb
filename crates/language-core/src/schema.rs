@@ -10,6 +10,7 @@ pub struct EnumDef {
 pub struct Model {
     pub name: String,
     pub fields: Vec<FunctionParam>,
+    pub tenant_field: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -42,6 +43,7 @@ pub struct FormFailure {
 pub enum ValidationKind {
     Length { min: usize, max: usize },
     Range { min: i64, max: i64 },
+    Items { min: usize, max: usize },
     Pattern { regex: String },
     SameAs { other: String },
 }

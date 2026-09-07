@@ -107,44 +107,51 @@ pub(super) async fn auth_login(
             return Response::text(503, "Service Unavailable", b"authentication unavailable\n");
         }
     }
-    let (canonical_principal, roles, secret, auth_generation, local_backend) = if let Some(local) =
-        auth.local.as_ref()
-    {
-        match local.authenticate(&username, password).await {
-            Ok(user) => (
-                user.username,
-                user.roles,
-                user.totp_secret,
-                user.auth_generation,
-                true,
-            ),
-            Err(AuthError::StoreUnavailable) => {
-                return Response::text(503, "Service Unavailable", b"authentication unavailable\n");
+    let (canonical_principal, roles, memberships, secret, auth_generation, local_backend) =
+        if let Some(local) = auth.local.as_ref() {
+            match local.authenticate(&username, password).await {
+                Ok(user) => (
+                    user.username,
+                    user.roles,
+                    user.memberships,
+                    user.totp_secret,
+                    user.auth_generation,
+                    true,
+                ),
+                Err(AuthError::StoreUnavailable) => {
+                    return Response::text(
+                        503,
+                        "Service Unavailable",
+                        b"authentication unavailable\n",
+                    );
+                }
+                Err(_) => {
+                    audit_auth_activity(request_id, &username, "invalid_credentials", peer_key);
+                    return Response::text(401, "Unauthorized", b"invalid credentials\n");
+                }
             }
-            Err(_) => {
+        } else {
+            let ldap = auth.ldap.as_ref().expect("checked above");
+            if authenticate_ldap(ldap, &username, password).await.is_err() {
                 audit_auth_activity(request_id, &username, "invalid_credentials", peer_key);
                 return Response::text(401, "Unauthorized", b"invalid credentials\n");
             }
-        }
-    } else {
-        let ldap = auth.ldap.as_ref().expect("checked above");
-        if authenticate_ldap(ldap, &username, password).await.is_err() {
-            audit_auth_activity(request_id, &username, "invalid_credentials", peer_key);
-            return Response::text(401, "Unauthorized", b"invalid credentials\n");
-        }
-        let roles = auth
-            .roles
-            .get(&username)
-            .cloned()
-            .unwrap_or_else(|| vec!["User".into()]);
-        (
-            username.clone(),
-            roles,
-            auth.totp_secrets.get(&username).cloned(),
-            0,
-            false,
-        )
-    };
+            let roles = auth
+                .roles
+                .get(&username)
+                .cloned()
+                .unwrap_or_else(|| vec!["User".into()]);
+            let memberships = auth.memberships.get(&username).cloned().unwrap_or_default();
+            let auth_generation = auth.mapped_claims_generation(&username);
+            (
+                username.clone(),
+                roles,
+                memberships,
+                auth.totp_secrets.get(&username).cloned(),
+                auth_generation,
+                false,
+            )
+        };
     let mfa = if let Some(secret) = secret.as_deref() {
         let unix = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -209,6 +216,7 @@ pub(super) async fn auth_login(
             canonical_principal.clone(),
             mfa,
             roles,
+            memberships,
             auth_generation,
         )
         .await

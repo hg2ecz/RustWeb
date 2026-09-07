@@ -277,6 +277,12 @@ pub(super) fn apply(
                     args.next().ok_or("--auth-roles-file requires a path")?,
                 ))
             }
+            "--auth-memberships-file" => {
+                auth.memberships_file = Some(PathBuf::from(
+                    args.next()
+                        .ok_or("--auth-memberships-file requires a path")?,
+                ))
+            }
             "--local-auth-db-url-file" => {
                 auth.local_auth_db_url = Some(read_secret_file(
                     &args

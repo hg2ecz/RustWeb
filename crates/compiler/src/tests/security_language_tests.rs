@@ -1651,3 +1651,111 @@ route refund POST "/refund" auth permission BillingWrite => refund;
         .expect_err("critical operation MFA requirement must still be enforced with explicit auth");
     assert!(err.to_string().contains("SEC-A07-020"), "{err}");
 }
+
+#[test]
+fn external_string_list_gets_implicit_cardinality_bound() {
+    let src = r#"
+page fn tags(ctx: PageContext, tags: List<String>) -> Result<Json, PageError> {
+    return Ok(json(len(tags)));
+}
+route tags GET "/tags" query tags<List<String>> public => tags;
+"#;
+    let program = compile_source(src).expect("bounded external string list should compile");
+    let route = &program.routes[0];
+    assert!(route.validations.iter().any(|rule| {
+        rule.field == "tags" && matches!(&rule.kind, ValidationKind::Items { min: 1, max: 64 })
+    }));
+}
+
+#[test]
+fn explicit_items_bound_overrides_collection_default() {
+    let src = r#"
+page fn tags(ctx: PageContext, tags: List<String>) -> Result<Json, PageError> {
+    return Ok(json(len(tags)));
+}
+route tags GET "/tags" query tags<List<String>> validate tags items 1 8 public => tags;
+"#;
+    let program = compile_source(src).expect("explicit collection bound should compile");
+    let rules: Vec<_> = program.routes[0]
+        .validations
+        .iter()
+        .filter(|rule| rule.field == "tags" && matches!(&rule.kind, ValidationKind::Items { .. }))
+        .collect();
+    assert_eq!(rules.len(), 1);
+    assert!(matches!(
+        rules[0].kind,
+        ValidationKind::Items { min: 1, max: 8 }
+    ));
+}
+
+#[test]
+fn items_validation_rejects_non_collection_field() {
+    let src = r#"
+page fn search(ctx: PageContext, q: String) -> Result<Json, PageError> {
+    return Ok(json(q));
+}
+route search GET "/search" query q<String> validate q items 1 8 public => search;
+"#;
+    let err = compile_source(src).expect_err("items validation must be collection-only");
+    assert!(
+        err.to_string()
+            .contains("validation kind does not match field")
+    );
+}
+
+#[test]
+fn critical_operation_can_require_named_security_event() {
+    let src = r#"
+model User { id: Int }
+security event RoleGranted for User;
+permission UserAdmin { role Admin }
+critical RoleChange {
+    permission UserAdmin
+    mfa
+    transaction
+    audit RoleGranted
+}
+query fn record(tx: Transaction, id: Int) -> Result<Void, DbError> sql {
+    INSERT INTO role_events(user_id) VALUES(:id)
+}
+action fn grant(ctx: ActionContext, db: Db, id: Int) -> Result<Json, PageError> critical RoleChange {
+    transaction db {
+        record(tx, id)?;
+        security RoleGranted id;
+    }
+    return Ok(json(true));
+}
+route grant POST "/grant/:id<Int>" auth critical RoleChange => grant;
+"#;
+    compile_source(src).expect("named security event should satisfy critical audit contract");
+}
+
+#[test]
+fn critical_operation_rejects_wrong_security_event() {
+    let src = r#"
+model User { id: Int }
+security event RoleGranted for User;
+security event RoleRevoked for User;
+permission UserAdmin { role Admin }
+critical RoleChange {
+    permission UserAdmin
+    mfa
+    transaction
+    audit RoleGranted
+}
+query fn record(tx: Transaction, id: Int) -> Result<Void, DbError> sql {
+    INSERT INTO role_events(user_id) VALUES(:id)
+}
+action fn grant(ctx: ActionContext, db: Db, id: Int) -> Result<Json, PageError> critical RoleChange {
+    transaction db {
+        record(tx, id)?;
+        security RoleRevoked id;
+    }
+    return Ok(json(true));
+}
+route grant POST "/grant/:id<Int>" auth critical RoleChange => grant;
+"#;
+    let err = compile_source(src)
+        .expect_err("wrong security event must not satisfy critical audit contract");
+    assert!(err.to_string().contains("SEC-A09-006"), "{err}");
+}

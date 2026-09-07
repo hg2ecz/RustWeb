@@ -158,6 +158,9 @@ pub(super) fn load(path: Option<&Path>) -> Result<LoadedCliConfig, CliParseError
         if let Some(v) = file.auth.roles_file {
             auth.roles_file = Some(config_abs_path(&v, "auth.roles_file")?);
         }
+        if let Some(v) = file.auth.memberships_file {
+            auth.memberships_file = Some(config_abs_path(&v, "auth.memberships_file")?);
+        }
         if let Some(v) = file.auth.local_auth_db_url_file {
             auth.local_auth_db_url = Some(read_secret_file(
                 config_abs_path(&v, "auth.local_auth_db_url_file")?
@@ -201,6 +204,9 @@ pub(super) fn load(path: Option<&Path>) -> Result<LoadedCliConfig, CliParseError
         }
         if let Some(v) = file.web.cors_allow_credentials {
             web.cors_allow_credentials = v;
+        }
+        if let Some(v) = file.web.webhook_secrets_dir {
+            web.webhook_secrets_dir = Some(config_abs_path(&v, "web.webhook_secrets_dir")?);
         }
         if let Some(v) = file.storage.data_root {
             storage.data_root = Some(config_abs_path(&v, "storage.data_root")?);

@@ -89,7 +89,7 @@ CMS-ben, wikiben, hírportálon és adminfelületen a képekhez az általános \
 
 \begin{lstlisting}[language=RWLang]
 route saveHero POST "/admin/hero"
-    upload hero<Image> to "media"
+    upload hero<Image> to "media" publish
     auth role Editor
     => saveHero;
 \end{lstlisting}
@@ -155,7 +155,7 @@ A runtime fenntartja a következő URL-prefixet:
 /__rw/media/
 \end{lstlisting}
 
-Az alkalmazás ezzel ütköző route-ot nem deklarálhat. A media endpoint nem teszi HTTP-n böngészhetővé a teljes \code{data_root} könyvtárat: csak olyan AppFs könyvtárból szolgál ki képet, amelyet a program valamely \code{upload ...<Image> to "..."} route-ja deklarált.
+Az alkalmazás ezzel ütköző route-ot nem deklarálhat. A media endpoint nem teszi HTTP-n böngészhetővé a teljes \code{data_root} könyvtárat: csak olyan AppFs könyvtárból szolgál ki képet, amelyet a program valamely \code{upload ...<Image> to "..." publish} route-ja deklarált.
 
 Kiszolgáláskor a szerver a tartalmat ismét a képdetektor alapján kezeli, nem a kliens eredeti MIME-jára hagyatkozik. A válaszhoz biztonsági és cache headerek társulnak; a média kiszolgálása nem futtat alkalmazás-route-ot és nem hoz létre sessiont.
 
@@ -172,7 +172,7 @@ A route legalább autentikált legyen, admin/szerkesztő funkciónál pedig role
 
 \begin{lstlisting}[language=RWLang]
 route saveHero POST "/admin/articles/:id<Int>/hero"
-    upload hero<Image> to "media"
+    upload hero<Image> to "media" publish
     auth role Editor
     => saveHero;
 \end{lstlisting}

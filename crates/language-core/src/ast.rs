@@ -1,6 +1,6 @@
 use crate::values::{F32Value, FunctionParam, ValueType};
 use crate::web_types::FlashMessage;
-use crate::{BuiltinFunction, ObjectAuthorization, PublicProjection};
+use crate::{BuiltinFunction, ObjectAuthorization, PublicError, PublicProjection};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum BinaryOp {
     Add,
@@ -227,6 +227,7 @@ pub enum Statement {
     ReturnHtml(HtmlTemplate),
     ReturnJson(Expr),
     ReturnJsonProjection(PublicProjection),
+    Fail(PublicError),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -296,6 +297,7 @@ pub enum ActionStatement {
     ReturnRedirect(RouteCall),
     ReturnJson(Expr),
     ReturnJsonProjection(PublicProjection),
+    Fail(PublicError),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

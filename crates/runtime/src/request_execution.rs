@@ -130,6 +130,33 @@ async fn execute_inner(
         budget.charge_value(v)?;
         env.insert(n.clone(), v.clone());
     }
+    crate::tenant_scope::enforce_route_tenant(route, &env)?;
+    if let Some(profile) = route.budget_profile.as_deref() {
+        let (profile_config, _permit) = profiles.acquire(profile).await?;
+        budget.push_profile(profile_config);
+        let result = execute_route_body(
+            program, method, route, form_pairs, &mut env, budget, profiles, db,
+        )
+        .await;
+        budget.pop_profile();
+        return result;
+    }
+    execute_route_body(
+        program, method, route, form_pairs, &mut env, budget, profiles, db,
+    )
+    .await
+}
+
+async fn execute_route_body(
+    program: &Program,
+    method: HttpMethod,
+    route: &language_core::Route,
+    form_pairs: &[(String, String)],
+    env: &mut std::collections::HashMap<String, Value>,
+    budget: &mut Budget,
+    profiles: &ResourceProfiles,
+    db: Option<&Database>,
+) -> Result<AppResponse, AppError> {
     match method {
         HttpMethod::Get => {
             validate_route_inputs(route, &env)?;
@@ -148,12 +175,12 @@ async fn execute_inner(
                     let (profile_config, _permit) = profiles.acquire(profile).await?;
                     budget.push_profile(profile_config);
                     let result =
-                        execute_page_plain(program, route, inner, &mut env, budget, db).await;
+                        execute_page_plain(program, route, inner, &mut *env, budget, db).await;
                     budget.pop_profile();
                     return result;
                 }
                 if let Some(response) =
-                    execute_page_statement(program, route, s, &mut env, budget, db).await?
+                    execute_page_statement(program, route, s, &mut *env, budget, db).await?
                 {
                     return Ok(response);
                 }
@@ -166,9 +193,9 @@ async fn execute_inner(
                 &route.json_fields
             };
             if route.form_schema.is_some() && route.json_fields.is_empty() {
-                decode_named_form_into(program, route, form_pairs, &mut env)?;
+                decode_named_form_into(program, route, form_pairs, &mut *env)?;
             } else {
-                decode_fields_into(program, body_schema, form_pairs, &mut env)?;
+                decode_fields_into(program, body_schema, form_pairs, &mut *env)?;
                 validate_route_inputs(route, &env)?;
             }
             let action = program.action(&route.handler).ok_or(AppError::Internal)?;
@@ -185,12 +212,12 @@ async fn execute_inner(
                 {
                     let (profile_config, _permit) = profiles.acquire(profile).await?;
                     budget.push_profile(profile_config);
-                    let result = execute_action_plain(program, inner, &mut env, budget, db).await;
+                    let result = execute_action_plain(program, inner, &mut *env, budget, db).await;
                     budget.pop_profile();
                     return result;
                 }
                 if let Some(response) =
-                    execute_action_statement(program, s, &mut env, budget, db).await?
+                    execute_action_statement(program, s, &mut *env, budget, db).await?
                 {
                     return Ok(response);
                 }

@@ -58,6 +58,7 @@ pub(super) async fn run(parsed: StartupArgs) -> Result<(), StartupError> {
         allow_memory_rate_limit,
         cache: &cache_cli,
         lifecycle: &lifecycle,
+        web: &web_cli,
     })
     .await?;
     let crate::startup_services::PreparedServices {
@@ -66,6 +67,7 @@ pub(super) async fn run(parsed: StartupArgs) -> Result<(), StartupError> {
         auth_runtime,
         route_rate_limiter,
         public_cache,
+        idempotency_redis,
         source_reload_task,
     } = prepared;
 
@@ -154,6 +156,7 @@ pub(super) async fn run(parsed: StartupArgs) -> Result<(), StartupError> {
         auth_runtime,
         route_rate_limiter,
         public_cache,
+        idempotency_redis,
         metrics,
         source_reload_task,
         tls_acceptor,

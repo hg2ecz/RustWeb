@@ -132,6 +132,16 @@ pub(super) fn parse_queries(
             &return_type,
             &sql,
         )?;
+        let tenant_scope = crate::tenant_security::infer_query_scope(
+            &name,
+            &return_type,
+            contracts.mutation_target.as_ref(),
+            contracts.credential_lifecycle.as_ref(),
+            &params,
+            &keyword,
+            &sql,
+            p,
+        )?;
         let mutating = matches!(keyword.as_str(), "INSERT" | "UPDATE" | "DELETE");
         if mutating && capability != QueryCapability::Transaction {
             return Err(CompileError::UnsafeSql(format!(
@@ -166,6 +176,7 @@ pub(super) fn parse_queries(
             params,
             return_type,
             mutation_target: contracts.mutation_target,
+            tenant_scope,
             credential_lifecycle: contracts.credential_lifecycle,
             sql,
         });

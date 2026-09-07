@@ -11,11 +11,13 @@ pub struct UploadField {
     pub name: String,
     pub destination: String,
     pub image: bool,
+    pub publish: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RouteAuth {
     Public,
+    Webhook(String),
     User,
     Mfa,
     Role(String),
@@ -46,8 +48,11 @@ pub struct Route {
     pub json_fields: Vec<FormField>,
     pub upload: Option<UploadField>,
     pub validations: Vec<ValidationRule>,
+    pub tenant_field: Option<String>,
     pub auth: RouteAuth,
     pub rate_policy: Option<String>,
+    pub budget_profile: Option<String>,
+    pub idempotent: bool,
     pub public_cache: Option<PublicCachePolicy>,
     pub invalidate_caches: Vec<String>,
     pub handler: String,

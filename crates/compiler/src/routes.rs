@@ -6,13 +6,12 @@ use crate::domain_symbols::internal_domain_symbol;
 use crate::domain_validation;
 use crate::lexer::tokenize;
 use crate::module_namespace::resolve;
-use crate::route_security::{apply_default_external_string_bounds, parse_explicit_access};
-use crate::schema_declarations;
+use crate::route_security::{apply_default_external_input_bounds, parse_explicit_access};
 use crate::source_syntax::is_identifier;
 use crate::type_resolution::resolve_value_type;
 use language_core::{
-    ActionBody, FormField, HttpMethod, PageBody, Program, PublicCachePolicy, Route, RouteAuth,
-    RouteSegment, Statement, UploadField, ValidationKind, ValueType,
+    ActionBody, FormField, HttpMethod, PageBody, Program, Route, RouteAuth, RouteSegment,
+    Statement, UploadField, ValidationKind, ValueType,
 };
 use std::collections::HashMap;
 
@@ -23,7 +22,8 @@ pub(super) fn parse_routes(
     namespace: &str,
     p: &mut Program,
 ) -> Result<(), CompileError> {
-    for route_source in route_scanner::top_level_route_declarations(source)? {
+    for declaration in route_scanner::top_level_route_declarations(source)? {
+        let route_source = declaration.source;
         let t = tokenize(&route_source)?;
         let i = 0;
         if t.get(i).map(String::as_str) != Some("route") {
@@ -52,9 +52,13 @@ pub(super) fn parse_routes(
                     | Some("json")
                     | Some("upload")
                     | Some("validate")
+                    | Some("tenant")
+                    | Some("webhook")
                     | Some("public")
                     | Some("auth")
                     | Some("rate")
+                    | Some("budget")
+                    | Some("idempotent")
                     | Some("cache")
                     | Some("invalidate")
                     | Some("=>")
@@ -93,9 +97,13 @@ pub(super) fn parse_routes(
                         Some("json")
                             | Some("upload")
                             | Some("validate")
+                            | Some("tenant")
+                            | Some("webhook")
                             | Some("public")
                             | Some("auth")
                             | Some("rate")
+                            | Some("budget")
+                            | Some("idempotent")
                             | Some("cache")
                             | Some("invalidate")
                             | Some("=>")
@@ -121,9 +129,13 @@ pub(super) fn parse_routes(
                 t.get(c).map(String::as_str),
                 Some("upload")
                     | Some("validate")
+                    | Some("tenant")
+                    | Some("webhook")
                     | Some("public")
                     | Some("auth")
                     | Some("rate")
+                    | Some("budget")
+                    | Some("idempotent")
                     | Some("cache")
                     | Some("invalidate")
                     | Some("=>")
@@ -188,30 +200,38 @@ pub(super) fn parse_routes(
                     "Image upload destination must be URL-safe (letters, digits, /, -, _)".into(),
                 ));
             }
+            let publish = t.get(c + 3).map(String::as_str) == Some("publish");
+            crate::upload_security::validate_publish_transition(upload_ty, uname, publish)?;
             upload = Some(UploadField {
                 name: uname.into(),
                 destination: dest,
                 image: upload_ty == "Image",
+                publish,
             });
-            c += 3;
+            c += if publish { 4 } else { 3 };
         }
         if t.get(c).map(String::as_str) == Some("validate") {
             c += 1;
             while !matches!(
                 t.get(c).map(String::as_str),
-                Some("public")
+                Some("tenant")
+                    | Some("webhook")
+                    | Some("public")
                     | Some("auth")
                     | Some("rate")
+                    | Some("budget")
+                    | Some("idempotent")
                     | Some("cache")
                     | Some("invalidate")
                     | Some("=>")
                     | None
             ) {
-                let (rule, next) = schema_declarations::parse_validation_rule(&t, c)?;
+                let (rule, next) = crate::validation_rules::parse_validation_rule(&t, c)?;
                 validations.push(rule);
                 c = next;
             }
         }
+        let tenant_field = crate::route_tenant::parse_tenant_field(&t, &mut c, &name)?;
         let auth = parse_explicit_access(&name, &t, &mut c, namespace, p)?;
         let mut rate_policy = None;
         if t.get(c).map(String::as_str) == Some("rate") {
@@ -229,59 +249,22 @@ pub(super) fn parse_routes(
             rate_policy = Some(policy);
             c += 2;
         }
-        let mut public_cache = None;
-        if t.get(c).map(String::as_str) == Some("cache") {
-            if t.get(c + 1).map(String::as_str) != Some("public")
-                || t.get(c + 2).map(String::as_str) != Some("ttl")
-            {
-                return Err(CompileError::Syntax(format!(
-                    "route `{name}` cache syntax is `cache public ttl <seconds>`"
-                )));
-            }
-            let ttl_secs: u64 = t
-                .get(c + 3)
-                .ok_or_else(|| CompileError::Syntax(format!("route `{name}` cache ttl expected")))?
-                .parse()
-                .map_err(|_| {
-                    CompileError::Syntax(format!("route `{name}` cache ttl must be integer"))
-                })?;
-            if ttl_secs == 0 {
-                return Err(CompileError::Syntax(format!(
-                    "route `{name}` cache ttl must be > 0"
-                )));
-            }
-            public_cache = Some(PublicCachePolicy { ttl_secs });
-            c += 4;
-        }
-        let mut invalidate_caches = Vec::new();
-        if t.get(c).map(String::as_str) == Some("invalidate") {
-            if t.get(c + 1).map(String::as_str) != Some("cache") {
-                return Err(CompileError::Syntax(format!(
-                    "route `{name}` invalidation syntax is `invalidate cache <route>...`"
-                )));
-            }
-            c += 2;
-            while !matches!(t.get(c).map(String::as_str), Some("=>") | None) {
-                let target = t.get(c).unwrap();
-                if !is_identifier(target) {
-                    return Err(CompileError::Syntax(format!(
-                        "route `{name}` invalid cache route name `{target}`"
-                    )));
-                }
-                if invalidate_caches.contains(target) {
-                    return Err(CompileError::Syntax(format!(
-                        "route `{name}` duplicate cache invalidation `{target}`"
-                    )));
-                }
-                invalidate_caches.push(target.clone());
-                c += 1;
-            }
-            if invalidate_caches.is_empty() {
-                return Err(CompileError::Syntax(format!(
-                    "route `{name}` invalidate cache requires at least one route name"
-                )));
-            }
-        }
+        let budget_profile = crate::route_budget::parse_route_budget(
+            &t,
+            &mut c,
+            &name,
+            namespace,
+            declaration.line,
+            p,
+        )?;
+        let idempotent = if t.get(c).map(String::as_str) == Some("idempotent") {
+            c += 1;
+            true
+        } else {
+            false
+        };
+        let public_cache = crate::route_cache::parse_public_cache(&t, &mut c, &name)?;
+        let invalidate_caches = crate::route_cache::parse_invalidations(&t, &mut c, &name)?;
         if t.get(c).map(String::as_str) != Some("=>") {
             return Err(CompileError::Syntax(format!("route `{name}` expected =>")));
         }
@@ -348,6 +331,18 @@ pub(super) fn parse_routes(
                 )));
             }
         }
+        let tenant_input_types: HashMap<String, ValueType> = path_fields
+            .iter()
+            .chain(query_fields.iter())
+            .map(|field| (field.name.clone(), field.ty))
+            .collect();
+        crate::route_tenant::validate_tenant_field(
+            &name,
+            tenant_field.as_deref(),
+            &tenant_input_types,
+            &auth,
+            p,
+        )?;
         for v in &validations {
             let ty = *field_types.get(&v.field).ok_or_else(|| {
                 CompileError::Syntax(format!(
@@ -359,6 +354,7 @@ pub(super) fn parse_routes(
             match &v.kind {
                 ValidationKind::Length { .. } if representation == ValueType::String => {}
                 ValidationKind::Range { .. } if representation == ValueType::Int => {}
+                ValidationKind::Items { .. } if representation == ValueType::StringList => {}
                 ValidationKind::Pattern { .. } if representation == ValueType::String => {}
                 ValidationKind::SameAs { other } => {
                     let other_ty = *field_types.get(other).ok_or_else(|| {
@@ -387,7 +383,7 @@ pub(super) fn parse_routes(
                 }
             }
         }
-        apply_default_external_string_bounds(
+        apply_default_external_input_bounds(
             path_fields
                 .iter()
                 .chain(query_fields.iter())
@@ -418,8 +414,11 @@ pub(super) fn parse_routes(
             json_fields,
             upload,
             validations,
+            tenant_field,
             auth,
             rate_policy,
+            budget_profile,
+            idempotent,
             public_cache,
             invalidate_caches,
             handler,
@@ -537,6 +536,9 @@ pub(super) fn validate_routes(p: &Program) -> Result<(), CompileError> {
         .ok_or_else(|| CompileError::UnknownHandler(r.handler.clone()))?;
         crate::permission_security::validate_handler_permission(r, p)?;
         crate::mfa_security::validate_handler_mfa(r, p)?;
+        crate::budget_security::validate_route_budget(r, p)?;
+        crate::webhook_security::validate_route(r, p)?;
+        crate::idempotency_security::validate_route(r, p)?;
         if expected.len() != params.len() {
             return Err(CompileError::RouteParamMismatch(format!(
                 "route `{}` provides {} values, handler expects {}",

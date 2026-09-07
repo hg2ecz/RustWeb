@@ -213,6 +213,7 @@ pub(super) fn parse_query_call(
         }
         args.push(e);
     }
+    crate::tenant_security::validate_query_call(q, &args, known, p)?;
     if cap == QueryCapability::Transaction {
         validate_mutation_inputs(q, &args, known, p)?;
     }
@@ -224,4 +225,92 @@ pub(super) fn parse_query_call(
         },
         query_static_type(q),
     )))
+}
+
+pub(super) fn parse_security_event(
+    handler: &str,
+    namespace: &str,
+    line: &str,
+    known: &HashMap<String, StaticType>,
+    p: &Program,
+) -> Result<BusinessAudit, CompileError> {
+    let rest = line
+        .strip_prefix("security ")
+        .ok_or_else(|| CompileError::Syntax("internal security event parser error".into()))?
+        .trim();
+    let event_raw = rest.split_whitespace().next().ok_or_else(|| {
+        CompileError::Syntax(format!("action `{handler}` security event name expected"))
+    })?;
+    if !is_symbol_path(event_raw) {
+        return Err(CompileError::Syntax(format!(
+            "action `{handler}` security event `{event_raw}` is invalid"
+        )));
+    }
+    let event_name = resolve(namespace, event_raw);
+    let event = p.security_event(&event_name).ok_or_else(|| {
+        CompileError::security(
+            "SEC-A09-003",
+            format!("action `{handler}` references unknown security event `{event_raw}`"),
+            Some("declare it with `security event Name for Model;`".into()),
+        )
+    })?;
+    let tail = rest[event_raw.len()..].trim();
+    let (object_id_raw, changes) = match tail.find(" from ") {
+        Some(pos) => (&tail[..pos], Some(&tail[pos + " from ".len()..])),
+        None => (tail, None),
+    };
+    if object_id_raw.trim().is_empty() {
+        return Err(CompileError::Syntax(format!(
+            "action `{handler}` security event object id expression expected"
+        )));
+    }
+    let object_id = parse_expr_in_namespace(object_id_raw.trim(), namespace, p)?;
+    validate_expr(&object_id, known, p)?;
+    reject_audit_secret(&object_id, "security event object id", known, p)?;
+    let id_ty = infer_expr_type(&object_id, known, p)?;
+    if !audit_object_id_type_allowed(id_ty) {
+        return Err(CompileError::Syntax(format!(
+            "action `{handler}` security event object id must be a scalar auditable type"
+        )));
+    }
+    let (previous, new_value) = if let Some(change) = changes {
+        let to_pos = change.find(" to ").ok_or_else(|| {
+            CompileError::Syntax(format!(
+                "action `{handler}` security event change must use `from <old> to <new>`"
+            ))
+        })?;
+        let old = parse_expr_in_namespace(change[..to_pos].trim(), namespace, p)?;
+        let new = parse_expr_in_namespace(change[to_pos + 4..].trim(), namespace, p)?;
+        validate_expr(&old, known, p)?;
+        validate_expr(&new, known, p)?;
+        reject_audit_secret(&old, "security event previous value", known, p)?;
+        reject_audit_secret(&new, "security event new value", known, p)?;
+        let old_ty = infer_expr_type(&old, known, p)?;
+        let new_ty = infer_expr_type(&new, known, p)?;
+        if old_ty != new_ty || !audit_change_type_allowed(old_ty) {
+            return Err(CompileError::security(
+                "SEC-A09-004",
+                format!(
+                    "security event `{event_raw}` from/to values must use the same auditable non-sensitive scalar type"
+                ),
+                None,
+            ));
+        }
+        (Some(old), Some(new))
+    } else {
+        (None, None)
+    };
+    Ok(BusinessAudit {
+        object_type: event.object_type.clone(),
+        object_id,
+        action: event
+            .name
+            .rsplit("::")
+            .next()
+            .unwrap_or(&event.name)
+            .to_string(),
+        previous,
+        new_value,
+        source_action: display_domain_symbol(handler),
+    })
 }

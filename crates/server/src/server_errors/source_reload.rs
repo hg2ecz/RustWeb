@@ -14,6 +14,8 @@ pub(crate) enum SourceReloadError {
     CacheUnavailable,
     DatabaseUnavailable,
     AuthenticationUnavailable,
+    IdempotencyUnavailable,
+    WebhookSecretsUnavailable,
 }
 
 impl fmt::Display for SourceReloadError {
@@ -38,6 +40,14 @@ impl fmt::Display for SourceReloadError {
             Self::AuthenticationUnavailable => write!(
                 f,
                 "reloaded application requires authentication but no authentication backend is active"
+            ),
+            Self::IdempotencyUnavailable => write!(
+                f,
+                "reloaded application uses idempotent/webhook replay protection but Redis is unavailable"
+            ),
+            Self::WebhookSecretsUnavailable => write!(
+                f,
+                "reloaded application declares verified webhook routes but web.webhook_secrets_dir is unavailable"
             ),
         }
     }

@@ -246,12 +246,42 @@ fn parse_compute_statements(
     Ok(out)
 }
 
+pub(super) fn page_return_matches(statements: &[Statement], declared: HandlerReturnKind) -> bool {
+    page_return_kind(statements) == Some(declared) || page_terminates_with_fail(statements)
+}
+
+fn page_terminates_with_fail(statements: &[Statement]) -> bool {
+    match statements.last() {
+        Some(Statement::Fail(_)) => true,
+        Some(Statement::Resource { statements, .. }) => page_terminates_with_fail(statements),
+        _ => false,
+    }
+}
+
+pub(super) fn action_return_matches(
+    statements: &[ActionStatement],
+    declared: HandlerReturnKind,
+) -> bool {
+    action_return_kind(statements) == Some(declared) || action_terminates_with_fail(statements)
+}
+
+fn action_terminates_with_fail(statements: &[ActionStatement]) -> bool {
+    match statements.last() {
+        Some(ActionStatement::Fail(_)) => true,
+        Some(ActionStatement::Resource { statements, .. }) => {
+            action_terminates_with_fail(statements)
+        }
+        _ => false,
+    }
+}
+
 pub(super) fn page_return_kind(statements: &[Statement]) -> Option<HandlerReturnKind> {
     match statements.last()? {
         Statement::ReturnHtml(_) => Some(HandlerReturnKind::Html),
         Statement::ReturnJson(_) | Statement::ReturnJsonProjection(_) => {
             Some(HandlerReturnKind::Json)
         }
+        Statement::Fail(_) => None,
         Statement::Resource { statements, .. } => page_return_kind(statements),
         Statement::Authorize(_)
         | Statement::CanonicalSlug { .. }
@@ -272,6 +302,7 @@ pub(super) fn action_return_kind(statements: &[ActionStatement]) -> Option<Handl
         ActionStatement::ReturnJson(_) | ActionStatement::ReturnJsonProjection(_) => {
             Some(HandlerReturnKind::Json)
         }
+        ActionStatement::Fail(_) => None,
         ActionStatement::Resource { statements, .. } => action_return_kind(statements),
         ActionStatement::Authorize(_)
         | ActionStatement::Let { .. }

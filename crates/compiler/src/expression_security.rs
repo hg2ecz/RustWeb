@@ -26,6 +26,7 @@ pub(super) fn infer_static_expr_type(
                 sensitivity: metadata.sensitivity,
                 disclosure: metadata.disclosure,
                 mutation: metadata.mutation,
+                tenant: metadata.tenant,
                 lifecycle: metadata.lifecycle,
             }))
         }
@@ -103,6 +104,7 @@ fn expression_metadata(
                     sensitivity: DataSensitivity::Secret,
                     disclosure: DisclosureEvidence::None,
                     mutation: None,
+                    tenant: None,
                     lifecycle: None,
                 })
             }

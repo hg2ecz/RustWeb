@@ -61,10 +61,13 @@ pub(super) fn print_effective_config(
         auth.require_totp
     );
     println!(
-        "[web]\ntrusted_proxy_count = {}\ncors_origin_count = {}\ncors_allow_credentials = {}",
+        "[web]\ntrusted_proxy_count = {}\ncors_origin_count = {}\ncors_allow_credentials = {}\nwebhook_secrets_dir = {:?}",
         web.trusted_proxy_cidrs.len(),
         web.cors_origins.len(),
-        web.cors_allow_credentials
+        web.cors_allow_credentials,
+        web.webhook_secrets_dir
+            .as_ref()
+            .map(|p| p.display().to_string())
     );
     println!(
         "[storage]\ndata_root = {:?}\nfs_mode = {:?}\nmax_upload_bytes = {}\nmax_image_pixels = {}",
@@ -447,7 +450,7 @@ pub(super) fn validate_route_rate_policies(
                         policy: name.to_string(),
                     })?;
             if matches!(policy.scope, RateScope::User | RateScope::UserRoute)
-                && matches!(route.auth, RouteAuth::Public)
+                && matches!(route.auth, RouteAuth::Public | RouteAuth::Webhook(_))
             {
                 return Err(RatePolicyConfigError::PublicUserScopedPolicy {
                     route: route.name.clone(),

@@ -10,7 +10,7 @@ action fn saveHero(ctx: ActionContext, hero: Image) -> Result<Json, PageError> {
 }
 
 route saveHero POST "/admin/hero"
-    upload hero<Image> to "media"
+    upload hero<Image> to "media" publish
     auth user
     => saveHero;
 ```
@@ -79,7 +79,7 @@ A szerver fenntartja a következő prefixet:
 /__rw/media/
 ```
 
-Az alkalmazás nem deklarálhat ezzel ütköző route-ot. A media endpoint csak olyan AppFs könyvtárból szolgál ki, amelyet a program valamely `upload ...<Image> to "..."` route-ja deklarált. A teljes data root soha nem válik HTTP-n böngészhetővé.
+Az alkalmazás nem deklarálhat ezzel ütköző route-ot. A media endpoint csak olyan AppFs könyvtárból szolgál ki, amelyet a program valamely `upload ...<Image> to "..." publish` route-ja deklarált. A teljes data root soha nem válik HTTP-n böngészhetővé.
 
 A kiszolgáláskor a fájlt újra ellenőrzi a képdetektor, és a MIME típust ebből állapítja meg. A válasz `nosniff` védelmet, immutable cache headert és ETag-et kap. Csak GET/HEAD támogatott.
 

@@ -15,7 +15,7 @@ use crate::{
     AuthRuntime, LifecycleCliConfig, ObservabilityCliConfig, WebSecurityCliConfig, observe_response,
 };
 use auth::SessionBackend;
-use data::Database;
+use data::{Database, RedisStore};
 use language_core::{HttpMethod, ServerConfig};
 use observability::{Metrics, RequestTimer, new_request_id};
 use runtime::route_meta_for_request;
@@ -34,6 +34,7 @@ pub(super) struct ConnectionServices<'a> {
     pub(super) lifecycle: &'a LifecycleCliConfig,
     pub(super) route_rate_limiter: &'a RouteRateLimiter,
     pub(super) public_cache: &'a PublicPageCache,
+    pub(super) idempotency_redis: Option<&'a RedisStore>,
     pub(super) metrics: &'a Metrics,
     pub(super) observability: &'a ObservabilityCliConfig,
     pub(super) web: &'a WebSecurityCliConfig,

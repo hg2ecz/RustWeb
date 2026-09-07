@@ -1,6 +1,7 @@
 use crate::{
     ActionFunction, ComponentFunction, CriticalOperation, DomainType, EnumDef, FormSchema,
     LayoutFunction, Model, PageFunction, Permission, QueryFunction, ResourceUse, Route,
+    SecurityEvent, Webhook,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -10,6 +11,8 @@ pub struct Program {
     pub models: Vec<Model>,
     pub permissions: Vec<Permission>,
     pub critical_operations: Vec<CriticalOperation>,
+    pub security_events: Vec<SecurityEvent>,
+    pub webhooks: Vec<Webhook>,
     pub queries: Vec<QueryFunction>,
     pub pages: Vec<PageFunction>,
     pub actions: Vec<ActionFunction>,

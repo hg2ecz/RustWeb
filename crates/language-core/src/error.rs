@@ -1,4 +1,4 @@
-use crate::FormFailure;
+use crate::{FormFailure, PublicError};
 use std::fmt;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -36,3 +36,14 @@ impl fmt::Display for AppError {
 }
 
 impl std::error::Error for AppError {}
+
+impl From<PublicError> for AppError {
+    fn from(value: PublicError) -> Self {
+        match value {
+            PublicError::BadRequest => Self::BadRequest,
+            PublicError::NotFound => Self::NotFound,
+            PublicError::Forbidden => Self::Forbidden,
+            PublicError::Conflict => Self::Conflict,
+        }
+    }
+}

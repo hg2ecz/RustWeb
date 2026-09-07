@@ -9,11 +9,16 @@ mod error;
 mod handler_security;
 mod permission;
 mod program;
+mod program_security_events;
+mod program_webhooks;
+mod public_error;
 mod query;
 mod routing;
 mod schema;
+mod security_event;
 mod values;
 mod web_types;
+mod webhook;
 
 mod public_projection;
 pub use ast::{
@@ -32,20 +37,23 @@ pub use error::AppError;
 pub use handler_security::HandlerSecurityContract;
 pub use permission::Permission;
 pub use program::Program;
+pub use public_error::PublicError;
 pub use query::{
     CredentialLifecycleMode, CredentialLifecycleTarget, MutationTarget, QueryCapability,
-    QueryFunction, QueryReturn,
+    QueryFunction, QueryReturn, TenantScopeTarget,
 };
 pub use routing::{PublicCachePolicy, Route, RouteAuth, RouteSegment, UploadField};
 pub use schema::{
     EnumDef, FormFailure, FormField, FormFieldIssue, FormSchema, Model, ValidationKind,
     ValidationRule,
 };
+pub use security_event::SecurityEvent;
 pub use values::DataSensitivity;
 pub use values::{F32Value, FunctionParam, ImageRef, PageParam, Value, ValueType};
 pub use web_types::{
     FlashKind, FlashMessage, Html, HttpMethod, LocalUrl, Redirect, RedirectStatus,
 };
+pub use webhook::Webhook;
 
 #[cfg(test)]
 mod builtin_metadata_tests {

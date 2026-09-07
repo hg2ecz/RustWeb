@@ -5,6 +5,8 @@ const TOP_LEVEL_DECLARATION_PREFIXES: &[&str] = &[
     "model ",
     "permission ",
     "critical ",
+    "webhook ",
+    "security event ",
     "query fn ",
     "form ",
     "component fn ",

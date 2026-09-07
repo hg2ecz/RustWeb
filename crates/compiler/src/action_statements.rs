@@ -5,6 +5,7 @@ use crate::domain_symbols::display_domain_symbol;
 use crate::expression::{infer_static_expr_type, parse_expr_in_namespace, validate_expr};
 use crate::handler_types::{HandlerReturnKind, StaticType};
 use crate::input_security::handler_input_types;
+use crate::public_errors::parse_fail_statement;
 use crate::public_projection::parse_public_projection;
 use crate::response_security::{ResponseBoundary, validate_response_expression};
 use crate::route_calls::parse_redirect_route_call;
@@ -12,7 +13,7 @@ use crate::source_syntax::{
     consume_return_tail, find_statement_end, is_identifier, matching_brace, matching_paren,
     preview, read_ident, skip_ws_and_comments,
 };
-use crate::statement_helpers::{parse_business_audit, parse_query_call};
+use crate::statement_helpers::{parse_business_audit, parse_query_call, parse_security_event};
 use crate::{arrays, control_flow, dicts};
 use language_core::{
     ActionStatement, Expr, FlashKind, FlashMessage, FunctionParam, Program, QueryCapability,
@@ -124,6 +125,10 @@ pub(super) fn parse_action_statements(
                 let line = tx_body[tx_cursor..end].trim().trim_end_matches(';').trim();
                 if line.starts_with("audit ") {
                     statements.push(TxStatement::BusinessAudit(parse_business_audit(
+                        name, namespace, line, &tx_known, p,
+                    )?));
+                } else if line.starts_with("security ") {
+                    statements.push(TxStatement::BusinessAudit(parse_security_event(
                         name, namespace, line, &tx_known, p,
                     )?));
                 } else if line.starts_with("let ") {
@@ -393,6 +398,11 @@ pub(super) fn parse_action_statements(
             cursor = consume_return_tail(body, close + 1)?;
             continue;
         }
+        if let Some((error, next)) = parse_fail_statement("action", name, body, cursor)? {
+            out.push(ActionStatement::Fail(error));
+            cursor = next;
+            continue;
+        }
         return Err(CompileError::Syntax(format!(
             "action `{name}` unsupported statement near `{}`",
             preview(&body[cursor..])
@@ -403,10 +413,11 @@ pub(super) fn parse_action_statements(
         Some(ActionStatement::ReturnRedirect(_))
             | Some(ActionStatement::ReturnJson(_))
             | Some(ActionStatement::ReturnJsonProjection(_))
+            | Some(ActionStatement::Fail(_))
             | Some(ActionStatement::Resource { .. })
     ) {
         return Err(CompileError::Syntax(format!(
-            "action `{name}` must return Redirect or Json"
+            "action `{name}` must return Redirect, Json, or fail with a public error"
         )));
     }
     fn flash_count(items: &[ActionStatement]) -> usize {

@@ -9,11 +9,11 @@ pub(super) async fn build_upload_runtime_value(
     fs: &AppFs,
     upload: &language_core::UploadField,
     destination: &str,
-    info: storage::UploadResult,
+    info: &storage::UploadResult,
     max_image_pixels: u64,
 ) -> Result<Value, UploadRuntimeError> {
     if upload.image {
-        let bytes = fs.read(destination).await?;
+        let bytes = fs.read_staged_upload(info).await?;
         let image = inspect_image(&bytes, max_image_pixels)?;
         let reference = ImageRef::new(
             destination.to_string(),
@@ -29,11 +29,11 @@ pub(super) async fn build_upload_runtime_value(
         upload_value.insert("path".into(), Value::String(destination.to_string()));
         upload_value.insert(
             "filename".into(),
-            Value::String(info.original_filename.unwrap_or_default()),
+            Value::String(info.original_filename.clone().unwrap_or_default()),
         );
         upload_value.insert(
             "contentType".into(),
-            Value::String(info.content_type.unwrap_or_default()),
+            Value::String(info.content_type.clone().unwrap_or_default()),
         );
         upload_value.insert(
             "bytes".into(),
@@ -79,26 +79,41 @@ impl<'de> Visitor<'de> for StrictJsonObjectVisitor {
                 return Err(de::Error::custom("invalid or duplicate JSON field"));
             }
             let value = map.next_value::<serde_json::Value>()?;
-            let raw = match value {
+            match value {
                 serde_json::Value::String(v)
                     if v.len() <= self.max_field_bytes && !v.bytes().any(|b| b == 0) =>
                 {
-                    v
+                    out.push((key, v));
                 }
-                serde_json::Value::Number(v) if v.as_i64().is_some() => v.to_string(),
+                serde_json::Value::Number(v) if v.as_i64().is_some() => {
+                    out.push((key, v.to_string()));
+                }
                 serde_json::Value::Bool(v) => {
-                    if v {
-                        "true".into()
-                    } else {
-                        "false".into()
+                    out.push((key, if v { "true".into() } else { "false".into() }));
+                }
+                serde_json::Value::Array(values) => {
+                    if values.len() > self.max_fields {
+                        return Err(de::Error::custom("JSON array has too many items"));
+                    }
+                    if values.is_empty() {
+                        return Err(de::Error::custom("JSON string array must not be empty"));
+                    }
+                    for value in values {
+                        let serde_json::Value::String(value) = value else {
+                            return Err(de::Error::custom("JSON array items must be strings"));
+                        };
+                        if value.len() > self.max_field_bytes || value.bytes().any(|b| b == 0) {
+                            return Err(de::Error::custom("JSON array item too large or invalid"));
+                        }
+                        out.push((key.clone(), value));
                     }
                 }
-                _ => return Err(de::Error::custom("JSON field must be String, Int, or Bool")),
-            };
-            if raw.len() > self.max_field_bytes {
-                return Err(de::Error::custom("JSON field value too large"));
+                _ => {
+                    return Err(de::Error::custom(
+                        "JSON field must be String, Int, Bool, or string array",
+                    ));
+                }
             }
-            out.push((key, raw));
         }
         Ok(out)
     }

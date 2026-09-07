@@ -10,7 +10,7 @@ use crate::request_input::{decode_json_object_limited, media_type_is};
 use crate::web_security::{cors_preflight, validate_browser_state_change};
 use crate::{AuthRuntime, WebSecurityCliConfig, public_cache_key};
 use auth::{SessionBackend, SessionSnapshot};
-use data::Database;
+use data::{Database, RedisStore};
 use language_core::{AppError, HttpMethod, ServerConfig, Value};
 use observability::{Metrics, server_event, server_log};
 use runtime::{
@@ -31,6 +31,7 @@ pub(super) async fn dispatch(
     resource_profiles: &ResourceProfiles,
     route_rate_limiter: &RouteRateLimiter,
     public_cache: &PublicPageCache,
+    idempotency_redis: Option<&RedisStore>,
     metrics: &Metrics,
     request_id: &str,
     peer_key: &str,
@@ -54,16 +55,14 @@ pub(super) async fn dispatch(
         Some(v) => v,
         None => return Response::text(405, "Method Not Allowed", b"method not allowed\n"),
     };
-    if method == HttpMethod::Post {
-        if let Err(status) = validate_browser_state_change(request, is_tls, expected_host, web) {
-            return status;
-        }
-    }
     let (path, raw_query) = request
         .target
         .split_once('?')
         .unwrap_or((request.target.as_str(), ""));
     if path == "/__rw/auth/login" {
+        if let Err(status) = validate_browser_state_change(request, is_tls, expected_host, web) {
+            return status;
+        }
         return auth_login(
             request,
             config,
@@ -77,6 +76,9 @@ pub(super) async fn dispatch(
         .await;
     }
     if path == "/__rw/auth/logout" {
+        if let Err(status) = validate_browser_state_change(request, is_tls, expected_host, web) {
+            return status;
+        }
         return auth_logout(
             request, config, sessions, session, request_id, peer_key, web,
         )
@@ -91,6 +93,24 @@ pub(super) async fn dispatch(
         Err(_) => return Response::text(404, "Not Found", b"not found\n"),
     };
     let json_api = route_returns_json(program, route);
+    if method == HttpMethod::Post && !matches!(route.auth, language_core::RouteAuth::Webhook(_)) {
+        if let Err(status) = validate_browser_state_change(request, is_tls, expected_host, web) {
+            return status;
+        }
+    }
+    if let Err(response) = crate::webhook_verification::verify(
+        program,
+        route,
+        request,
+        idempotency_redis,
+        domain_namespace,
+        web,
+        json_api,
+    )
+    .await
+    {
+        return response;
+    }
     if let Some(response) = authorize_route(&route.auth, session, json_api) {
         return response;
     }
@@ -330,9 +350,20 @@ pub(super) async fn dispatch(
                     b"expected application/json\n",
                 );
             }
-            let supplied = match request.header("x-csrf-token") {
-                Some(v) => v,
-                None => {
+            if !matches!(route.auth, language_core::RouteAuth::Webhook(_)) {
+                let supplied = match request.header("x-csrf-token") {
+                    Some(v) => v,
+                    None => {
+                        return endpoint_error(
+                            json_api,
+                            403,
+                            "Forbidden",
+                            "csrf_failed",
+                            b"CSRF validation failed\n",
+                        );
+                    }
+                };
+                if !matches!(sessions.verify_csrf(&session.id, supplied).await, Ok(true)) {
                     return endpoint_error(
                         json_api,
                         403,
@@ -341,15 +372,6 @@ pub(super) async fn dispatch(
                         b"CSRF validation failed\n",
                     );
                 }
-            };
-            if !matches!(sessions.verify_csrf(&session.id, supplied).await, Ok(true)) {
-                return endpoint_error(
-                    json_api,
-                    403,
-                    "Forbidden",
-                    "csrf_failed",
-                    b"CSRF validation failed\n",
-                );
             }
             match decode_json_object_limited(
                 &request.body,
@@ -411,6 +433,22 @@ pub(super) async fn dispatch(
     } else {
         Vec::new()
     };
+    let idempotency_claim = match crate::idempotency::begin(
+        idempotency_redis,
+        request,
+        route,
+        session.principal.as_deref(),
+        domain_namespace,
+        json_api,
+    )
+    .await
+    {
+        Ok(crate::idempotency::BeginResult::Disabled) => None,
+        Ok(crate::idempotency::BeginResult::Claimed(claim)) => Some(claim),
+        Ok(crate::idempotency::BeginResult::Replay(response)) => return response,
+        Err(response) => return response,
+    };
+
     let flash = if method == HttpMethod::Get {
         match sessions.take_flash(&session.id).await {
             Ok(v) => v,
@@ -439,6 +477,16 @@ pub(super) async fn dispatch(
         (
             "__authRoles".to_string(),
             Value::List(session.roles.iter().cloned().map(Value::String).collect()),
+        ),
+        (
+            "__authMemberships".to_string(),
+            Value::List(
+                session
+                    .memberships
+                    .iter()
+                    .map(|tenant| Value::String(tenant.as_str().to_string()))
+                    .collect(),
+            ),
         ),
         (
             "__requestId".to_string(),
@@ -632,6 +680,9 @@ pub(super) async fn dispatch(
                 );
             }
         }
+    }
+    if let Some(claim) = idempotency_claim {
+        crate::idempotency::complete(idempotency_redis, claim, &response).await;
     }
     response
 }

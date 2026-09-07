@@ -1,4 +1,4 @@
-use auth::LocalUserStore;
+use auth::{LocalUserStore, TenantId};
 use compiler::compile_file;
 use migrations::{MigrationState, apply, status, verify};
 use std::env;
@@ -238,6 +238,7 @@ async fn auth_command(mut args: impl Iterator<Item = String>) -> Result<(), CliE
     let mut username = None;
     let mut password_file = None;
     let mut roles = Vec::new();
+    let mut memberships = Vec::new();
     let mut recovery_count = 8usize;
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -263,6 +264,12 @@ async fn auth_command(mut args: impl Iterator<Item = String>) -> Result<(), CliE
                 args.next()
                     .ok_or_else(|| CliError::usage("--role requires a value"))?,
             ),
+            "--tenant" => {
+                let raw = args
+                    .next()
+                    .ok_or_else(|| CliError::usage("--tenant requires a value"))?;
+                memberships.push(TenantId::parse(&raw)?);
+            }
             "--recovery-count" => {
                 recovery_count = args
                     .next()
@@ -302,6 +309,12 @@ async fn auth_command(mut args: impl Iterator<Item = String>) -> Result<(), CliE
                 .create_user(&u, &pw, &roles)
                 .await
                 .map_err(|_| CliError::usage("failed to create user"))?;
+            if !memberships.is_empty() {
+                store
+                    .set_memberships(&u, &memberships)
+                    .await
+                    .map_err(|_| CliError::usage("failed to set tenant memberships"))?;
+            }
             println!("created user {u}");
         }
         "password-set" => {
@@ -342,6 +355,14 @@ async fn auth_command(mut args: impl Iterator<Item = String>) -> Result<(), CliE
                 .await
                 .map_err(|_| CliError::usage("failed to set roles"))?;
             println!("roles updated for {u}");
+        }
+        "memberships-set" => {
+            let u = username.ok_or_else(|| CliError::usage("missing --username"))?;
+            store
+                .set_memberships(&u, &memberships)
+                .await
+                .map_err(|_| CliError::usage("failed to set tenant memberships"))?;
+            println!("tenant memberships updated for {u}");
         }
         "totp-enroll" => {
             let u = username.ok_or_else(|| CliError::usage("missing --username"))?;
@@ -424,6 +445,6 @@ fn read_password_file(path: &std::path::Path) -> Result<String, CliError> {
 
 fn print_usage_and_fail<T>() -> Result<T, CliError> {
     Err(CliError::usage(
-        "Usage:\n  rwlang-cli check <app.rw>\n  rwlang-cli migrate ...\n  rwlang-cli auth init --db-url-file <path>\n  rwlang-cli auth user-add --db-url-file <path> --username <name> --password-file <path> [--role Role]\n  rwlang-cli auth password-set|disable|enable|roles-set|totp-enroll|totp-disable ...",
+        "Usage:\n  rwlang-cli check <app.rw>\n  rwlang-cli migrate ...\n  rwlang-cli auth init --db-url-file <path>\n  rwlang-cli auth user-add --db-url-file <path> --username <name> --password-file <path> [--role Role] [--tenant Tenant]\n  rwlang-cli auth password-set|disable|enable|roles-set|memberships-set|totp-enroll|totp-disable ...",
     ))
 }

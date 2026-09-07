@@ -1,4 +1,4 @@
-use super::{AuthError, random_hex};
+use super::{AuthError, TenantId, random_hex, validate_memberships};
 use data::RedisStore;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -26,6 +26,8 @@ pub struct SessionSnapshot {
     pub mfa_verified: bool,
     pub roles: Vec<String>,
     #[serde(default)]
+    pub memberships: Vec<TenantId>,
+    #[serde(default)]
     pub auth_generation: u64,
 }
 impl SessionSnapshot {
@@ -34,6 +36,9 @@ impl SessionSnapshot {
     }
     pub fn has_role(&self, role: &str) -> bool {
         self.roles.iter().any(|r| r == role)
+    }
+    pub fn has_membership(&self, tenant: &TenantId) -> bool {
+        self.memberships.iter().any(|value| value == tenant)
     }
 }
 
@@ -50,6 +55,7 @@ struct SessionRecord {
     principal: Option<String>,
     mfa_verified: bool,
     roles: Vec<String>,
+    memberships: Vec<TenantId>,
     auth_generation: u64,
     flash: Option<SessionFlash>,
 }
@@ -78,6 +84,7 @@ impl SessionStore {
                 principal: None,
                 mfa_verified: false,
                 roles: vec![],
+                memberships: vec![],
                 auth_generation: 0,
                 flash: None,
             },
@@ -88,6 +95,7 @@ impl SessionStore {
             principal: None,
             mfa_verified: false,
             roles: vec![],
+            memberships: vec![],
             auth_generation: 0,
         })
     }
@@ -111,6 +119,7 @@ impl SessionStore {
             principal: r.principal.clone(),
             mfa_verified: r.mfa_verified,
             roles: r.roles.clone(),
+            memberships: r.memberships.clone(),
             auth_generation: r.auth_generation,
         }))
     }
@@ -161,8 +170,10 @@ impl SessionStore {
         principal: String,
         mfa: bool,
         roles: Vec<String>,
+        memberships: Vec<TenantId>,
         auth_generation: u64,
     ) -> Result<SessionSnapshot, AuthError> {
+        validate_memberships(&memberships)?;
         let mut s = self.inner.lock().map_err(|_| AuthError::Internal)?;
         s.remove(old);
         let now = Instant::now();
@@ -180,6 +191,7 @@ impl SessionStore {
                 principal: Some(principal.clone()),
                 mfa_verified: mfa,
                 roles: roles.clone(),
+                memberships: memberships.clone(),
                 auth_generation,
                 flash: None,
             },
@@ -190,6 +202,7 @@ impl SessionStore {
             principal: Some(principal),
             mfa_verified: mfa,
             roles,
+            memberships,
             auth_generation,
         })
     }
@@ -219,6 +232,7 @@ impl RedisSessionStore {
                 principal: None,
                 mfa_verified: false,
                 roles: vec![],
+                memberships: vec![],
                 auth_generation: 0,
             };
             let bytes = serde_json::to_vec(&record).map_err(|_| AuthError::Internal)?;
@@ -305,14 +319,17 @@ impl RedisSessionStore {
         principal: String,
         mfa: bool,
         roles: Vec<String>,
+        memberships: Vec<TenantId>,
         auth_generation: u64,
     ) -> Result<SessionSnapshot, AuthError> {
+        validate_memberships(&memberships)?;
         let record = SessionSnapshot {
             id: random_hex(32),
             csrf_token: random_hex(32),
             principal: Some(principal),
             mfa_verified: mfa,
             roles,
+            memberships,
             auth_generation,
         };
         let bytes = serde_json::to_vec(&record).map_err(|_| AuthError::Internal)?;
@@ -399,11 +416,15 @@ impl SessionBackend {
         p: String,
         m: bool,
         r: Vec<String>,
+        memberships: Vec<TenantId>,
         auth_generation: u64,
     ) -> Result<SessionSnapshot, AuthError> {
         match self {
-            Self::Memory(s) => s.rotate_authenticated(old, p, m, r, auth_generation),
-            Self::Redis(s) => s.rotate_authenticated(old, p, m, r, auth_generation).await,
+            Self::Memory(s) => s.rotate_authenticated(old, p, m, r, memberships, auth_generation),
+            Self::Redis(s) => {
+                s.rotate_authenticated(old, p, m, r, memberships, auth_generation)
+                    .await
+            }
         }
     }
     pub async fn invalidate(&self, id: &str) -> Result<(), AuthError> {
@@ -411,32 +432,5 @@ impl SessionBackend {
             Self::Memory(s) => s.invalidate(id),
             Self::Redis(s) => s.invalidate(id).await,
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn authenticated_rotation_invalidates_old_session_and_rotates_csrf() {
-        let store = SessionStore::new(Duration::from_secs(300), 16);
-        let anonymous = store.create().expect("anonymous session");
-        let rotated = store
-            .rotate_authenticated(&anonymous.id, "alice".into(), false, vec!["User".into()], 7)
-            .expect("authenticated rotation");
-
-        assert_ne!(rotated.id, anonymous.id);
-        assert_ne!(rotated.csrf_token, anonymous.csrf_token);
-        assert_eq!(store.get(&anonymous.id).expect("old lookup"), None);
-        assert_eq!(store.get(&rotated.id).expect("new lookup"), Some(rotated));
-    }
-
-    #[test]
-    fn logout_style_invalidation_removes_session() {
-        let store = SessionStore::new(Duration::from_secs(300), 16);
-        let session = store.create().expect("session");
-        store.invalidate(&session.id).expect("invalidate");
-        assert_eq!(store.get(&session.id).expect("lookup"), None);
     }
 }

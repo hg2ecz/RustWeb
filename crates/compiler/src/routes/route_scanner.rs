@@ -1,7 +1,14 @@
 use super::{CompileError, tokenize};
 use crate::declarations;
 
-pub(super) fn top_level_route_declarations(source: &str) -> Result<Vec<String>, CompileError> {
+pub(super) struct RouteDeclaration {
+    pub(super) source: String,
+    pub(super) line: usize,
+}
+
+pub(super) fn top_level_route_declarations(
+    source: &str,
+) -> Result<Vec<RouteDeclaration>, CompileError> {
     let mut out = Vec::new();
     let mut depth = 0i32;
     let mut active: Option<(usize, String)> = None;
@@ -27,13 +34,19 @@ pub(super) fn top_level_route_declarations(source: &str) -> Result<Vec<String>, 
             }
             buf.push_str(raw);
             if route_declaration_complete(buf)? {
-                out.push(std::mem::take(buf));
+                out.push(RouteDeclaration {
+                    source: std::mem::take(buf),
+                    line: *start_line,
+                });
                 active = None;
             }
         } else if is_top_level && trimmed.starts_with("route ") {
             let mut buf = raw.to_string();
             if route_declaration_complete(&buf)? {
-                out.push(buf);
+                out.push(RouteDeclaration {
+                    source: buf,
+                    line: line_idx + 1,
+                });
             } else {
                 active = Some((line_idx + 1, std::mem::take(&mut buf)));
             }
@@ -88,6 +101,7 @@ fn is_route_continuation_line(trimmed: &str) -> bool {
         "public",
         "auth ",
         "rate ",
+        "budget ",
         "cache ",
         "invalidate ",
     ]

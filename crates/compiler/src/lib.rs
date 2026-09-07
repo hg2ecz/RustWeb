@@ -1,5 +1,6 @@
 mod action_statements;
 mod authorization;
+mod budget_security;
 mod critical_declarations;
 mod critical_security;
 mod domain_refinement;
@@ -11,6 +12,7 @@ mod handler_parser;
 mod handler_security;
 mod handler_types;
 mod html_template;
+mod idempotency_security;
 mod input_security;
 mod mfa_security;
 mod model_security;
@@ -19,6 +21,7 @@ mod mutation_security;
 mod page_statements;
 mod permission_declarations;
 mod permission_security;
+mod public_errors;
 mod public_projection;
 mod query_mutation_contract;
 mod query_parser;
@@ -26,13 +29,19 @@ mod response_security;
 mod scalar_security;
 mod schema_declarations;
 mod secret_usage;
+mod security_event_declarations;
 mod source_loader;
 mod source_syntax;
 mod sql_syntax;
 mod statement_helpers;
 mod template_declarations;
+mod tenant_security;
+mod tenant_sql;
 mod type_resolution;
 mod type_semantics;
+mod upload_security;
+mod webhook_declarations;
+mod webhook_security;
 use language_core::Program;
 use std::path::{Path, PathBuf};
 
@@ -98,7 +107,15 @@ fn compile_units(units: &[source_loader::SourceUnit]) -> Result<Program, Compile
             .map_err(|e| source_loader::source_error(u, e))?;
     }
     for u in &units {
+        security_event_declarations::parse_security_events(&u.source, &u.namespace(), &mut p)
+            .map_err(|e| source_loader::source_error(u, e))?;
+    }
+    for u in &units {
         critical_declarations::parse_critical_operations(&u.source, &u.namespace(), &mut p)
+            .map_err(|e| source_loader::source_error(u, e))?;
+    }
+    for u in &units {
+        webhook_declarations::parse_webhooks(&u.source, &u.namespace(), &mut p)
             .map_err(|e| source_loader::source_error(u, e))?;
     }
     for u in &units {
@@ -159,10 +176,14 @@ mod domain_objects;
 mod lexer;
 mod math_builtin_types;
 mod regex_types;
+mod route_budget;
+mod route_cache;
 mod route_calls;
 mod route_security;
+mod route_tenant;
 mod routes;
 mod string_builtin_types;
+mod validation_rules;
 
 mod expression;
 mod expression_parser;

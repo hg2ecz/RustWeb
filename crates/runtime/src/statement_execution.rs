@@ -160,6 +160,7 @@ pub(crate) async fn execute_page_statement(
             budget.charge_alloc(json.len() as u64)?;
             Ok(Some(AppResponse::Json(json)))
         }
+        Statement::Fail(error) => Err((*error).into()),
         Statement::Resource { .. } => Err(AppError::Internal),
     }
 }
@@ -416,6 +417,7 @@ pub(crate) async fn execute_action_statement(
             budget.charge_alloc(json.len() as u64)?;
             Ok(Some(AppResponse::Json(json)))
         }
+        ActionStatement::Fail(error) => Err((*error).into()),
         ActionStatement::Resource { .. } => Err(AppError::Internal),
     }
 }

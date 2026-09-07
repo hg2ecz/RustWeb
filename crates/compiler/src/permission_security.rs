@@ -53,7 +53,7 @@ fn route_auth_satisfies_permission(auth: &RouteAuth, permission: &Permission) ->
             name == &permission.name
         }
         RouteAuth::Role(role) => permission.roles.iter().any(|allowed| allowed == role),
-        RouteAuth::Public | RouteAuth::User | RouteAuth::Mfa => false,
+        RouteAuth::Public | RouteAuth::Webhook(_) | RouteAuth::User | RouteAuth::Mfa => false,
     }
 }
 

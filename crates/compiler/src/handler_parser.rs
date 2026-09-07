@@ -58,7 +58,7 @@ pub(super) fn parse_pages(
             base_line,
             true,
         )?;
-        if control_flow::page_return_kind(&statements) != Some(declared_return) {
+        if !control_flow::page_return_matches(&statements, declared_return) {
             return Err(CompileError::Syntax(format!(
                 "page `{name}` return statement does not match declared return type"
             )));
@@ -124,7 +124,7 @@ pub(super) fn parse_actions(
             base_line,
             true,
         )?;
-        if control_flow::action_return_kind(&statements) != Some(declared_return) {
+        if !control_flow::action_return_matches(&statements, declared_return) {
             return Err(CompileError::Syntax(format!(
                 "action `{name}` return statement does not match declared return type"
             )));

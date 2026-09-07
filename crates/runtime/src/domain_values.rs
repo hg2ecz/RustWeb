@@ -22,6 +22,7 @@ fn matches_constraint(constraint: &ValidationKind, value: &Value) -> bool {
             len >= *min && len <= *max
         }
         (ValidationKind::Range { min, max }, Value::Int(number)) => number >= min && number <= max,
+        (ValidationKind::Items { .. }, _) => false,
         (ValidationKind::Pattern { regex }, Value::String(text)) => {
             regex::Regex::new(regex).is_ok_and(|compiled| compiled.is_match(text))
         }

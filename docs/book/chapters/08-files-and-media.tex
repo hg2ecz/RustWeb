@@ -89,7 +89,7 @@ For images in a CMS, wiki, news site, or admin interface, use \code{Image} rathe
 
 \begin{lstlisting}[language=RWLang]
 route saveHero POST "/admin/hero"
-    upload hero<Image> to "media"
+    upload hero<Image> to "media" publish
     auth role Editor
     => saveHero;
 \end{lstlisting}
@@ -155,7 +155,7 @@ The runtime reserves this URL prefix:
 /__rw/media/
 \end{lstlisting}
 
-Applications cannot declare conflicting routes. The media endpoint does not make the entire \code{data_root} browsable over HTTP; it serves images only from AppFs directories declared by an \code{upload ...<Image> to "..."} route in the program.
+Applications cannot declare conflicting routes. The media endpoint does not make the entire \code{data_root} browsable over HTTP; it serves images only from AppFs directories declared by an \code{upload ...<Image> to "..." publish} route in the program.
 
 When serving media, the server re-detects content based on the image detector rather than trusting the client's original MIME type. Responses receive security and cache headers; media serving does not run an application route and does not create a session.
 
@@ -172,7 +172,7 @@ The route should at least require authentication; an admin/editor function norma
 
 \begin{lstlisting}[language=RWLang]
 route saveHero POST "/admin/articles/:id<Int>/hero"
-    upload hero<Image> to "media"
+    upload hero<Image> to "media" publish
     auth role Editor
     => saveHero;
 \end{lstlisting}

@@ -1,10 +1,11 @@
+use crate::request_collections::{decode_string_list, group_fields};
 use chrono::{DateTime, NaiveDate, Utc};
 use language_core::{
     AppError, F32Value, FormFailure, FormField, FormFieldIssue, HttpMethod, ImageRef, Program,
     Route, RouteSegment, ValidationKind, Value, ValueType,
 };
 use rust_decimal::Decimal;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use uuid::Uuid;
 
 pub fn route_meta_for_request<'a>(
@@ -83,42 +84,44 @@ pub(crate) fn decode_named_form_into(
     env: &mut HashMap<String, Value>,
 ) -> Result<(), AppError> {
     let schema_name = route.form_schema.as_deref().ok_or(AppError::Internal)?;
-    let expected: HashSet<&str> = route.form_fields.iter().map(|f| f.name.as_str()).collect();
-    let mut seen = HashSet::new();
-    let mut raw = HashMap::new();
-    for (n, v) in pairs {
-        if !expected.contains(n.as_str()) || !seen.insert(n.as_str()) {
-            return Err(AppError::BadRequest);
-        }
-        raw.insert(n.as_str(), v.as_str());
-    }
+    let grouped = group_fields(&route.form_fields, pairs)?;
     let mut issues = Vec::new();
     let mut values = Vec::new();
-    for f in &route.form_fields {
-        let supplied = raw.get(f.name.as_str()).copied();
-        let text = match supplied {
-            Some(v) => v,
-            None if f.ty == ValueType::Bool => "false",
-            None => {
+    for field in &route.form_fields {
+        let supplied = grouped.get(&field.name);
+        let display_value = match (field.ty, supplied) {
+            (ValueType::Bool, None) => "false".into(),
+            (_, Some(items)) => items.join(","),
+            (_, None) => String::new(),
+        };
+        values.push((field.name.clone(), display_value));
+        let value = match (field.ty, supplied) {
+            (ValueType::StringList, Some(items)) => Some(decode_string_list(items)),
+            (ValueType::StringList, None) => Some(Value::StringList(Vec::new())),
+            (ValueType::Bool, None) => Some(Value::Bool(false)),
+            (_, Some(items)) => match items.first() {
+                Some(raw) => match decode_scalar(program, raw, field.ty) {
+                    Ok(value) => Some(value),
+                    Err(_) => {
+                        issues.push(FormFieldIssue {
+                            field: field.name.clone(),
+                            code: "invalid_type".into(),
+                        });
+                        None
+                    }
+                },
+                None => None,
+            },
+            (_, None) => {
                 issues.push(FormFieldIssue {
-                    field: f.name.clone(),
+                    field: field.name.clone(),
                     code: "required".into(),
                 });
-                ""
+                None
             }
         };
-        values.push((f.name.clone(), text.to_string()));
-        if supplied.is_none() && f.ty != ValueType::Bool {
-            continue;
-        }
-        match decode_scalar(program, text, f.ty) {
-            Ok(v) => {
-                env.insert(f.name.clone(), v);
-            }
-            Err(_) => issues.push(FormFieldIssue {
-                field: f.name.clone(),
-                code: "invalid_type".into(),
-            }),
+        if let Some(value) = value {
+            env.insert(field.name.clone(), value);
         }
     }
     if issues.is_empty() {
@@ -131,6 +134,9 @@ pub(crate) fn decode_named_form_into(
                     v.chars().count() >= *min && v.chars().count() <= *max
                 }
                 (ValidationKind::Range { min, max }, Value::Int(v)) => v >= min && v <= max,
+                (ValidationKind::Items { min, max }, Value::StringList(v)) => {
+                    v.len() >= *min && v.len() <= *max
+                }
                 (ValidationKind::Pattern { regex }, Value::String(v)) => regex::Regex::new(regex)
                     .map(|re| re.is_match(v))
                     .unwrap_or(false),
@@ -141,6 +147,7 @@ pub(crate) fn decode_named_form_into(
                 let code = match &rule.kind {
                     ValidationKind::Length { .. } => "length",
                     ValidationKind::Range { .. } => "range",
+                    ValidationKind::Items { .. } => "items",
                     ValidationKind::Pattern { .. } => "pattern",
                     ValidationKind::SameAs { .. } => "same",
                 };
@@ -160,31 +167,25 @@ pub(crate) fn decode_named_form_into(
     }
     Ok(())
 }
-
 pub(crate) fn decode_fields_into(
     program: &Program,
     schema: &[FormField],
     pairs: &[(String, String)],
     env: &mut HashMap<String, Value>,
 ) -> Result<(), AppError> {
-    let expected: HashSet<&str> = schema.iter().map(|f| f.name.as_str()).collect();
-    let mut seen = HashSet::new();
-    let mut vals = HashMap::new();
-    for (n, v) in pairs {
-        if !expected.contains(n.as_str()) || !seen.insert(n.as_str()) {
-            return Err(AppError::BadRequest);
-        }
-        vals.insert(n.as_str(), v.as_str());
-    }
-    if vals.len() != schema.len() {
+    let grouped = group_fields(schema, pairs)?;
+    if grouped.len() != schema.len() {
         return Err(AppError::BadRequest);
     }
-    for f in schema {
-        let raw = vals
-            .get(f.name.as_str())
-            .copied()
-            .ok_or(AppError::BadRequest)?;
-        env.insert(f.name.clone(), decode_scalar(program, raw, f.ty)?);
+    for field in schema {
+        let values = grouped.get(&field.name).ok_or(AppError::BadRequest)?;
+        let value = if field.ty == ValueType::StringList {
+            decode_string_list(values)
+        } else {
+            let raw = values.first().ok_or(AppError::BadRequest)?;
+            decode_scalar(program, raw, field.ty)?
+        };
+        env.insert(field.name.clone(), value);
     }
     Ok(())
 }
@@ -198,6 +199,8 @@ pub(crate) fn validate_route_inputs(
             (ValidationKind::Length { min, max }, Value::String(v))
                 if v.chars().count() >= *min && v.chars().count() <= *max => {}
             (ValidationKind::Range { min, max }, Value::Int(v)) if v >= min && v <= max => {}
+            (ValidationKind::Items { min, max }, Value::StringList(v))
+                if v.len() >= *min && v.len() <= *max => {}
             (ValidationKind::Pattern { regex }, Value::String(v))
                 if regex::Regex::new(regex)
                     .map(|re| re.is_match(v))

@@ -1,3 +1,4 @@
+use crate::upload::UploadResult;
 use rustix::fd::OwnedFd;
 use rustix::fs::{
     AtFlags, FileType, Mode, OFlags, RenameFlags, ResolveFlags, fstat, open, openat2,
@@ -247,15 +248,23 @@ impl AppFs {
         Err(FsError::Io)
     }
 
-    pub(crate) fn commit_staged(&self, staging: &str, destination: &str) -> Result<(), FsError> {
+    pub async fn read_staged_upload(&self, upload: &UploadResult) -> Result<Vec<u8>, FsError> {
+        self.read(&upload.staging_path).await
+    }
+
+    pub fn commit_upload(&self, upload: &UploadResult, destination: &str) -> Result<(), FsError> {
         renameat_with(
             &*self.root,
-            staging,
+            &upload.staging_path,
             &*self.root,
             destination,
             RenameFlags::NOREPLACE,
         )
         .map_err(|_| FsError::Denied)
+    }
+
+    pub fn cleanup_upload(&self, upload: &UploadResult) {
+        self.cleanup_staged(&upload.staging_path);
     }
 
     pub(crate) fn cleanup_staged(&self, staging: &str) {

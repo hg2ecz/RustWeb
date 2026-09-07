@@ -42,3 +42,4 @@ examples/function-permissions/main.rw
 
 examples/mfa-elevation/main.rw
 examples/critical-operations/main.rw
+examples/typed-security-events/main.rw

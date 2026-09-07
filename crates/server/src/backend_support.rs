@@ -401,7 +401,7 @@ pub(super) fn try_reload_hosting(
         d.program
             .routes
             .iter()
-            .any(|r| !matches!(r.auth, RouteAuth::Public))
+            .any(|r| !matches!(r.auth, RouteAuth::Public | RouteAuth::Webhook(_)))
     }) && auth_runtime.ldap.is_none()
         && auth_runtime.local.is_none()
     {

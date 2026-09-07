@@ -9,7 +9,7 @@ action fn uploadHero(ctx: ActionContext, hero: Image) -> Result<Json, PageError>
 }
 
 route uploadHero POST "/admin/media/hero"
-    upload hero<Image> to "media"
+    upload hero<Image> to "media" publish
     auth role Editor
     rate publicApi
     => uploadHero;

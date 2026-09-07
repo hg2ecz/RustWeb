@@ -499,7 +499,7 @@ done
 grep -q '^pub use config::ServerConfig;$' crates/language-core/src/lib.rs || fail 'language-core facade must preserve ServerConfig re-export'
 grep -q '^pub use error::AppError;$' crates/language-core/src/lib.rs || fail 'language-core facade must preserve AppError re-export'
 grep -q '^pub use program::Program;$' crates/language-core/src/lib.rs || fail 'language-core facade must preserve Program re-export'
-grep -q '^pub use query::{CredentialLifecycleMode, CredentialLifecycleTarget, MutationTarget, QueryCapability, QueryFunction, QueryReturn};$' crates/language-core/src/lib.rs || fail 'language-core facade must preserve query API re-exports'
+grep -q '^pub use query::{CredentialLifecycleMode, CredentialLifecycleTarget, MutationTarget, QueryCapability, QueryFunction, QueryReturn, TenantScopeTarget};$' crates/language-core/src/lib.rs || fail 'language-core facade must preserve query API re-exports'
 grep -q '^pub use routing::{PublicCachePolicy, Route, RouteAuth, RouteSegment, UploadField};$' crates/language-core/src/lib.rs || fail 'language-core facade must preserve routing API re-exports'
 grep -q '^pub use schema::{EnumDef, FormFailure, FormField, FormFieldIssue, FormSchema, Model, ValidationKind, ValidationRule};$' crates/language-core/src/lib.rs || fail 'language-core facade must preserve schema API re-exports'
 if grep -R --include='*.rs' -n '^ *use super::\*;' crates/language-core/src/config.rs crates/language-core/src/error.rs crates/language-core/src/program.rs crates/language-core/src/query.rs crates/language-core/src/routing.rs crates/language-core/src/schema.rs >/dev/null 2>&1; then
@@ -599,7 +599,7 @@ grep -q '^use crate::{arrays, control_flow, dicts, html_template};$' crates/comp
 grep -q '^use crate::{arrays, control_flow, dicts};$' crates/compiler/src/action_statements.rs || fail 'action statements must import execution/parser collaborators explicitly'
 grep -q '^use crate::{arrays, dicts};$' crates/compiler/src/control_flow.rs || fail 'control flow must import collection statement helpers explicitly'
 grep -q '^use crate::regex_types;$' crates/compiler/src/builtin_types.rs || fail 'builtin type inference must import regex type owner explicitly'
-grep -q '^use crate::schema_declarations;$' crates/compiler/src/routes.rs || fail 'routes must import schema declaration owner explicitly'
+! grep -q '^use crate::schema_declarations;$' crates/compiler/src/routes.rs || fail 'routes must not depend on schema declaration parser internals'
 grep -q '^use crate::cache_safety::{action_has_business_audit, action_has_object_auth, validate_public_cache_statements};$' crates/compiler/src/routes.rs || fail 'routes must import cache safety helpers explicitly'
 grep -q '^use std::collections::HashMap;$' crates/compiler/src/routes.rs || fail 'routes must own its HashMap dependency explicitly'
 printf '%s\n' 'R36.2 compiler explicit import build-fix verification passed'

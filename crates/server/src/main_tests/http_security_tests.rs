@@ -502,3 +502,18 @@ mod m20_static_asset_tests {
         let _ = fs::remove_dir_all(root);
     }
 }
+
+#[test]
+fn strict_json_accepts_bounded_string_arrays_and_rejects_unsafe_arrays() {
+    let pairs = decode_json_object_limited(br#"{"tags":["rust","web"]}"#, 8, 128).unwrap();
+    assert_eq!(
+        pairs,
+        vec![
+            ("tags".to_string(), "rust".to_string()),
+            ("tags".to_string(), "web".to_string()),
+        ]
+    );
+    assert!(decode_json_object_limited(br#"{"tags":[]}"#, 8, 128).is_err());
+    assert!(decode_json_object_limited(br#"{"tags":["ok",1]}"#, 8, 128).is_err());
+    assert!(decode_json_object_limited(br#"{"tags":["a","b","c"]}"#, 2, 128).is_err());
+}

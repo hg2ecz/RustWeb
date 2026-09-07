@@ -34,11 +34,14 @@ pub(super) fn validate_program(program: &Program) -> Result<(), CompileError> {
                 None,
             )
         })?;
-        if operation.transaction_required || operation.audit_required {
+        if operation.transaction_required
+            || operation.audit_required
+            || operation.idempotency_required
+        {
             return Err(CompileError::security(
                 "SEC-A06-003",
                 format!(
-                    "page handler `{}` cannot satisfy critical operation `{}` transaction/audit requirements",
+                    "page handler `{}` cannot satisfy critical operation `{}` transaction/audit/idempotency requirements",
                     page.name, operation.name
                 ),
                 Some("use an action handler for state-changing critical operations".into()),
@@ -63,7 +66,22 @@ fn validate_action_requirements(
             Some("wrap the state-changing query calls in `transaction db { ... }`".into()),
         ));
     }
-    if operation.audit_required && !action_has_business_audit(statements) {
+    if let Some(required_event) = operation.required_security_event.as_deref() {
+        if !has_security_event(statements, required_event) {
+            return Err(CompileError::security(
+                "SEC-A09-006",
+                format!(
+                    "critical handler `{handler}` must emit security event `{}` for `{}`",
+                    short_name(required_event),
+                    operation.name
+                ),
+                Some(format!(
+                    "add `security {} <object-id>;` inside the transaction",
+                    short_name(required_event)
+                )),
+            ));
+        }
+    } else if operation.audit_required && !action_has_business_audit(statements) {
         return Err(CompileError::security(
             "SEC-A09-001",
             format!(
@@ -80,6 +98,24 @@ fn has_transaction(statements: &[ActionStatement]) -> bool {
     statements.iter().any(|statement| match statement {
         ActionStatement::Transaction { .. } => true,
         ActionStatement::Resource { statements, .. } => has_transaction(statements),
+        _ => false,
+    })
+}
+
+fn short_name(name: &str) -> &str {
+    name.rsplit("::").next().unwrap_or(name)
+}
+
+fn has_security_event(statements: &[ActionStatement], required_event: &str) -> bool {
+    let required = short_name(required_event);
+    statements.iter().any(|statement| match statement {
+        ActionStatement::Transaction { statements, .. } => statements.iter().any(|tx| match tx {
+            language_core::TxStatement::BusinessAudit(audit) => audit.action == required,
+            _ => false,
+        }),
+        ActionStatement::Resource { statements, .. } => {
+            has_security_event(statements, required_event)
+        }
         _ => false,
     })
 }

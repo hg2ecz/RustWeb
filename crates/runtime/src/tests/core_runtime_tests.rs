@@ -225,6 +225,53 @@ route home GET "/" public => home;
         .await;
         assert_eq!(result, Err(AppError::InstructionLimit));
     }
+
+    #[tokio::test]
+    async fn route_budget_profile_limits_the_whole_handler() {
+        let src = r#"
+page fn home(ctx: PageContext) -> Result<Html, PageError> {
+    let x = 40 + 2;
+    return Ok(html {<p>{{ x }}</p>});
+}
+route home GET "/" public budget tiny => home;
+"#;
+        let program = compile_source(src).unwrap();
+        let request = ExecutionLimits {
+            max_instructions: 100,
+            max_allocated_bytes: 1024,
+        };
+        let mut named = HashMap::new();
+        named.insert(
+            "tiny".into(),
+            ResourceProfileConfig {
+                max_instructions: 1,
+                max_allocated_bytes: 1024,
+                max_concurrent: 1,
+            },
+        );
+        let profiles = ResourceProfiles::new(
+            ResourceProfileConfig {
+                max_instructions: 100,
+                max_allocated_bytes: 1024,
+                max_concurrent: 100,
+            },
+            named,
+        )
+        .unwrap();
+        let result = execute_request_with_profiles(
+            &program,
+            HttpMethod::Get,
+            "/",
+            &[],
+            &[],
+            &request,
+            &profiles,
+            &[],
+            None,
+        )
+        .await;
+        assert_eq!(result, Err(AppError::InstructionLimit));
+    }
 }
 
 #[cfg(test)]

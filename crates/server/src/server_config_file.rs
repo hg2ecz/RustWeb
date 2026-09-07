@@ -74,6 +74,7 @@ pub(super) struct FileAuth {
     pub(super) ldap_service_bind_password_file: Option<String>,
     pub(super) totp_secrets_file: Option<String>,
     pub(super) roles_file: Option<String>,
+    pub(super) memberships_file: Option<String>,
     pub(super) local_auth_db_url_file: Option<String>,
     pub(super) require_totp: Option<bool>,
     pub(super) login_max_attempts: Option<u32>,
@@ -86,6 +87,7 @@ pub(super) struct FileWeb {
     pub(super) allow_missing_origin: Option<bool>,
     pub(super) cors_origins: Option<Vec<String>>,
     pub(super) cors_allow_credentials: Option<bool>,
+    pub(super) webhook_secrets_dir: Option<String>,
 }
 #[derive(Debug, Default, serde::Deserialize)]
 #[serde(default, deny_unknown_fields)]

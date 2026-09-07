@@ -49,12 +49,19 @@ pub struct CredentialLifecycleTarget {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TenantScopeTarget {
+    pub model: String,
+    pub field: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct QueryFunction {
     pub name: String,
     pub capability: QueryCapability,
     pub params: Vec<FunctionParam>,
     pub return_type: QueryReturn,
     pub mutation_target: Option<MutationTarget>,
+    pub tenant_scope: Option<TenantScopeTarget>,
     pub credential_lifecycle: Option<CredentialLifecycleTarget>,
     pub sql: String,
 }

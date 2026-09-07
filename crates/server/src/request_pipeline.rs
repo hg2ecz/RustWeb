@@ -89,13 +89,15 @@ pub(super) async fn resolve_session(
         None => (sessions.create().await?, true),
     };
 
-    if let (Some(local), Some(principal)) =
-        (auth_runtime.local.as_ref(), session.principal.as_deref())
-    {
-        let generation_is_current = matches!(
-            local.session_generation(principal).await,
-            Ok(Some(generation)) if generation == session.auth_generation
-        );
+    if let Some(principal) = session.principal.as_deref() {
+        let generation_is_current = if let Some(local) = auth_runtime.local.as_ref() {
+            matches!(
+                local.session_generation(principal).await,
+                Ok(Some(generation)) if generation == session.auth_generation
+            )
+        } else {
+            auth_runtime.mapped_claims_generation(principal) == session.auth_generation
+        };
         if !generation_is_current {
             let _ = sessions.invalidate(&session.id).await;
             session = sessions.create().await?;

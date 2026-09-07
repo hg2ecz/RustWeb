@@ -7,6 +7,7 @@ use crate::expression::{
 };
 use crate::handler_types::StaticType;
 use crate::input_security::handler_input_types;
+use crate::public_errors::parse_fail_statement;
 use crate::public_projection::parse_public_projection;
 use crate::response_security::{ResponseBoundary, validate_response_expression};
 use crate::source_syntax::{
@@ -328,6 +329,11 @@ pub(super) fn parse_page_statements(
             cursor = consume_return_tail(body, close + 1)?;
             continue;
         }
+        if let Some((error, next)) = parse_fail_statement("page", name, body, cursor)? {
+            out.push(Statement::Fail(error));
+            cursor = next;
+            continue;
+        }
         return Err(CompileError::Syntax(format!(
             "page `{name}` unsupported statement near `{}`",
             preview(&body[cursor..])
@@ -338,10 +344,11 @@ pub(super) fn parse_page_statements(
         Some(Statement::ReturnHtml(_))
             | Some(Statement::ReturnJson(_))
             | Some(Statement::ReturnJsonProjection(_))
+            | Some(Statement::Fail(_))
             | Some(Statement::Resource { .. })
     ) {
         return Err(CompileError::Syntax(format!(
-            "page `{name}` must return Html or Json"
+            "page `{name}` must return Html, Json, or fail with a public error"
         )));
     }
     Ok(out)

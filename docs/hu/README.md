@@ -140,3 +140,10 @@ A fejezetenként `\\input`-olt, webalkalmazás-fejlesztőknek szóló könyv for
 - [Függvényszintű jogosultságok](75-fuggvenyszintu-jogosultsagok.md) - névvel ellátott üzleti permissionök compiler által kikényszerített handler-szerződéssel.
 
 - [MFA-elevációs proofok](76-mfa-elevacios-proofok.md) - handler-szintű MFA-szerződés névvel ellátott permissionnel kombinálva.
+
+- [Route budget profilok](78-route-budget-profilok.md) - secure-by-default route eroforrasprofilok operátori limitekkel.
+
+- [Korlátos request-kollekciók](79-korlatos-request-kollekciok.md) - korlátos `List<String>` query/form/JSON inputok biztonságos alapértelmezéssel.
+
+- [Tenant membership authority](81-tenant-membership-authority.md)
+- [Compiler altal kikenyszeritett tenant izolacio](82-compiler-altal-kikenyszeritett-tenant-izolacio.md) - aktiv tenant proof, scoped modellek es SQL tenant guardok.

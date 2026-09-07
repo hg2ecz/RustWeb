@@ -1,4 +1,4 @@
-use crate::{AuthError, random_hex};
+use crate::{AuthError, TenantId, random_hex};
 use std::time::Duration;
 
 // --- M25 local authentication -------------------------------------------------
@@ -10,10 +10,13 @@ use data::{
 };
 use sha2::{Digest, Sha256};
 
+mod memberships;
+
 #[derive(Debug, Clone)]
 pub struct LocalUserAuth {
     pub username: String,
     pub roles: Vec<String>,
+    pub memberships: Vec<TenantId>,
     pub totp_secret: Option<Vec<u8>>,
     pub auth_generation: u64,
 }
@@ -41,6 +44,7 @@ impl LocalUserStore {
         for sql in [
             "CREATE TABLE IF NOT EXISTS _rw_local_users (username TEXT PRIMARY KEY, password_hash TEXT NOT NULL, disabled INTEGER NOT NULL DEFAULT 0, totp_secret BLOB NULL, auth_generation INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, password_changed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)",
             "CREATE TABLE IF NOT EXISTS _rw_local_user_roles (username TEXT NOT NULL, role TEXT NOT NULL, PRIMARY KEY(username, role), FOREIGN KEY(username) REFERENCES _rw_local_users(username) ON DELETE CASCADE)",
+            "CREATE TABLE IF NOT EXISTS _rw_local_user_memberships (username TEXT NOT NULL, tenant_id TEXT NOT NULL, PRIMARY KEY(username, tenant_id), FOREIGN KEY(username) REFERENCES _rw_local_users(username) ON DELETE CASCADE)",
             "CREATE TABLE IF NOT EXISTS _rw_local_recovery_codes (username TEXT NOT NULL, code_hash TEXT NOT NULL, PRIMARY KEY(username, code_hash), FOREIGN KEY(username) REFERENCES _rw_local_users(username) ON DELETE CASCADE)",
         ] {
             self.db
@@ -181,9 +185,11 @@ impl LocalUserStore {
             _ => return Err(AuthError::StoreUnavailable),
         };
         let roles = self.roles(&username).await?;
+        let memberships = self.memberships(&username).await?;
         Ok(LocalUserAuth {
             username,
             roles,
+            memberships,
             totp_secret,
             auth_generation,
         })
@@ -493,6 +499,23 @@ impl LocalUserStore {
                 &shape,
             )
             .await
+            .map_err(|_| AuthError::StoreUnavailable)?;
+        let membership_shape = RowShape {
+            columns: vec![ColumnSpec {
+                name: "tenant_id".into(),
+                ty: DbScalarType::String,
+            }],
+        };
+        self.db
+            .fetch_all(
+                &PreparedSql::compile(
+                    "SELECT tenant_id FROM _rw_local_user_memberships ORDER BY tenant_id LIMIT 1",
+                )
+                .map_err(|_| AuthError::Internal)?,
+                &BindSet::new(),
+                &membership_shape,
+            )
+            .await
             .map(|_| ())
             .map_err(|_| AuthError::StoreUnavailable)
     }
@@ -533,6 +556,17 @@ mod local_auth_tests {
             .unwrap();
         let g2 = store.session_generation("alice").await.unwrap().unwrap();
         assert!(g2 > g1);
+        let tenant = TenantId::parse("acme").unwrap();
+        store
+            .set_memberships("alice", std::slice::from_ref(&tenant))
+            .await
+            .unwrap();
+        let user = store
+            .authenticate("alice", "a very long local password")
+            .await
+            .unwrap();
+        assert_eq!(user.memberships, vec![tenant]);
+        assert!(user.auth_generation > g2);
         let (_secret, codes) = store.enroll_totp("alice", 4).await.unwrap();
         // enroll_totp uses statement-specific BindSets: the strict data layer rejects extra binds.
         assert_eq!(codes.len(), 4);
