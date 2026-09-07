@@ -45,7 +45,7 @@ pages::article::show
 A saját modulon belül a lokális deklaráció rövid névvel is hivatkozható, és az aktuális modul névterében oldódik fel. Modulhatár átlépésekor kötelező a teljes namespace. Külső hivatkozás:
 
 ```rwlang
-route articleShow GET "/articles/:slug<Slug>" => pages::article::show;
+route articleShow GET "/articles/:slug<Slug>" public => pages::article::show;
 ```
 
 A `mod pages::article;` tehát nem hoz létre globális `show` nevet.
@@ -68,7 +68,7 @@ page fn show(ctx: PageContext, db: Db, id: Int) -> Result<Html, PageError> {
     return Ok(html {<h1>{{ article.title }}</h1>});
 }
 
-route articleShow GET "/articles/:id<Int>" => pages::show;
+route articleShow GET "/articles/:id<Int>" public => pages::show;
 ```
 
 A teljes név szándékosan explicit: a dependency látható marad, és két modul azonos helyi neve nem ütközik.

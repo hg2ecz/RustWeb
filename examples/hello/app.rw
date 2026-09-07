@@ -48,11 +48,11 @@ page fn thanks(ctx: PageContext) -> Result<Html, PageError> {
 
 action fn greet(ctx: ActionContext, name: String) -> Result<Redirect, PageError> {
     let submittedName = name;
-    return Ok(redirect("/thanks"));
+    return Ok(redirect(thanks()));
 }
 
-route home GET "/" => home;
-route hello GET "/hello/:name<String>" => hello;
-route item GET "/items/:id<Int>" => item;
-route thanks GET "/thanks" => thanks;
-route greet POST "/greet" form name<String> => greet;
+route home GET "/" public => home;
+route hello GET "/hello/:name<String>" public => hello;
+route item GET "/items/:id<Int>" public => item;
+route thanks GET "/thanks" public => thanks;
+route greet POST "/greet" form name<String> public => greet;

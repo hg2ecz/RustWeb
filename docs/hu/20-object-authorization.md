@@ -67,7 +67,7 @@ A szerepkör a session trusted auth backendből jön. Form, JSON, query vagy pat
 Public route:
 
 ```rwlang
-route article GET "/articles/:id<Int>" => article;
+route article GET "/articles/:id<Int>" public => article;
 ```
 
 ha a handler `authorize` guardot tartalmaz, compile error. Legalább `auth user`, `auth mfa` vagy `auth role ...` szükséges.

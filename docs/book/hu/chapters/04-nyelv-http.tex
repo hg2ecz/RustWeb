@@ -38,7 +38,7 @@ mod catalog::queries;
 mod catalog::pages;
 
 route catalogIndex GET "/catalog"
-    => catalog::pages::index;
+    public => catalog::pages::index;
 \end{lstlisting}
 
 Modulhatáron át kvalifikált nevet használj. Például:
@@ -299,7 +299,7 @@ Zárt választási halmazhoz ne szabad szöveget használj, hanem enumot. Ez for
 \subsection*{Route}
 
 \begin{lstlisting}[language=RWLang]
-route article GET "/cikk/:slug<Slug>" => article;
+route article GET "/cikk/:slug<Slug>" public => article;
 \end{lstlisting}
 
 A path paraméter típusa a route-ban deklarált. Hibás input nem jut el a handlerig typed értékként.

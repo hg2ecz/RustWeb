@@ -3,7 +3,7 @@ action fn create(ctx: ActionContext, db: Db, title: String, body: String) -> Res
     transaction db {
         queries::insertArticle(tx, articleSlug, title, body)?;
     }
-    return Ok(redirect("/admin/articles"));
+    return Ok(redirect(adminArticles()));
 }
 
 route articleCreate POST "/admin/articles" form models::ArticleForm auth role Editor invalidate cache article => actions::create;

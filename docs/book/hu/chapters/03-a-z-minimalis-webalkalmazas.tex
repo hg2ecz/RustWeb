@@ -143,12 +143,12 @@ Ez a Post/Redirect/Get minta. Ha a felhasználó frissíti a visszakapott oldalt
 A fájl végén két route köti össze a HTTP felületet a handlerekkel:
 
 \begin{lstlisting}[language=RWLang]
-route home GET "/" => home;
+route home GET "/" public => home;
 
 route create POST "/products"
     form name<String> price<Int>
     validate name length 1 100 price range 0 100000000
-    => create;
+    public => create;
 \end{lstlisting}
 
 A POST route már a handler előtt typed inputtá alakítja a két mezőt. Üres vagy 100 karakternél hosszabb név, negatív ár, túl nagy ár vagy nem egész szám esetén a kérés nem jut el érvényes üzleti műveletként az INSERT-ig.

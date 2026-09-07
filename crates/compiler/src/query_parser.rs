@@ -1,9 +1,10 @@
 use crate::declarations;
 use crate::diagnostics::CompileError;
 use crate::module_namespace::{is_symbol_path, qualify};
+use crate::query_mutation_contract::{parse_query_contracts, validate_sql_mutation_contract};
 use crate::source_syntax::{matching_brace, matching_paren, read_ident, split_top_level};
 use crate::sql_syntax::{first_sql_keyword, scan_bind_names};
-use crate::type_resolution::resolve_value_type;
+use crate::type_resolution::resolve_annotated_value_type;
 use language_core::{
     FunctionParam, Model, Program, QueryCapability, QueryFunction, QueryReturn, ValueType,
 };
@@ -57,10 +58,10 @@ pub(super) fn parse_queries(
                     capability = Some(QueryCapability::Transaction)
                 }
                 _ => {
-                    let ty = resolve_value_type(pt, namespace, p)
-                        .filter(|t| {
+                    let annotated = resolve_annotated_value_type(pt, namespace, p)
+                        .filter(|resolved| {
                             !matches!(
-                                t,
+                                resolved.value_type,
                                 ValueType::Upload
                                     | ValueType::F32Array
                                     | ValueType::StringList
@@ -74,7 +75,8 @@ pub(super) fn parse_queries(
                         })?;
                     params.push(FunctionParam {
                         name: pn.into(),
-                        ty,
+                        ty: annotated.value_type,
+                        sensitivity: annotated.sensitivity,
                     });
                 }
             }
@@ -89,12 +91,13 @@ pub(super) fn parse_queries(
             .find("sql")
             .ok_or_else(|| CompileError::Syntax(format!("query `{name}` missing `sql` block")))?;
         let between = after[..sql_rel].trim();
-        let ret = between
+        let declaration = between
             .strip_prefix("->")
             .ok_or_else(|| CompileError::Syntax(format!("query `{name}` missing return type")))?
             .trim();
+        let contracts = parse_query_contracts(declaration, namespace, p, &params, &name)?;
         let return_type = resolve_query_return_models(
-            parse_query_return(ret).ok_or_else(|| CompileError::Syntax(format!("query `{name}` requires `Result<Void, DbError>`, `Result<Changed, DbError>`, `Result<Model, DbError>`, `Result<Model?, DbError>`, or `Result<List<Model>, DbError>`")))?,
+            parse_query_return(&contracts.return_type).ok_or_else(|| CompileError::Syntax(format!("query `{name}` requires `Result<Void, DbError>`, `Result<Changed, DbError>`, `Result<Model, DbError>`, `Result<Model?, DbError>`, or `Result<List<Model>, DbError>`")))?,
             namespace,
         );
         let model = match return_type.model_name() {
@@ -121,6 +124,14 @@ pub(super) fn parse_queries(
         }
         validate_sql(&name, &sql, &params)?;
         let keyword = first_sql_keyword(&sql).unwrap_or_default();
+        validate_sql_mutation_contract(
+            &name,
+            &keyword,
+            &contracts.mutation_target,
+            &contracts.credential_lifecycle,
+            &return_type,
+            &sql,
+        )?;
         let mutating = matches!(keyword.as_str(), "INSERT" | "UPDATE" | "DELETE");
         if mutating && capability != QueryCapability::Transaction {
             return Err(CompileError::UnsafeSql(format!(
@@ -154,6 +165,8 @@ pub(super) fn parse_queries(
             capability,
             params,
             return_type,
+            mutation_target: contracts.mutation_target,
+            credential_lifecycle: contracts.credential_lifecycle,
             sql,
         });
         off = sql_close + 1;

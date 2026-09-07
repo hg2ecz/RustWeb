@@ -1,6 +1,6 @@
-use crate::auth_http::session_cookie;
 use crate::http_io::Response;
 use crate::observe_response;
+use crate::session_cookie::render as session_cookie;
 use crate::web_security::apply_cors_headers;
 use crate::{ObservabilityCliConfig, WebSecurityCliConfig};
 use auth::SessionSnapshot;

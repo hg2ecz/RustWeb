@@ -18,5 +18,5 @@ page fn article(ctx: PageContext, db: Db, slug: Slug) -> Result<Html, PageError>
     });
 }
 
-route home GET "/" => pages::home;
-route article GET "/articles/:slug<Slug>" => pages::article;
+route home GET "/" public => pages::home;
+route article GET "/articles/:slug<Slug>" public => pages::article;

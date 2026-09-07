@@ -45,7 +45,7 @@ page fn timed(ctx: PageContext) -> Result<Html, PageError> {
     let started = monotonicNanos();
     return Ok(html {<p>{{ started }}</p>});
 }
-route timed GET "/timed" cache public ttl 60 => timed;
+route timed GET "/timed" public cache public ttl 60 => timed;
 "#;
     assert!(compile_source(src).is_err());
 }

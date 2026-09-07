@@ -39,4 +39,4 @@ page fn strings(ctx: PageContext, text: String) -> Result<Html, PageError> {
 route strings GET "/strings"
     query text<String>
     validate text length 1 512
-    => strings;
+    public => strings;

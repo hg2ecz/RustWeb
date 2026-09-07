@@ -22,7 +22,7 @@ Canonical formátum:
 Példa:
 
 ```text
-route report GET "/reports/:day<Date>" => report;
+route report GET "/reports/:day<Date>" public => report;
 ```
 
 Érvénytelen naptári dátum, például `2026-02-30`, `400 Bad Request`.

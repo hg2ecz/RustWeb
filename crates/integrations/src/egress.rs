@@ -149,6 +149,15 @@ impl EgressPolicy {
             .get(name)
             .ok_or_else(|| IntegrationError::Policy("unknown target".into()))
     }
+
+    pub fn capability(
+        &self,
+        name: &str,
+    ) -> Result<crate::egress_capability::EgressCapability, IntegrationError> {
+        Ok(crate::egress_capability::EgressCapability::new(
+            self.target(name)?.clone(),
+        ))
+    }
 }
 
 fn validate_name(v: &str) -> Result<(), IntegrationError> {
@@ -273,6 +282,14 @@ mod tests {
             &["fe80::/10".parse::<IpNet>().unwrap()],
             "fe80::1".parse().unwrap()
         ));
+    }
+
+    #[test]
+    fn capability_binds_endpoint_to_named_policy() {
+        let capability = policy().capability("payments").unwrap();
+        assert!(capability.endpoint("api.example.com", 443).is_ok());
+        assert!(capability.endpoint("evil.example.com", 443).is_err());
+        assert!(capability.endpoint("api.example.com", 8443).is_err());
     }
 
     #[test]

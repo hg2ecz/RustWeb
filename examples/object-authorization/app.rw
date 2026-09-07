@@ -8,7 +8,7 @@ query fn loadArticle(db: Db, id: Int) -> Result<Article, DbError> sql {
     SELECT id, authorUsername, title FROM articles WHERE id = :id
 }
 
-query fn updateTitle(tx: Transaction, id: Int, title: String) -> Result<Void, DbError> sql {
+query fn updateTitle(tx: Transaction, id: Int, title: String) -> Result<Void, DbError> mutates Article by id sql {
     UPDATE articles SET title = :title WHERE id = :id
 }
 
@@ -24,9 +24,9 @@ action fn articleEdit(ctx: ActionContext, db: Db, id: Int, title: String) -> Res
     let article = loadArticle(db, id)?;
     authorize article owner authorUsername or role Publisher;
     transaction db {
-        updateTitle(tx, id, title)?;
+        updateTitle(tx, article.id, title)?;
     }
-    return Ok(redirect("/articles"));
+    return Ok(redirect(articlesIndex()));
 }
 
 route article GET "/articles/:id<Int>" auth user => article;

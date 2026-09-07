@@ -1,4 +1,5 @@
-use crate::egress::{EgressPolicy, Target, canonical_host, ip_allowed};
+use crate::egress::{EgressPolicy, Target, ip_allowed};
+use crate::egress_capability::{EgressCapability, EgressEndpoint, HttpsPath};
 use crate::error::IntegrationError;
 use crate::secrets::SecretString;
 use rustls::pki_types::ServerName;
@@ -38,23 +39,23 @@ impl OutboundHttpsClient {
         }
     }
 
+    pub fn capability(&self, name: &str) -> Result<EgressCapability, IntegrationError> {
+        self.policy.capability(name)
+    }
+
     pub async fn get(
         &self,
-        target: &str,
-        host: &str,
-        port: u16,
-        path_and_query: &str,
+        endpoint: &EgressEndpoint,
+        path_and_query: &HttpsPath,
     ) -> Result<HttpsResponse, IntegrationError> {
-        self.request(target, host, port, "GET", path_and_query, &[], &[])
+        self.request(endpoint, "GET", path_and_query, &[], &[])
             .await
     }
 
     pub async fn post_json(
         &self,
-        target: &str,
-        host: &str,
-        port: u16,
-        path_and_query: &str,
+        endpoint: &EgressEndpoint,
+        path_and_query: &HttpsPath,
         body: &[u8],
         bearer: Option<&SecretString>,
     ) -> Result<HttpsResponse, IntegrationError> {
@@ -69,36 +70,19 @@ impl OutboundHttpsClient {
             bearer_header = format!("Bearer {token}");
             headers.push(("Authorization", bearer_header.as_str()));
         }
-        self.request(target, host, port, "POST", path_and_query, body, &headers)
+        self.request(endpoint, "POST", path_and_query, body, &headers)
             .await
     }
 
     async fn request(
         &self,
-        target_name: &str,
-        host: &str,
-        port: u16,
+        endpoint: &EgressEndpoint,
         method: &str,
-        path: &str,
+        path: &HttpsPath,
         body: &[u8],
         headers: &[(&str, &str)],
     ) -> Result<HttpsResponse, IntegrationError> {
-        let target = self.policy.target(target_name)?.clone();
-        let host = canonical_host(host)?;
-        if !target.hosts.iter().any(|h| h == &host) {
-            return Err(IntegrationError::Policy(
-                "host is not allowed by target".into(),
-            ));
-        }
-        if !target.ports.contains(&port) {
-            return Err(IntegrationError::Policy(
-                "port is not allowed by target".into(),
-            ));
-        }
-        if !target.tls_required {
-            return Err(IntegrationError::Policy("TLS is required".into()));
-        }
-        validate_request_path(path)?;
+        let target = endpoint.target.clone();
         if body.len() > target.max_sent_bytes {
             return Err(IntegrationError::SendTooLarge);
         }
@@ -107,7 +91,15 @@ impl OutboundHttpsClient {
         }
         tokio::time::timeout(
             target.total_timeout,
-            self.request_inner(&target, &host, port, method, path, body, headers),
+            self.request_inner(
+                &target,
+                &endpoint.host,
+                endpoint.port,
+                method,
+                path.as_str(),
+                body,
+                headers,
+            ),
         )
         .await
         .map_err(|_| IntegrationError::Timeout)?
@@ -216,16 +208,6 @@ fn host_header(host: &str, port: u16) -> String {
     }
 }
 
-fn validate_request_path(v: &str) -> Result<(), IntegrationError> {
-    if !v.starts_with('/')
-        || v.starts_with("//")
-        || v.bytes().any(|b| matches!(b, b'\r' | b'\n' | 0 | b' '))
-    {
-        return Err(IntegrationError::Policy("invalid request path".into()));
-    }
-    Ok(())
-}
-
 fn validate_header(k: &str, v: &str) -> Result<(), IntegrationError> {
     if k.is_empty()
         || !k.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')
@@ -330,16 +312,4 @@ async fn read_http_response<S: tokio::io::AsyncRead + Unpin>(
 
 fn find_double_crlf(v: &[u8]) -> Option<usize> {
     v.windows(4).position(|w| w == b"\r\n\r\n")
-}
-
-#[cfg(test)]
-mod tests {
-    use super::validate_request_path;
-
-    #[test]
-    fn request_path_rejects_injection() {
-        assert!(validate_request_path("/v1/a?x=1").is_ok());
-        assert!(validate_request_path("//evil").is_err());
-        assert!(validate_request_path("/x\r\nX:y").is_err());
-    }
 }

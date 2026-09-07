@@ -3,7 +3,7 @@
 Az RWLang route egy **névvel ellátott, trusted configban definiált policy-t** kérhet:
 
 ```text
-route api GET "/api/status" rate publicApi => api;
+route api GET "/api/status" public rate publicApi => api;
 ```
 
 A route nem adhat meg saját limit-számokat.

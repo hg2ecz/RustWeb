@@ -3,6 +3,6 @@ form BadForm {
     validate amount length 1 10
 }
 action fn create(ctx: ActionContext, amount: Int) -> Result<Redirect, PageError> {
-    return Ok(redirect("/"));
+    return Ok(redirect(create()));
 }
-route create POST "/" form BadForm => create;
+route create POST "/" form BadForm public => create;

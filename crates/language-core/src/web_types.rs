@@ -24,6 +24,26 @@ impl Html {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LocalUrl(String);
+
+impl LocalUrl {
+    pub fn parse(value: String) -> Option<Self> {
+        if !value.starts_with('/')
+            || value.starts_with("//")
+            || value.contains('\\')
+            || value.bytes().any(|byte| matches!(byte, b'\r' | b'\n' | 0))
+        {
+            return None;
+        }
+        Some(Self(value))
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RedirectStatus {
     SeeOther,
@@ -70,19 +90,19 @@ pub struct FlashMessage {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Redirect {
-    location: String,
+    location: LocalUrl,
     status: RedirectStatus,
     flash: Option<FlashMessage>,
 }
 impl Redirect {
-    pub fn new(location: String) -> Self {
+    pub fn new(location: LocalUrl) -> Self {
         Self {
             location,
             status: RedirectStatus::SeeOther,
             flash: None,
         }
     }
-    pub fn permanent(location: String) -> Self {
+    pub fn permanent(location: LocalUrl) -> Self {
         Self {
             location,
             status: RedirectStatus::MovedPermanently,
@@ -97,9 +117,22 @@ impl Redirect {
         self.flash.as_ref()
     }
     pub fn location(&self) -> &str {
-        &self.location
+        self.location.as_str()
     }
     pub fn status(&self) -> RedirectStatus {
         self.status
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::LocalUrl;
+
+    #[test]
+    fn local_url_rejects_external_and_protocol_relative_targets() {
+        assert!(LocalUrl::parse("/account?tab=security".into()).is_some());
+        assert!(LocalUrl::parse("//evil.example".into()).is_none());
+        assert!(LocalUrl::parse("https://evil.example".into()).is_none());
+        assert!(LocalUrl::parse("/x\r\nLocation: https://evil.example".into()).is_none());
     }
 }

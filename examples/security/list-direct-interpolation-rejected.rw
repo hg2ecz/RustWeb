@@ -10,4 +10,4 @@ page fn products(ctx: PageContext, db: Db) -> Result<Html, PageError> {
     let products = listProducts(db)?;
     return Ok(html {<p>{{ products }}</p>});
 }
-route products GET "/products" => products;
+route products GET "/products" public => products;

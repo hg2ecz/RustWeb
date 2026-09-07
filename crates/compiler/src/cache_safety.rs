@@ -102,6 +102,7 @@ pub(super) fn validate_public_cache_statements(
     for s in statements {
         let hit = match s {
             Statement::Let { expr, .. }
+            | Statement::LetValidated { expr, .. }
             | Statement::Set { expr, .. }
             | Statement::ReturnJson(expr) => expr_uses_request_state(expr),
             Statement::While {
@@ -124,6 +125,7 @@ pub(super) fn validate_public_cache_statements(
             Statement::Authorize(_) => Some("authorization"),
             Statement::CanonicalSlug { .. } => Some("canonical redirect"),
             Statement::ReturnHtml(t) => html_uses_request_state(t, p),
+            Statement::ReturnJsonProjection(_) => None,
             Statement::Resource { statements, .. } => {
                 validate_public_cache_statements(route, statements, p)?;
                 None

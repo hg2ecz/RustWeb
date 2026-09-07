@@ -1,12 +1,15 @@
 use crate::{
-    ActionFunction, ComponentFunction, EnumDef, FormSchema, LayoutFunction, Model, PageFunction,
-    QueryFunction, ResourceUse, Route,
+    ActionFunction, ComponentFunction, CriticalOperation, DomainType, EnumDef, FormSchema,
+    LayoutFunction, Model, PageFunction, Permission, QueryFunction, ResourceUse, Route,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Program {
+    pub domain_types: Vec<DomainType>,
     pub enums: Vec<EnumDef>,
     pub models: Vec<Model>,
+    pub permissions: Vec<Permission>,
+    pub critical_operations: Vec<CriticalOperation>,
     pub queries: Vec<QueryFunction>,
     pub pages: Vec<PageFunction>,
     pub actions: Vec<ActionFunction>,
@@ -18,6 +21,30 @@ pub struct Program {
 }
 
 impl Program {
+    pub fn domain_type(&self, name: &str) -> Option<&DomainType> {
+        self.domain_types.iter().find(|value| value.name == name)
+    }
+
+    pub fn domain_type_by_name(&self, name: &str) -> Option<(u16, &DomainType)> {
+        self.domain_types
+            .iter()
+            .enumerate()
+            .find(|(_, value)| value.name == name)
+            .and_then(|(index, value)| u16::try_from(index).ok().map(|id| (id, value)))
+    }
+
+    pub fn domain_type_by_id(&self, id: u16) -> Option<&DomainType> {
+        self.domain_types.get(id as usize)
+    }
+
+    pub fn representation_type(&self, ty: crate::ValueType) -> Option<crate::ValueType> {
+        match ty {
+            crate::ValueType::Domain(id) => self.domain_type_by_id(id).map(|domain| domain.base),
+            crate::ValueType::Credential(_) => Some(crate::ValueType::String),
+            other => Some(other),
+        }
+    }
+
     pub fn enum_by_name(&self, name: &str) -> Option<(u16, &EnumDef)> {
         self.enums
             .iter()
@@ -28,6 +55,16 @@ impl Program {
 
     pub fn enum_by_id(&self, id: u16) -> Option<&EnumDef> {
         self.enums.get(id as usize)
+    }
+
+    pub fn permission(&self, name: &str) -> Option<&Permission> {
+        self.permissions.iter().find(|value| value.name == name)
+    }
+
+    pub fn critical_operation(&self, name: &str) -> Option<&CriticalOperation> {
+        self.critical_operations
+            .iter()
+            .find(|value| value.name == name)
     }
 
     pub fn model(&self, name: &str) -> Option<&Model> {

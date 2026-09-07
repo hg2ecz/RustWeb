@@ -1,8 +1,10 @@
+use crate::credential_builtin_types;
 use crate::diagnostics::CompileError;
 use crate::handler_types::StaticType;
 use crate::math_builtin_types;
 use crate::regex_types;
 use crate::string_builtin_types;
+use crate::type_semantics::represented_as;
 use language_core::{BuiltinFunction, Expr, Program, ValueType};
 use std::collections::HashMap;
 
@@ -31,6 +33,9 @@ pub(super) fn infer_builtin_type(
     }
     if string_builtin_types::handles(function) {
         return string_builtin_types::infer(function, args, known, program);
+    }
+    if credential_builtin_types::handles(function) {
+        return credential_builtin_types::infer(function, args, known, program);
     }
 
     match function {
@@ -80,7 +85,7 @@ fn require_types(
         return Err(signature_error(function, expected));
     }
     for (arg, expected_ty) in args.iter().zip(expected) {
-        if infer_expr_type(arg, known, program)? != *expected_ty {
+        if !represented_as(program, infer_expr_type(arg, known, program)?, *expected_ty) {
             return Err(signature_error(function, expected));
         }
     }

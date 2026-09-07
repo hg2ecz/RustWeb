@@ -19,7 +19,7 @@ page fn product(ctx: PageContext, db: Db, id: Int) -> Result<Html, PageError> {
     let product = loadProduct(db, id)?;
     return Ok(html {<h1>{{ product.name }}</h1><p>{{ product.price }}</p>});
 }
-route product GET "/products/:id<Int>" => product;
+route product GET "/products/:id<Int>" public => product;
 "#;
 
     #[tokio::test]
@@ -62,13 +62,16 @@ query fn listProducts(db: Db) -> Result<List<Product>, DbError> sql {
 query fn findProduct(db: Db, id: Int) -> Result<Product?, DbError> sql {
     SELECT id, name, price FROM products WHERE id = :id
 }
+query fn loadProduct(db: Db, id: Int) -> Result<Product, DbError> sql {
+    SELECT id, name, price FROM products WHERE id = :id
+}
 query fn createProduct(tx: Transaction, name: String, price: Int) -> Result<Void, DbError> sql {
     INSERT INTO products(name, price) VALUES (:name, :price)
 }
-query fn updateProduct(tx: Transaction, id: Int, name: String, price: Int) -> Result<Void, DbError> sql {
+query fn updateProduct(tx: Transaction, id: Int, name: String, price: Int) -> Result<Void, DbError> mutates Product by id sql {
     UPDATE products SET name = :name, price = :price WHERE id = :id
 }
-query fn deleteProduct(tx: Transaction, id: Int) -> Result<Void, DbError> sql {
+query fn deleteProduct(tx: Transaction, id: Int) -> Result<Void, DbError> mutates Product by id sql {
     DELETE FROM products WHERE id = :id
 }
 page fn products(ctx: PageContext, db: Db) -> Result<Html, PageError> {
@@ -81,21 +84,25 @@ page fn product(ctx: PageContext, db: Db, id: Int) -> Result<Html, PageError> {
 }
 action fn create(ctx: ActionContext, db: Db, name: String, price: Int) -> Result<Redirect, PageError> {
     transaction db { createProduct(tx, name, price)?; }
-    return Ok(redirect("/products"));
+    return Ok(redirect(products()));
 }
 action fn update(ctx: ActionContext, db: Db, id: Int, name: String, price: Int) -> Result<Redirect, PageError> {
-    transaction db { updateProduct(tx, id, name, price)?; }
-    return Ok(redirect("/products"));
+    let product = loadProduct(db, id)?;
+    authorize product authenticated;
+    transaction db { updateProduct(tx, product.id, name, price)?; }
+    return Ok(redirect(products()));
 }
 action fn delete(ctx: ActionContext, db: Db, id: Int) -> Result<Redirect, PageError> {
-    transaction db { deleteProduct(tx, id)?; }
-    return Ok(redirect("/products"));
+    let product = loadProduct(db, id)?;
+    authorize product authenticated;
+    transaction db { deleteProduct(tx, product.id)?; }
+    return Ok(redirect(products()));
 }
-route products GET "/products" => products;
-route product GET "/products/:id<Int>" => product;
-route create POST "/products" form name<String> price<Int> => create;
-route update POST "/products/:id<Int>" form name<String> price<Int> => update;
-route delete POST "/products/:id<Int>/delete" => delete;
+route products GET "/products" public => products;
+route product GET "/products/:id<Int>" public => product;
+route create POST "/products" form name<String> price<Int> public => create;
+route update POST "/products/:id<Int>" form name<String> price<Int> auth user => update;
+route delete POST "/products/:id<Int>/delete" auth user => delete;
 "#;
 
     const TX_RETURN_APP: &str = r#"
@@ -107,7 +114,7 @@ model Product {
 query fn createReturning(tx: Transaction, name: String, price: Int) -> Result<Product, DbError> sql {
     INSERT INTO products(name, price) VALUES (:name, :price) RETURNING id, name, price
 }
-query fn renameById(tx: Transaction, id: Int, name: String) -> Result<Void, DbError> sql {
+query fn renameById(tx: Transaction, id: Int, name: String) -> Result<Void, DbError> mutates Product by id sql {
     UPDATE products SET name = :name WHERE id = :id
 }
 action fn createAndRename(ctx: ActionContext, db: Db, name: String, price: Int) -> Result<Redirect, PageError> {
@@ -115,11 +122,11 @@ action fn createAndRename(ctx: ActionContext, db: Db, name: String, price: Int) 
         let created = createReturning(tx, name, price)?;
         renameById(tx, created.id, "Committed")?;
     }
-    return Ok(redirect("/done"));
+    return Ok(redirect(done()));
 }
 page fn done(ctx: PageContext) -> Result<Html, PageError> { return Ok(html {done}); }
-route create POST "/create" form name<String> price<Int> => createAndRename;
-route done GET "/done" => done;
+route create POST "/create" form name<String> price<Int> public => createAndRename;
+route done GET "/done" public => done;
 "#;
 
     #[tokio::test]
@@ -177,7 +184,9 @@ route done GET "/done" => done;
             _ => panic!("expected html"),
         }
 
-        execute_request(
+        let auth_limits = ExecutionLimits::default();
+        let auth_context = [("authPrincipal".into(), Value::String("tester".into()))];
+        execute_request_with_context(
             &program,
             HttpMethod::Post,
             "/products/2",
@@ -185,6 +194,8 @@ route done GET "/done" => done;
                 ("name".into(), "Gaming Mouse".into()),
                 ("price".into(), "12900".into()),
             ],
+            &auth_limits,
+            &auth_context,
             Some(&db),
         )
         .await
@@ -197,11 +208,13 @@ route done GET "/done" => done;
             _ => panic!("expected html"),
         }
 
-        execute_request(
+        execute_request_with_context(
             &program,
             HttpMethod::Post,
             "/products/2/delete",
             &[],
+            &auth_limits,
+            &auth_context,
             Some(&db),
         )
         .await
@@ -278,16 +291,23 @@ model Article {
     title: String
     version: Int
 }
-query fn updateArticle(tx: Transaction, id: Int, title: String, version: Int) -> Result<Changed, DbError> sql {
+query fn articleById(db: Db, id: Int) -> Result<Article, DbError> sql {
+    SELECT id, title, version FROM articles WHERE id = :id
+}
+query fn updateArticle(tx: Transaction, id: Int, title: String, version: Int) -> Result<Changed, DbError> mutates Article by id sql {
     UPDATE articles SET title = :title, version = version + 1 WHERE id = :id AND version = :version
 }
 action fn update(ctx: ActionContext, db: Db, id: Int, title: String, version: Int) -> Result<Redirect, PageError> {
+    let article = articleById(db, id)?;
+    authorize article authenticated;
     transaction db {
-        updateArticle(tx, id, title, version)?;
+        updateArticle(tx, article.id, title, version)?;
     }
-    return Ok(redirect("/articles"));
+    return Ok(redirect(articles()));
 }
-route update POST "/articles/:id<Int>" form title<String> version<Int> => update;
+page fn articles(ctx: PageContext) -> Result<Html, PageError> { return Ok(html {articles}); }
+route articles GET "/articles" public => articles;
+route update POST "/articles/:id<Int>" form title<String> version<Int> auth user => update;
 "#;
 
     #[tokio::test]
@@ -361,13 +381,14 @@ model Article {
 query fn articleById(db: Db, id: Int) -> Result<Article, DbError> sql {
     SELECT id, status, version FROM articles WHERE id = :id
 }
-query fn publish(tx: Transaction, id: Int, version: Int) -> Result<Changed, DbError> sql {
+query fn publish(tx: Transaction, id: Int, version: Int) -> Result<Changed, DbError> mutates Article by id sql {
     UPDATE articles SET status = 'Published', version = version + 1 WHERE id = :id AND version = :version
 }
 action fn publishAction(ctx: ActionContext, db: Db, id: Int, version: Int) -> Result<Json, PageError> {
     let article = articleById(db, id)?;
+    authorize article authenticated;
     transaction db {
-        publish(tx, id, version)?;
+        publish(tx, article.id, version)?;
         audit Article id action publish from article.status to ArticleStatus.Published;
     }
     return Ok(json(true));

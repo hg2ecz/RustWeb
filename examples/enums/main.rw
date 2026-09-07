@@ -17,23 +17,29 @@ object Article {
         SELECT id, slug, title, status FROM articles WHERE slug = :slug
     }
 
-    query fn setStatus(tx: Transaction, id: Int, status: ArticleStatus) -> Result<Void, DbError> sql {
+    query fn byId(db: Db, id: Int) -> Result<Article, DbError> sql {
+        SELECT id, slug, title, status FROM articles WHERE id = :id
+    }
+
+    query fn setStatus(tx: Transaction, id: Int, status: ArticleStatus) -> Result<Void, DbError> mutates Article by id sql {
         UPDATE articles SET status = :status WHERE id = :id
     }
 
     page fn show(ctx: PageContext, db: Db, slug: Slug) -> Result<Json, PageError> {
         let article = Article.bySlug(db, slug)?;
-        return Ok(json(article));
+        return Ok(json(expose(article, id, slug, title, status)));
     }
 
     action fn publish(ctx: ActionContext, db: Db, id: Int) -> Result<Json, PageError> {
+        let article = Article.byId(db, id)?;
+        authorize article authenticated;
         let status = ArticleStatus.Published;
         transaction db {
-            Article.setStatus(tx, id, status)?;
+            Article.setStatus(tx, article.id, status)?;
         }
         return Ok(json(status));
     }
 }
 
-route articleShow GET "/cikk/:slug<Slug>" => Article.show;
+route articleShow GET "/cikk/:slug<Slug>" public => Article.show;
 route articlePublish POST "/admin/cikk/:id<Int>/publish" auth role Publisher => Article.publish;

@@ -120,8 +120,7 @@ fn parse_compute_statements(
             let end = find_statement_end(body, eq + 1)?;
             let expr = parse_expr_in_namespace(body[eq + 1..end].trim(), namespace, p)?;
             validate_expr(&expr, known, p)?;
-            let ty = infer_expr_type(&expr, known, p)?;
-            known.insert(local.into(), StaticType::Scalar(ty));
+            known.insert(local.into(), infer_static_expr_type(&expr, known, p)?);
             out.push(ComputeStatement::Let {
                 name: local.into(),
                 expr,
@@ -143,7 +142,7 @@ fn parse_compute_statements(
                     .unwrap_or("");
                 let collection = target.split('[').next().unwrap_or("").trim();
                 match known.get(collection) {
-                    Some(StaticType::Scalar(ValueType::F32Array)) => {
+                    Some(value) if value.is_scalar(ValueType::F32Array) => {
                         let (array, index, value) = arrays::parse_f32_array_set(
                             handler_kind,
                             handler_name,
@@ -158,7 +157,7 @@ fn parse_compute_statements(
                             value,
                         });
                     }
-                    Some(StaticType::Scalar(ValueType::StringDict)) => {
+                    Some(value) if value.is_scalar(ValueType::StringDict) => {
                         let (dict, key, value) = dicts::parse_string_dict_set(
                             handler_kind,
                             handler_name,
@@ -250,11 +249,14 @@ fn parse_compute_statements(
 pub(super) fn page_return_kind(statements: &[Statement]) -> Option<HandlerReturnKind> {
     match statements.last()? {
         Statement::ReturnHtml(_) => Some(HandlerReturnKind::Html),
-        Statement::ReturnJson(_) => Some(HandlerReturnKind::Json),
+        Statement::ReturnJson(_) | Statement::ReturnJsonProjection(_) => {
+            Some(HandlerReturnKind::Json)
+        }
         Statement::Resource { statements, .. } => page_return_kind(statements),
         Statement::Authorize(_)
         | Statement::CanonicalSlug { .. }
         | Statement::Let { .. }
+        | Statement::LetValidated { .. }
         | Statement::Set { .. }
         | Statement::While { .. }
         | Statement::If { .. }
@@ -267,10 +269,13 @@ pub(super) fn page_return_kind(statements: &[Statement]) -> Option<HandlerReturn
 pub(super) fn action_return_kind(statements: &[ActionStatement]) -> Option<HandlerReturnKind> {
     match statements.last()? {
         ActionStatement::ReturnRedirect(_) => Some(HandlerReturnKind::Redirect),
-        ActionStatement::ReturnJson(_) => Some(HandlerReturnKind::Json),
+        ActionStatement::ReturnJson(_) | ActionStatement::ReturnJsonProjection(_) => {
+            Some(HandlerReturnKind::Json)
+        }
         ActionStatement::Resource { statements, .. } => action_return_kind(statements),
         ActionStatement::Authorize(_)
         | ActionStatement::Let { .. }
+        | ActionStatement::LetValidated { .. }
         | ActionStatement::Set { .. }
         | ActionStatement::While { .. }
         | ActionStatement::If { .. }
@@ -330,7 +335,7 @@ page fn test(ctx: PageContext) -> Result<Json, PageError> {
     }
     return Ok(json(i));
 }
-route test GET "/test" => test;
+route test GET "/test" public => test;
 "#;
         let p = compile_source(src).unwrap();
         let page = p.page("test").unwrap();
@@ -370,7 +375,7 @@ page fn test(ctx: PageContext) -> Result<Json, PageError> {
     }
     return Ok(json(i));
 }
-route test GET "/test" => test;
+route test GET "/test" public => test;
 "#;
         let p = compile_source(src).unwrap();
         let page = p.page("test").unwrap();

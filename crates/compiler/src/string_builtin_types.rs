@@ -1,6 +1,7 @@
 use crate::diagnostics::CompileError;
 use crate::expression::infer_expr_type;
 use crate::handler_types::StaticType;
+use crate::type_semantics::represented_as;
 use language_core::{BuiltinFunction, Expr, Program, ValueType};
 use std::collections::HashMap;
 
@@ -18,6 +19,7 @@ pub(super) fn handles(function: BuiltinFunction) -> bool {
             | BuiltinFunction::EndsWith
             | BuiltinFunction::Replace
             | BuiltinFunction::Split
+            | BuiltinFunction::SplitBounded
             | BuiltinFunction::Substring
             | BuiltinFunction::IndexOf
             | BuiltinFunction::LastIndexOf
@@ -75,6 +77,17 @@ pub(super) fn infer(
             )?;
             Ok(ValueType::StringList)
         }
+        BuiltinFunction::SplitBounded => {
+            require_types(
+                function,
+                args,
+                &[ValueType::String, ValueType::String, ValueType::Int],
+                known,
+                program,
+            )?;
+            require_split_bound(args)?;
+            Ok(ValueType::StringList)
+        }
         BuiltinFunction::Substring => {
             if !matches!(args.len(), 2 | 3) {
                 return Err(signature_error(function, "String, Int[, Int]"));
@@ -123,6 +136,15 @@ pub(super) fn infer(
     }
 }
 
+fn require_split_bound(args: &[Expr]) -> Result<(), CompileError> {
+    match args.get(2) {
+        Some(Expr::Int(max)) if (1..=4096).contains(max) => Ok(()),
+        _ => Err(CompileError::Syntax(
+            "splitBounded(..., maxItems) requires an integer literal in 1..4096".into(),
+        )),
+    }
+}
+
 fn require_types(
     function: BuiltinFunction,
     args: &[Expr],
@@ -134,7 +156,7 @@ fn require_types(
         return Err(signature_error(function, &format_types(expected)));
     }
     for (arg, expected_ty) in args.iter().zip(expected) {
-        if infer_expr_type(arg, known, program)? != *expected_ty {
+        if !represented_as(program, infer_expr_type(arg, known, program)?, *expected_ty) {
             return Err(signature_error(function, &format_types(expected)));
         }
     }

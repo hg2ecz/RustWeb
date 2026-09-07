@@ -2,6 +2,11 @@
 
 RWLang egy Rust-alapú, webalkalmazás-fejlesztésre specializált nyelv/runtime/server ökoszisztéma. A V1 fókusza: secure-by-default működés, typed input/output, compiler által kikényszerített policyk, explicit capabilityk, auditálhatóság és production üzemeltethetőség.
 
+## Secure-by-construction nyelvi alap
+
+A route-ok többé nem publikusak implicit módon: minden route `public` vagy `auth ...` policyt kér. A dinamikus String redirect tiltott, a normál redirect csak compiler által ellenőrzött lokális útvonal-literal lehet. A külső query/form/JSON `String` értékek explicit szabály nélkül automatikus 4096 karakteres felső korlátot kapnak. Részletek: [`docs/hu/57-secure-by-construction-foundation.md`](docs/hu/57-secure-by-construction-foundation.md).
+
+
 ## Első lépések
 
 Webfejlesztőként innen indulj:

@@ -14,17 +14,19 @@ model Article {{
 query fn loadArticle(db: Db, id: Int) -> Result<Article, DbError> sql {{
     SELECT id, authorUsername, title FROM articles WHERE id = :id
 }}
-query fn updateTitle(tx: Transaction, id: Int, title: String) -> Result<Void, DbError> sql {{
+query fn updateTitle(tx: Transaction, id: Int, title: String) -> Result<Void, DbError> mutates Article by id sql {{
     UPDATE articles SET title = :title WHERE id = :id
 }}
 action fn edit(ctx: ActionContext, db: Db, id: Int, title: String) -> Result<Redirect, PageError> {{
     let article = loadArticle(db, id)?;
     authorize article owner authorUsername or role Publisher or role Admin;
     transaction db {{
-        updateTitle(tx, id, title)?;
+        updateTitle(tx, article.id, title)?;
     }}
-    return Ok(redirect("/done"));
+    return Ok(redirect(done()));
 }}
+page fn done(ctx: PageContext) -> Result<Html, PageError> {{ return Ok(html {{done}}); }}
+route done GET "/done" public => done;
 route edit POST "/articles/:id<Int>" form title<String> {route_auth} => edit;
 "#
         )
@@ -48,7 +50,12 @@ route edit POST "/articles/:id<Int>" form title<String> {route_auth} => edit;
             })
             .unwrap();
         assert_eq!(rule.object, "article");
-        assert_eq!(rule.owner_field, "authorUsername");
+        assert_eq!(
+            &rule.mode,
+            &AuthorizationMode::Owner {
+                field: "authorUsername".into()
+            }
+        );
         assert_eq!(rule.allow_roles, vec!["Publisher", "Admin"]);
     }
 
@@ -114,7 +121,7 @@ object Article {
         return Ok(html {<h1>{{ article.title }}</h1>});
     }
 }
-route articleShow GET "/cikk/:slug<Slug>" => Article.show;
+route articleShow GET "/cikk/:slug<Slug>" public => Article.show;
 "#;
         let p = compile_source(src).unwrap();
         assert!(p.model("Article").is_some());
@@ -141,7 +148,7 @@ object Article {
     }
     page fn show(ctx: PageContext, db: Db, slug: Slug) -> Result<Json, PageError> {
         let article = Article.bySlug(db, slug)?;
-        return Ok(json(article));
+        return Ok(json(expose(article, id, slug, title)));
     }
 }
 "#,
@@ -150,7 +157,7 @@ object Article {
         fs::write(
             dir.join("routes.rw"),
             r#"
-route articleShow GET "/cikk/:slug<Slug>" => article::Article.show;
+route articleShow GET "/cikk/:slug<Slug>" public => article::Article.show;
 "#,
         )
         .unwrap();
@@ -168,7 +175,7 @@ route articleShow GET "/cikk/:slug<Slug>" => article::Article.show;
             r#"mod a;
 mod b;
 page fn home(ctx: PageContext) -> Result<Html, PageError> { return Ok(html {ok}); }
-route home GET "/" => home;
+route home GET "/" public => home;
 "#,
         )
         .unwrap();
@@ -201,7 +208,7 @@ object Article {
         }
     }
 }
-route x GET "/" => missing;
+route x GET "/" public => missing;
 "#;
         assert!(compile_source(src).is_err());
     }

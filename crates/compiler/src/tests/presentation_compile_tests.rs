@@ -27,7 +27,7 @@ page fn article(ctx: PageContext, db: Db, id: Int) -> Result<Html, PageError> {
         }
     });
 }
-route article GET "/articles/:id<Int>" => article;
+route article GET "/articles/:id<Int>" public => article;
 "#;
         let p = compile_source(src).unwrap();
         assert_eq!(p.components.len(), 1);
@@ -35,11 +35,45 @@ route article GET "/articles/:id<Int>" => article;
     }
 
     #[test]
+    fn component_accepts_validated_request_string() {
+        let src = r#"
+component fn Badge(text: String) -> Html { html {<strong>{{ text }}</strong>} }
+page fn home(ctx: PageContext, name: String) -> Result<Html, PageError> {
+    return Ok(html {@component(Badge, name)});
+}
+route home GET "/" query name<String> public => home;
+"#;
+        compile_source(src)
+            .expect("validated request strings should be valid presentation arguments");
+    }
+
+    #[test]
+    fn component_cannot_launder_secret_scalar() {
+        let src = r#"
+model Credential {
+    id: Int
+    token: Secret<String>
+}
+component fn Badge(text: String) -> Html { html {<strong>{{ text }}</strong>} }
+query fn load(db: Db, id: Int) -> Result<Credential, DbError> sql {
+    SELECT id, token FROM credentials WHERE id = :id
+}
+page fn home(ctx: PageContext, db: Db, id: Int) -> Result<Html, PageError> {
+    let credential = load(db, id)?;
+    return Ok(html {@component(Badge, credential.token)});
+}
+route home GET "/" query id<Int> public => home;
+"#;
+        let err = compile_source(src).expect_err("template calls must not declassify secrets");
+        assert!(err.to_string().contains("SEC-DATA-002"));
+    }
+
+    #[test]
     fn rejects_layout_without_exactly_one_content_slot() {
         let src = r#"
 layout fn Bad(title: String) -> Html { html {<main>{{ title }}</main>} }
 page fn home(ctx: PageContext) -> Result<Html, PageError> { return Ok(html {x}); }
-route home GET "/" => home;
+route home GET "/" public => home;
 "#;
         assert!(compile_source(src).is_err());
     }
@@ -51,7 +85,7 @@ component fn Badge(text: String) -> Html { html {<b>{{ text }}</b>} }
 page fn home(ctx: PageContext) -> Result<Html, PageError> {
     return Ok(html {<div class="@component(Badge, "x")">x</div>});
 }
-route home GET "/" => home;
+route home GET "/" public => home;
 "#;
         assert!(matches!(
             compile_source(src),
@@ -65,7 +99,7 @@ route home GET "/" => home;
 component fn A(x: String) -> Html { html {@component(B, x)} }
 component fn B(x: String) -> Html { html {@component(A, x)} }
 page fn home(ctx: PageContext) -> Result<Html, PageError> { return Ok(html {x}); }
-route home GET "/" => home;
+route home GET "/" public => home;
 "#;
         assert!(compile_source(src).is_err());
     }
@@ -81,7 +115,7 @@ mod m32_markdown_compiler_tests {
 page fn article(ctx: PageContext, body: String) -> Result<Html, PageError> {
     return Ok(html {<article>@markdown(body)</article>});
 }
-route article GET "/" query body<String> => article;
+route article GET "/" query body<String> public => article;
 "#;
         let p = compile_source(src).unwrap();
         assert_eq!(p.routes.len(), 1);
@@ -93,7 +127,7 @@ route article GET "/" query body<String> => article;
 page fn article(ctx: PageContext, id: Int) -> Result<Html, PageError> {
     return Ok(html {<article>@markdown(id)</article>});
 }
-route article GET "/" query id<Int> => article;
+route article GET "/" query id<Int> public => article;
 "#;
         assert!(compile_source(src).is_err());
     }
@@ -104,7 +138,7 @@ route article GET "/" query id<Int> => article;
 page fn article(ctx: PageContext, body: String) -> Result<Html, PageError> {
     return Ok(html {<div class="@markdown(body)">x</div>});
 }
-route article GET "/" query body<String> => article;
+route article GET "/" query body<String> public => article;
 "#;
         assert!(matches!(
             compile_source(src),
@@ -122,7 +156,7 @@ mod m33_image_compiler_tests {
 action fn save(ctx: ActionContext, hero: Image) -> Result<Json, PageError> { return Ok(json(hero)); }
 route save POST "/save" upload hero<Image> to "media" auth user => save;
 page fn show(ctx: PageContext, hero: Image) -> Result<Html, PageError> { return Ok(html {<figure>@image(hero, "Hero image")</figure>}); }
-route show GET "/show" query hero<Image> => show;
+route show GET "/show" query hero<Image> public => show;
 "#;
         let p = compile_source(src).unwrap();
         assert!(
@@ -140,12 +174,12 @@ route show GET "/show" query hero<Image> => show;
     fn rejects_image_direct_interpolation_and_attribute_context() {
         let direct = r#"
 page fn show(ctx: PageContext, hero: Image) -> Result<Html, PageError> { return Ok(html {<div>{{ hero }}</div>}); }
-route show GET "/" query hero<Image> => show;
+route show GET "/" query hero<Image> public => show;
 "#;
         assert!(compile_source(direct).is_err());
         let attr = r#"
 page fn show(ctx: PageContext, hero: Image) -> Result<Html, PageError> { return Ok(html {<div class="@image(hero, \"x\")">x</div>}); }
-route show GET "/" query hero<Image> => show;
+route show GET "/" query hero<Image> public => show;
 "#;
         assert!(compile_source(attr).is_err());
     }

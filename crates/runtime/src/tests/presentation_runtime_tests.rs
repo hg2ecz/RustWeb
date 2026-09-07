@@ -15,9 +15,11 @@ form ProductForm {
     validate name length 2 20 price range 0 1000
 }
 action fn create(ctx: ActionContext, name: String, price: Int, published: Bool) -> Result<Redirect, PageError> {
-    return Ok(redirect("/done"));
+    return Ok(redirect(done()));
 }
-route create POST "/products" form ProductForm => create;
+page fn done(ctx: PageContext) -> Result<Html, PageError> { return Ok(html {done}); }
+route done GET "/done" public => done;
+route create POST "/products" form ProductForm public => create;
 "#;
         let p = compile_source(src).unwrap();
         let pairs = vec![("name".into(), "A".into()), ("price".into(), "12".into())];
@@ -66,7 +68,7 @@ layout fn Main(title: String) -> Html { html {<html><head><title>{{ title }}</ti
 page fn home(ctx: PageContext, name: String) -> Result<Html, PageError> {
     return Ok(html {@layout(Main, "Welcome") {<p>@component(Badge, name)</p>}});
 }
-route home GET "/" query name<String> => home;
+route home GET "/" query name<String> public => home;
 "#;
         let p = compile_source(src).unwrap();
         let q = vec![("name".into(), "<admin>".into())];
@@ -103,7 +105,7 @@ mod m32_markdown_runtime_tests {
 page fn article(ctx: PageContext, body: String) -> Result<Html, PageError> {
     return Ok(html {<article>@markdown(body)</article>});
 }
-route article GET "/" query body<String> => article;
+route article GET "/" query body<String> public => article;
 "#;
         let p = compile_source(src).unwrap();
         let body =
@@ -139,7 +141,7 @@ route article GET "/" query body<String> => article;
 page fn article(ctx: PageContext, body: String) -> Result<Html, PageError> {
     return Ok(html {@markdown(body)});
 }
-route article GET "/" query body<String> => article;
+route article GET "/" query body<String> public => article;
 "#;
         let p = compile_source(src).unwrap();
         for body in ["[x](javascript:alert(1))", "[x](//evil.example/path)"] {
@@ -174,9 +176,11 @@ mod m44_flash_runtime_tests {
         let src = r#"
 action fn save(ctx: ActionContext) -> Result<Redirect, PageError> {
     flash success "Saved";
-    return Ok(redirect("/done"));
+    return Ok(redirect(done()));
 }
-route save POST "/save" => save;
+page fn done(ctx: PageContext) -> Result<Html, PageError> { return Ok(html {done}); }
+route done GET "/done" public => done;
+route save POST "/save" public => save;
 "#;
         let p = compile_source(src).unwrap();
         let response = execute_request(&p, HttpMethod::Post, "/save", &[], None)
@@ -197,7 +201,7 @@ route save POST "/save" => save;
 page fn index(ctx: PageContext) -> Result<Html, PageError> {
     return Ok(html {@flash()});
 }
-route index GET "/" => index;
+route index GET "/" public => index;
 "#;
         let p = compile_source(src).unwrap();
         let system = vec![

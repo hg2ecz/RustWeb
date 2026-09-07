@@ -15,8 +15,8 @@ page fn api(ctx: PageContext) -> Result<Json, PageError> {
 action fn echo(ctx: ActionContext, name: String, age: Int, active: Bool) -> Result<Json, PageError> {
     return Ok(json(name));
 }
-route api GET "/api" => api;
-route echo POST "/api/echo" json name<String> age<Int> active<Bool> => echo;
+route api GET "/api" public => api;
+route echo POST "/api/echo" json name<String> age<Int> active<Bool> public => echo;
 "#;
         let program = compile_source(src).unwrap();
         let get = execute_request_with_query_context(

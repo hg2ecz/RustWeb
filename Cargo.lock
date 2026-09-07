@@ -1569,14 +1569,18 @@ dependencies = [
 name = "runtime"
 version = "0.1.0"
 dependencies = [
+ "argon2",
  "chrono",
  "compiler",
  "data",
  "futures-util",
  "language-core",
+ "rand 0.10.2",
  "regex",
  "rust_decimal",
  "serde_json",
+ "sha2 0.10.9",
+ "subtle",
  "tokio",
  "url",
  "uuid",

@@ -1,7 +1,5 @@
 use language_core::{AppError, BuiltinFunction, Value};
 
-const MAX_SPLIT_ITEMS: usize = 4096;
-
 pub(crate) fn handles(function: BuiltinFunction) -> bool {
     matches!(
         function,
@@ -16,6 +14,7 @@ pub(crate) fn handles(function: BuiltinFunction) -> bool {
             | BuiltinFunction::EndsWith
             | BuiltinFunction::Replace
             | BuiltinFunction::Split
+            | BuiltinFunction::SplitBounded
             | BuiltinFunction::Substring
             | BuiltinFunction::IndexOf
             | BuiltinFunction::LastIndexOf
@@ -47,7 +46,8 @@ pub(crate) fn eval(function: BuiltinFunction, stack: &mut Vec<Value>) -> Result<
             binary_string_bool(stack, |text, suffix| text.ends_with(suffix))
         }
         BuiltinFunction::Replace => replace(stack),
-        BuiltinFunction::Split => split(stack),
+        BuiltinFunction::Split => crate::bounded_strings::split(stack),
+        BuiltinFunction::SplitBounded => crate::bounded_strings::split_bounded(stack),
         BuiltinFunction::Substring => substring(stack),
         BuiltinFunction::IndexOf => index_of(stack, false),
         BuiltinFunction::LastIndexOf => index_of(stack, true),
@@ -75,7 +75,8 @@ pub(crate) fn estimated_result_alloc(
             string_arg_len(stack, 0).map(|bytes| bytes.saturating_mul(4))
         }
         BuiltinFunction::Replace => estimate_replace(stack),
-        BuiltinFunction::Split => estimate_split(stack),
+        BuiltinFunction::Split => crate::bounded_strings::estimate_split(stack),
+        BuiltinFunction::SplitBounded => crate::bounded_strings::estimate_split_bounded(stack),
         BuiltinFunction::Substring => estimate_substring(stack),
         BuiltinFunction::CharAt => string_arg_len(stack, 1),
         BuiltinFunction::Repeat => estimate_repeat(stack),
@@ -91,22 +92,6 @@ fn replace(stack: &mut Vec<Value>) -> Result<Value, AppError> {
         return Err(AppError::BadRequest);
     }
     Ok(Value::String(text.replace(from.as_str(), to.as_str())))
-}
-
-fn split(stack: &mut Vec<Value>) -> Result<Value, AppError> {
-    let delimiter = pop_string(stack)?;
-    let text = pop_string(stack)?;
-    if delimiter.is_empty() {
-        return Err(AppError::BadRequest);
-    }
-    let mut items = Vec::new();
-    for piece in text.split(delimiter.as_str()) {
-        if items.len() >= MAX_SPLIT_ITEMS {
-            return Err(AppError::BadRequest);
-        }
-        items.push(piece.to_owned());
-    }
-    Ok(Value::StringList(items))
 }
 
 fn substring(stack: &mut Vec<Value>) -> Result<Value, AppError> {
@@ -226,20 +211,6 @@ fn estimate_replace(stack: &[Value]) -> Result<u64, AppError> {
     Ok((text.len() as u64)
         .saturating_sub(count.saturating_mul(from.len() as u64))
         .saturating_add(count.saturating_mul(to.len() as u64)))
-}
-
-fn estimate_split(stack: &[Value]) -> Result<u64, AppError> {
-    let delimiter = string_arg(stack, 0)?;
-    let text = string_arg(stack, 1)?;
-    if delimiter.is_empty() {
-        return Err(AppError::BadRequest);
-    }
-    let count = text
-        .matches(delimiter)
-        .count()
-        .saturating_add(1)
-        .min(MAX_SPLIT_ITEMS + 1) as u64;
-    Ok((text.len() as u64).saturating_add(count.saturating_mul(24)))
 }
 
 fn estimate_repeat(stack: &[Value]) -> Result<u64, AppError> {

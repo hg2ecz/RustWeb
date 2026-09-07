@@ -13,8 +13,8 @@ page fn articles(ctx: PageContext) -> Result<Html, PageError> {
 
 action fn saveArticle(ctx: ActionContext) -> Result<Redirect, PageError> {
     flash success "Article saved";
-    return Ok(redirect("/articles"));
+    return Ok(redirect(articles()));
 }
 
-route articles GET "/articles" => articles;
-route saveArticle POST "/articles/save" => saveArticle;
+route articles GET "/articles" public => articles;
+route saveArticle POST "/articles/save" public => saveArticle;

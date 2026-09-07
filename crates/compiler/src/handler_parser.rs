@@ -2,9 +2,12 @@ use crate::diagnostics::CompileError;
 use crate::handler_types::HandlerReturnKind;
 use crate::module_namespace::qualify;
 use crate::source_syntax::{function_bounds, line_number, split_top_level};
-use crate::type_resolution::resolve_value_type;
+use crate::type_resolution::resolve_annotated_value_type;
 use crate::{action_statements, control_flow, declarations, page_statements};
-use language_core::{ActionBody, ActionFunction, FunctionParam, PageBody, PageFunction, Program};
+use language_core::{
+    ActionBody, ActionFunction, FunctionParam, HandlerSecurityContract, PageBody, PageFunction,
+    Program,
+};
 
 pub(super) fn parse_pages(
     source: &str,
@@ -30,8 +33,13 @@ pub(super) fn parse_pages(
         {
             return Err(CompileError::DuplicateHandler(name));
         }
-        let declared_return =
-            parse_handler_return_kind("page", &name, &source[sig_close + 1..body_open])?;
+        let (declared_return, security) = parse_handler_contract(
+            "page",
+            &name,
+            &source[sig_close + 1..body_open],
+            namespace,
+            p,
+        )?;
         let (params, needs_db) = parse_handler_params(
             &name,
             "PageContext",
@@ -59,6 +67,7 @@ pub(super) fn parse_pages(
             name: symbol_name,
             params,
             needs_db,
+            security,
             body: PageBody::Statements(statements),
         });
         off = body_close + 1;
@@ -90,8 +99,13 @@ pub(super) fn parse_actions(
         {
             return Err(CompileError::DuplicateHandler(name));
         }
-        let declared_return =
-            parse_handler_return_kind("action", &name, &source[sig_close + 1..body_open])?;
+        let (declared_return, security) = parse_handler_contract(
+            "action",
+            &name,
+            &source[sig_close + 1..body_open],
+            namespace,
+            p,
+        )?;
         let (params, needs_db) = parse_handler_params(
             &name,
             "ActionContext",
@@ -119,6 +133,7 @@ pub(super) fn parse_actions(
             name: symbol_name,
             params,
             needs_db,
+            security,
             body: ActionBody::Statements(statements),
         });
         off = body_close + 1;
@@ -164,17 +179,53 @@ fn parse_handler_params(
             needs_db = true;
             continue;
         }
-        let ty = resolve_value_type(ty, namespace, p).ok_or_else(|| {
+        let annotated = resolve_annotated_value_type(ty, namespace, p).ok_or_else(|| {
             CompileError::Syntax(format!(
                 "function `{function}` unsupported parameter type `{ty}`"
             ))
         })?;
-        params.push(FunctionParam {
-            name: name.into(),
-            ty,
-        });
+        if annotated.sensitivity != language_core::DataSensitivity::Public {
+            return Err(CompileError::security(
+                "SEC-DATA-009",
+                format!(
+                    "web handler parameter `{function}.{name}` cannot declare `Sensitive<T>` or `Secret<T>`"
+                ),
+                Some("request parameters are trust-boundary inputs, not secret capabilities; load classified data from a model or an explicit trusted capability instead".into()),
+            ));
+        }
+        params.push(FunctionParam::public(name, annotated.value_type));
     }
     Ok((params, needs_db))
+}
+
+fn parse_handler_contract(
+    kind: &str,
+    name: &str,
+    tail: &str,
+    namespace: &str,
+    program: &Program,
+) -> Result<(HandlerReturnKind, HandlerSecurityContract), CompileError> {
+    if tail.contains("requires") && tail.contains(" critical ") {
+        return Err(CompileError::Syntax(format!(
+            "handler `{name}` must use either `requires ...` or `critical <Operation>`, not both"
+        )));
+    }
+    if let Some((return_tail, critical)) = tail.split_once(" critical ") {
+        let return_kind = parse_handler_return_kind(kind, name, return_tail)?;
+        let security =
+            crate::handler_security::parse_critical(name, critical.trim(), namespace, program)?;
+        return Ok((return_kind, security));
+    }
+    let (return_tail, requirements) = match tail.split_once("requires") {
+        Some((before, after)) => (before, Some(after.trim())),
+        None => (tail, None),
+    };
+    let return_kind = parse_handler_return_kind(kind, name, return_tail)?;
+    let security = requirements
+        .map(|raw| crate::handler_security::parse_requirements(name, raw, namespace, program))
+        .transpose()?
+        .unwrap_or_default();
+    Ok((return_kind, security))
 }
 
 fn parse_handler_return_kind(

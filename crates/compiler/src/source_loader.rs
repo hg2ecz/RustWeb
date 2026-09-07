@@ -71,21 +71,7 @@ pub(crate) fn parse_mod_declarations(source: &str) -> Result<Vec<Vec<String>>, C
         if line.is_empty() || line.starts_with("//") {
             continue;
         }
-        if [
-            "enum ",
-            "object ",
-            "model ",
-            "query fn ",
-            "form ",
-            "component fn ",
-            "layout fn ",
-            "page fn ",
-            "action fn ",
-            "route ",
-        ]
-        .iter()
-        .any(|prefix| line.starts_with(prefix))
-        {
+        if declarations::starts_top_level_declaration(line) {
             break;
         }
         if !line.starts_with("mod ") {

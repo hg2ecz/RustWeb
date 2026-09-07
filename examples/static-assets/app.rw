@@ -8,4 +8,4 @@ page fn home(ctx: PageContext) -> Result<Html, PageError> {
     });
 }
 
-route home GET "/" => home;
+route home GET "/" public => home;

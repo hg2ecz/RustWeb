@@ -86,9 +86,11 @@ RWLang does not expose a general Rust-like `pub`/`mut` language surface in V1. M
 
 RWLang uses explicit statement boundaries. Simple statements end with `;`; newlines are whitespace only and there is no automatic semicolon insertion. Non-block top-level declarations such as `mod path;` and `route ... => handler;` also end with `;`, while block declarations and control-flow blocks end with `}` and do not take a trailing semicolon. See [`docs/56-statement-terminators.md`](docs/56-statement-terminators.md).
 
+Routes also require an explicit access decision: use `public` for intentionally public endpoints or `auth user` / `auth mfa` / `auth role ...` for protected endpoints. Dynamic String redirects are rejected; normal redirects use compiler-checked typed route calls. Raw external String inputs receive an automatic 4096-character upper bound unless a narrower route or domain-type validation is declared. Reusable `type Name = String|Int { ... }` contracts and `splitBounded(...)` make common validation/resource limits concise. See [`docs/57-secure-by-construction-foundation.md`](docs/57-secure-by-construction-foundation.md) and [`docs/62-domain-types-and-bounded-collections.md`](docs/62-domain-types-and-bounded-collections.md).
+
 The numeric core includes checked `+`, `-`, `*`, `/`, `%`, integer shifts `<<`/`>>`, integer bitwise `&`/`^`/`|`, boolean `!`/`&&`/`||` with short-circuit evaluation, and F32 math builtins including `ln`, `log10`, `log`, `exp`, `pow`, `round`, `floor`, and `ceil`. See [`docs/44-math-and-timing.md`](docs/44-math-and-timing.md).
 
-The Unicode-aware string core includes `trim`, `trimStart`, `trimEnd`, `lower`, `upper`, `stringLen`, `contains`, `startsWith`, `endsWith`, `replace`, `split`, `substring`, `indexOf`, `lastIndexOf`, `charAt`, and `repeat`, plus the regex API. See [`docs/46-string-builtins.md`](docs/46-string-builtins.md) and [`docs/49-regular-expressions.md`](docs/49-regular-expressions.md).
+The Unicode-aware string core includes `trim`, `trimStart`, `trimEnd`, `lower`, `upper`, `stringLen`, `contains`, `startsWith`, `endsWith`, `replace`, `split`, `splitBounded`, `substring`, `indexOf`, `lastIndexOf`, `charAt`, and `repeat`, plus the regex API. See [`docs/46-string-builtins.md`](docs/46-string-builtins.md) and [`docs/49-regular-expressions.md`](docs/49-regular-expressions.md).
 
 ## Documentation language policy
 

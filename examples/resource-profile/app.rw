@@ -8,4 +8,4 @@ page fn report(ctx: PageContext) -> Result<Html, PageError> {
     }
 }
 
-route report GET "/report" => report;
+route report GET "/report" public => report;

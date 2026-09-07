@@ -32,7 +32,7 @@ page fn admin(ctx: PageContext) -> Result<Html, PageError> {
     });
 }
 
-route home GET "/" => home;
+route home GET "/" public => home;
 route account GET "/account" auth user => account;
 route security GET "/security" auth mfa => security;
 route admin GET "/admin" auth role Admin => admin;

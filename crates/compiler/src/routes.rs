@@ -3,8 +3,10 @@ use crate::cache_safety::{
 };
 use crate::diagnostics::CompileError;
 use crate::domain_symbols::internal_domain_symbol;
+use crate::domain_validation;
 use crate::lexer::tokenize;
 use crate::module_namespace::resolve;
+use crate::route_security::{apply_default_external_string_bounds, parse_explicit_access};
 use crate::schema_declarations;
 use crate::source_syntax::is_identifier;
 use crate::type_resolution::resolve_value_type;
@@ -36,13 +38,12 @@ pub(super) fn parse_routes(
         let method = HttpMethod::parse(&t[i + 2])
             .ok_or_else(|| CompileError::Syntax("unsupported route method".into()))?;
         let path = t[i + 3].clone();
-        let segments = parse_route_segments(&name, &path, namespace, p)?;
+        let (segments, mut validations) = parse_route_segments(&name, &path, namespace, p)?;
         let mut c = i + 4;
         let mut query_fields = Vec::new();
         let mut form_fields = Vec::new();
         let mut json_fields = Vec::new();
         let mut upload = None;
-        let mut validations = Vec::new();
         if t.get(c).map(String::as_str) == Some("query") {
             c += 1;
             while !matches!(
@@ -51,6 +52,7 @@ pub(super) fn parse_routes(
                     | Some("json")
                     | Some("upload")
                     | Some("validate")
+                    | Some("public")
                     | Some("auth")
                     | Some("rate")
                     | Some("cache")
@@ -58,7 +60,15 @@ pub(super) fn parse_routes(
                     | Some("=>")
                     | None
             ) {
-                query_fields.push(parse_typed_binding(&name, t.get(c).unwrap(), namespace, p)?);
+                let raw = t.get(c).unwrap();
+                let field = parse_typed_binding(&name, raw, namespace, p)?;
+                validations.extend(domain_validation::rules_for_binding(
+                    raw,
+                    &field.name,
+                    namespace,
+                    p,
+                ));
+                query_fields.push(field);
                 c += 1;
             }
         }
@@ -83,6 +93,7 @@ pub(super) fn parse_routes(
                         Some("json")
                             | Some("upload")
                             | Some("validate")
+                            | Some("public")
                             | Some("auth")
                             | Some("rate")
                             | Some("cache")
@@ -90,12 +101,15 @@ pub(super) fn parse_routes(
                             | Some("=>")
                             | None
                     ) {
-                        form_fields.push(parse_typed_binding(
-                            &name,
-                            t.get(c).unwrap(),
+                        let raw = t.get(c).unwrap();
+                        let field = parse_typed_binding(&name, raw, namespace, p)?;
+                        validations.extend(domain_validation::rules_for_binding(
+                            raw,
+                            &field.name,
                             namespace,
                             p,
-                        )?);
+                        ));
+                        form_fields.push(field);
                         c += 1;
                     }
                 }
@@ -107,6 +121,7 @@ pub(super) fn parse_routes(
                 t.get(c).map(String::as_str),
                 Some("upload")
                     | Some("validate")
+                    | Some("public")
                     | Some("auth")
                     | Some("rate")
                     | Some("cache")
@@ -114,7 +129,15 @@ pub(super) fn parse_routes(
                     | Some("=>")
                     | None
             ) {
-                json_fields.push(parse_typed_binding(&name, t.get(c).unwrap(), namespace, p)?);
+                let raw = t.get(c).unwrap();
+                let field = parse_typed_binding(&name, raw, namespace, p)?;
+                validations.extend(domain_validation::rules_for_binding(
+                    raw,
+                    &field.name,
+                    namespace,
+                    p,
+                ));
+                json_fields.push(field);
                 c += 1;
             }
             if json_fields.is_empty() {
@@ -176,7 +199,8 @@ pub(super) fn parse_routes(
             c += 1;
             while !matches!(
                 t.get(c).map(String::as_str),
-                Some("auth")
+                Some("public")
+                    | Some("auth")
                     | Some("rate")
                     | Some("cache")
                     | Some("invalidate")
@@ -188,41 +212,7 @@ pub(super) fn parse_routes(
                 c = next;
             }
         }
-        let mut auth = RouteAuth::Public;
-        if t.get(c).map(String::as_str) == Some("auth") {
-            c += 1;
-            let mode = t
-                .get(c)
-                .ok_or_else(|| CompileError::Syntax("route auth mode expected".into()))?;
-            match mode.as_str() {
-                "user" => {
-                    auth = RouteAuth::User;
-                    c += 1
-                }
-                "mfa" => {
-                    auth = RouteAuth::Mfa;
-                    c += 1
-                }
-                "role" => {
-                    let role = t
-                        .get(c + 1)
-                        .ok_or_else(|| {
-                            CompileError::Syntax("route auth role name expected".into())
-                        })?
-                        .clone();
-                    if !is_identifier(&role) {
-                        return Err(CompileError::Syntax("invalid route role name".into()));
-                    }
-                    auth = RouteAuth::Role(role);
-                    c += 2
-                }
-                _ => {
-                    return Err(CompileError::Syntax(format!(
-                        "unknown route auth mode `{mode}`"
-                    )));
-                }
-            }
-        }
+        let auth = parse_explicit_access(&name, &t, &mut c, namespace, p)?;
         let mut rate_policy = None;
         if t.get(c).map(String::as_str) == Some("rate") {
             let policy = t
@@ -334,9 +324,20 @@ pub(super) fn parse_routes(
                 "POST route may declare exactly one body mode: form, json, or upload".into(),
             ));
         }
-        let mut field_types = HashMap::new();
-        for f in query_fields
+        let path_fields: Vec<FormField> = segments
             .iter()
+            .filter_map(|segment| match segment {
+                RouteSegment::Param { name, ty } => Some(FormField {
+                    name: name.clone(),
+                    ty: *ty,
+                }),
+                RouteSegment::Static(_) => None,
+            })
+            .collect();
+        let mut field_types = HashMap::new();
+        for f in path_fields
+            .iter()
+            .chain(query_fields.iter())
             .chain(form_fields.iter())
             .chain(json_fields.iter())
         {
@@ -350,14 +351,15 @@ pub(super) fn parse_routes(
         for v in &validations {
             let ty = *field_types.get(&v.field).ok_or_else(|| {
                 CompileError::Syntax(format!(
-                    "validation references unknown query/form/json field `{}`",
+                    "validation references unknown route input field `{}`",
                     v.field
                 ))
             })?;
+            let representation = p.representation_type(ty).unwrap_or(ty);
             match &v.kind {
-                ValidationKind::Length { .. } if ty == ValueType::String => {}
-                ValidationKind::Range { .. } if ty == ValueType::Int => {}
-                ValidationKind::Pattern { .. } if ty == ValueType::String => {}
+                ValidationKind::Length { .. } if representation == ValueType::String => {}
+                ValidationKind::Range { .. } if representation == ValueType::Int => {}
+                ValidationKind::Pattern { .. } if representation == ValueType::String => {}
                 ValidationKind::SameAs { other } => {
                     let other_ty = *field_types.get(other).ok_or_else(|| {
                         CompileError::Syntax(format!(
@@ -385,6 +387,16 @@ pub(super) fn parse_routes(
                 }
             }
         }
+        apply_default_external_string_bounds(
+            path_fields
+                .iter()
+                .chain(query_fields.iter())
+                .chain(form_fields.iter())
+                .chain(json_fields.iter())
+                .cloned(),
+            &mut validations,
+        );
+
         if p.routes
             .iter()
             .any(|r| r.method == method && r.path == path)
@@ -463,16 +475,17 @@ fn parse_route_segments(
     path: &str,
     namespace: &str,
     p: &Program,
-) -> Result<Vec<RouteSegment>, CompileError> {
+) -> Result<(Vec<RouteSegment>, Vec<language_core::ValidationRule>), CompileError> {
     if !path.starts_with('/') {
         return Err(CompileError::Syntax(format!(
             "route `{route}` path must start /"
         )));
     }
     if path == "/" {
-        return Ok(vec![]);
+        return Ok((vec![], vec![]));
     }
     let mut out = Vec::new();
+    let mut validations = Vec::new();
     for raw in path.trim_start_matches('/').split('/') {
         if raw.is_empty() {
             return Err(CompileError::Syntax(format!(
@@ -481,6 +494,9 @@ fn parse_route_segments(
         }
         if let Some(v) = raw.strip_prefix(':') {
             let f = parse_typed_binding(route, v, namespace, p)?;
+            validations.extend(domain_validation::rules_for_binding(
+                v, &f.name, namespace, p,
+            ));
             out.push(RouteSegment::Param {
                 name: f.name,
                 ty: f.ty,
@@ -489,7 +505,7 @@ fn parse_route_segments(
             out.push(RouteSegment::Static(raw.into()));
         }
     }
-    Ok(out)
+    Ok((out, validations))
 }
 pub(super) fn validate_routes(p: &Program) -> Result<(), CompileError> {
     for r in &p.routes {
@@ -519,6 +535,8 @@ pub(super) fn validate_routes(p: &Program) -> Result<(), CompileError> {
             HttpMethod::Post => p.action(&r.handler).map(|h| &h.params),
         }
         .ok_or_else(|| CompileError::UnknownHandler(r.handler.clone()))?;
+        crate::permission_security::validate_handler_permission(r, p)?;
+        crate::mfa_security::validate_handler_mfa(r, p)?;
         if expected.len() != params.len() {
             return Err(CompileError::RouteParamMismatch(format!(
                 "route `{}` provides {} values, handler expects {}",
@@ -548,7 +566,7 @@ pub(super) fn validate_routes(p: &Program) -> Result<(), CompileError> {
             };
             if has_object_auth {
                 return Err(CompileError::Syntax(format!(
-                    "route `{}` uses object authorization but is public; add `auth user`, `auth mfa`, or `auth role ...`",
+                    "route `{}` uses object authorization but is public; add `auth user`, `auth mfa`, `auth role ...`, or `auth permission ...`",
                     r.name
                 )));
             }
@@ -561,7 +579,7 @@ pub(super) fn validate_routes(p: &Program) -> Result<(), CompileError> {
             };
             if has_business_audit {
                 return Err(CompileError::Syntax(format!(
-                    "route `{}` writes business audit records but is public; add `auth user`, `auth mfa`, or `auth role ...`",
+                    "route `{}` writes business audit records but is public; add `auth user`, `auth mfa`, `auth role ...`, or `auth permission ...`",
                     r.name
                 )));
             }
@@ -663,7 +681,7 @@ page fn calculator(ctx: PageContext, a: Int, b: Int) -> Result<Html, PageError> 
 route calculator GET "/calculator"
     query a<Int> b<Int>
     validate a range -1000000 1000000 b range -1000000 1000000
-    => calculator;
+    public => calculator;
 "#;
         let p = compile_source(src).expect("negative range bounds must compile");
         let route = p.routes.iter().find(|r| r.name == "calculator").unwrap();
@@ -683,7 +701,7 @@ route calculator GET "/calculator"
 page fn calculator(ctx: PageContext, a: Int) -> Result<Html, PageError> {
     return Ok(html {<p>{{ a }}</p>});
 }
-route calculator GET "/calculator" query a<Int> validate a range @1 10 => calculator;
+route calculator GET "/calculator" query a<Int> validate a range @1 10 public => calculator;
 "#;
         let err = compile_source(src).expect_err("unknown route punctuation must fail closed");
         let msg = err.to_string();
@@ -698,7 +716,7 @@ page fn index(ctx: PageContext) -> Result<Html, PageError> {
         <p>route fake GET /admin =&gt; missing</p>
     });
 }
-route index GET "/" => index;
+route index GET "/" public => index;
 "#;
         let p = compile_source(src).expect("route-like HTML text must remain HTML text");
         assert_eq!(p.routes.len(), 1);
@@ -713,7 +731,7 @@ page fn index(ctx: PageContext) -> Result<Html, PageError> {
         <p>model Ghost and page fn fake are documentation text.</p>
     });
 }
-route index GET "/" => index;
+route index GET "/" public => index;
 "#;
         let p = compile_source(src)
             .expect("declaration-like HTML text must be ignored by declaration scanners");
@@ -732,10 +750,10 @@ action fn contact_submit(ctx: ActionContext, name: String) -> Result<Json, PageE
     return Ok(json(name));
 }
 
-route contact_form GET "/contact" => contact_form;
+route contact_form GET "/contact" public => contact_form;
 route contact_submit POST "/contact"
 form name<String>
-=> contact_submit;
+public => contact_submit;
 "#;
         let p = compile_source(src).expect("multiline form route must compile");
         assert_eq!(p.routes.len(), 2);

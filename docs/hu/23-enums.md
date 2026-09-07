@@ -68,7 +68,7 @@ Enum route/form/JSON scalar típusként is használható:
 ```rwlang
 route list GET "/articles"
     query status<ArticleStatus>
-    => Article.list;
+    public => Article.list;
 ```
 
 Wire formátuma a variáns pontos neve, például `Published`. A `published`, `PUBLISHED` vagy ismeretlen érték inline route/query/JSON contractnál `400 Bad Request`; named form mezőjeként mezőszintű `invalid_type` hibává és `422 Unprocessable Content` válasszá válik.

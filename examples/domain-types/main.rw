@@ -1,0 +1,19 @@
+type Username = String {
+    length 3 32;
+    pattern "^[A-Za-z0-9_]+$";
+}
+
+type PageSize = Int {
+    range 1 100;
+}
+
+page fn profile(ctx: PageContext, username: Username, size: PageSize) -> Result<Html, PageError> {
+    let parts = splitBounded(username, "_", 8);
+    return Ok(html {
+        <h1>{{ username }}</h1>
+        <p>Segments: {{ len(parts) }}</p>
+        <p>Page size: {{ size }}</p>
+    });
+}
+
+route profile GET "/profiles/:username<Username>" query size<PageSize> public => profile;

@@ -463,7 +463,7 @@ done
 grep -q '^mod values;$' crates/language-core/src/lib.rs || fail 'language-core facade must own values module'
 grep -q '^mod web_types;$' crates/language-core/src/lib.rs || fail 'language-core facade must own web_types module'
 grep -q '^pub use values::{F32Value, FunctionParam, ImageRef, PageParam, Value, ValueType};$' crates/language-core/src/lib.rs || fail 'language-core facade must preserve value API re-exports'
-grep -q '^pub use web_types::{FlashKind, FlashMessage, Html, HttpMethod, Redirect, RedirectStatus};$' crates/language-core/src/lib.rs || fail 'language-core facade must preserve web type API re-exports'
+grep -q '^pub use web_types::{FlashKind, FlashMessage, Html, HttpMethod, LocalUrl, Redirect, RedirectStatus};$' crates/language-core/src/lib.rs || fail 'language-core facade must preserve web type API re-exports'
 if grep -R --include='*.rs' -n '^ *use super::\*;' crates/language-core/src/values.rs crates/language-core/src/web_types.rs >/dev/null 2>&1; then
   fail 'language-core foundation modules must keep dependencies explicit'
 fi
@@ -475,7 +475,13 @@ printf '%s\n' 'R30 language-core foundation responsibility extraction verificati
 # R31: language-core AST/expression/statement layer lives behind the stable facade.
 test -f crates/language-core/src/ast.rs || fail 'missing language-core AST module'
 grep -q '^mod ast;$' crates/language-core/src/lib.rs || fail 'language-core facade must own ast module'
-grep -q '^pub use ast::{ActionBody, ActionFunction, ActionStatement, BinaryOp, BusinessAudit, BuiltinExecutionKind, BuiltinFunction, BuiltinMetadata, ComponentFunction, ComputeStatement, Expr, HtmlAttrKind, HtmlPart, HtmlTemplate, LayoutFunction, ObjectAuthorization, PageBody, PageFunction, QueryCall, ResourceUse, SourceLocation, Statement, TemplateParam, TemplateParamType, TxStatement};$' crates/language-core/src/lib.rs || fail 'language-core facade must preserve AST API re-exports'
+grep -q '^pub use ast::{ActionBody, ActionFunction, ActionStatement, BinaryOp, BusinessAudit, ComponentFunction, ComputeStatement, Expr, HtmlAttrKind, HtmlPart, HtmlTemplate, LayoutFunction, PageBody, PageFunction, QueryCall, RouteCall, ResourceUse, SourceLocation, Statement, TemplateParam, TemplateParamType, TxStatement};$' crates/language-core/src/lib.rs || fail 'language-core facade must preserve AST API re-exports'
+test -f crates/language-core/src/builtin.rs || fail 'missing language-core builtin domain module'
+grep -q '^mod builtin;$' crates/language-core/src/lib.rs || fail 'language-core facade must own builtin module'
+grep -q '^pub use builtin::{BuiltinExecutionKind, BuiltinFunction, BuiltinMetadata};$' crates/language-core/src/lib.rs || fail 'language-core facade must preserve builtin API re-exports'
+test -f crates/language-core/src/authorization.rs || fail 'missing language-core authorization domain module'
+grep -q '^mod authorization;$' crates/language-core/src/lib.rs || fail 'language-core facade must own authorization module'
+grep -q '^pub use authorization::{AuthorizationMode, ObjectAuthorization};$' crates/language-core/src/lib.rs || fail 'language-core facade must preserve authorization API re-exports'
 if grep -R --include='*.rs' -n '^ *use super::\*;' crates/language-core/src/ast.rs >/dev/null 2>&1; then
   fail 'language-core AST module must keep dependencies explicit'
 fi
@@ -493,7 +499,7 @@ done
 grep -q '^pub use config::ServerConfig;$' crates/language-core/src/lib.rs || fail 'language-core facade must preserve ServerConfig re-export'
 grep -q '^pub use error::AppError;$' crates/language-core/src/lib.rs || fail 'language-core facade must preserve AppError re-export'
 grep -q '^pub use program::Program;$' crates/language-core/src/lib.rs || fail 'language-core facade must preserve Program re-export'
-grep -q '^pub use query::{QueryCapability, QueryFunction, QueryReturn};$' crates/language-core/src/lib.rs || fail 'language-core facade must preserve query API re-exports'
+grep -q '^pub use query::{CredentialLifecycleMode, CredentialLifecycleTarget, MutationTarget, QueryCapability, QueryFunction, QueryReturn};$' crates/language-core/src/lib.rs || fail 'language-core facade must preserve query API re-exports'
 grep -q '^pub use routing::{PublicCachePolicy, Route, RouteAuth, RouteSegment, UploadField};$' crates/language-core/src/lib.rs || fail 'language-core facade must preserve routing API re-exports'
 grep -q '^pub use schema::{EnumDef, FormFailure, FormField, FormFieldIssue, FormSchema, Model, ValidationKind, ValidationRule};$' crates/language-core/src/lib.rs || fail 'language-core facade must preserve schema API re-exports'
 if grep -R --include='*.rs' -n '^ *use super::\*;' crates/language-core/src/config.rs crates/language-core/src/error.rs crates/language-core/src/program.rs crates/language-core/src/query.rs crates/language-core/src/routing.rs crates/language-core/src/schema.rs >/dev/null 2>&1; then
@@ -987,10 +993,10 @@ test -f crates/runtime/src/string_builtins.rs || fail 'R52 missing runtime strin
 grep -q 'Rem,' crates/language-core/src/ast.rs || fail 'R52 BinaryOp must include remainder'
 grep -q 'ShiftLeft,' crates/language-core/src/ast.rs || fail 'R52 BinaryOp must include shifts'
 grep -q 'LogicalAnd,' crates/language-core/src/ast.rs || fail 'R52 BinaryOp must include logical operators'
-grep -q 'Ln,' crates/language-core/src/ast.rs || fail 'R52 builtins must include logarithms'
-grep -q 'Round,' crates/language-core/src/ast.rs || fail 'R52 builtins must include rounding'
-grep -q 'Substring,' crates/language-core/src/ast.rs || fail 'R52 builtins must include substring'
-grep -q 'Repeat,' crates/language-core/src/ast.rs || fail 'R52 builtins must include repeat'
+grep -q 'Ln,' crates/language-core/src/builtin.rs || fail 'R52 builtins must include logarithms'
+grep -q 'Round,' crates/language-core/src/builtin.rs || fail 'R52 builtins must include rounding'
+grep -q 'Substring,' crates/language-core/src/builtin.rs || fail 'R52 builtins must include substring'
+grep -q 'Repeat,' crates/language-core/src/builtin.rs || fail 'R52 builtins must include repeat'
 grep -q 'JumpIfFalse' crates/runtime/src/bytecode.rs || fail 'R52 logical AND must have short-circuit bytecode support'
 grep -q 'JumpIfTrue' crates/runtime/src/bytecode.rs || fail 'R52 logical OR must have short-circuit bytecode support'
 grep -q 'fn logical_and_short_circuits_rhs' crates/runtime/src/bytecode_tests.rs || fail 'R52 must test logical AND short circuit'

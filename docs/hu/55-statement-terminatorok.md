@@ -44,7 +44,7 @@ mod catalog::pages;
 route catalogIndex GET "/catalog"
     query page<Int>
     validate page range 1 1000
-    => catalog::pages::index;
+    public => catalog::pages::index;
 ```
 
 A route scanner csak a záró `;` után tekinti teljesnek a deklarációt; a sortörés és az `=> handler` önmagában nem terminátor.

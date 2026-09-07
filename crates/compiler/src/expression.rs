@@ -1,5 +1,6 @@
 use crate::expression_parser;
 use crate::handler_types::StaticType;
+use crate::type_semantics::represented_as;
 use crate::{CompileError, builtin_types};
 use language_core::{BinaryOp, Expr, Program, ValueType};
 use std::collections::HashMap;
@@ -29,13 +30,14 @@ pub(super) fn validate_expr(
             }
         }
         Expr::Field { base, field } => match k.get(base) {
-            Some(StaticType::Model(m)) => {
+            Some(StaticType::Model(model_type)) => {
                 let model = p
-                    .model(m)
-                    .ok_or_else(|| CompileError::UnknownModel(m.clone()))?;
+                    .model(&model_type.name)
+                    .ok_or_else(|| CompileError::UnknownModel(model_type.name.clone()))?;
                 if !model.fields.iter().any(|f| f.name == *field) {
                     return Err(CompileError::Syntax(format!(
-                        "model `{m}` has no field `{field}`"
+                        "model `{}` has no field `{field}`",
+                        model_type.name
                     )));
                 }
             }
@@ -78,19 +80,8 @@ pub(super) fn validate_expr(
     }
     Ok(())
 }
-pub(super) fn infer_static_expr_type(
-    e: &Expr,
-    k: &HashMap<String, StaticType>,
-    p: &Program,
-) -> Result<StaticType, CompileError> {
-    match e {
-        Expr::Variable(n) => k
-            .get(n)
-            .cloned()
-            .ok_or_else(|| CompileError::UnknownVariable(n.clone())),
-        _ => Ok(StaticType::Scalar(infer_expr_type(e, k, p)?)),
-    }
-}
+pub(super) use crate::expression_security::infer_static_expr_type;
+
 pub(super) fn infer_expr_type(
     e: &Expr,
     k: &HashMap<String, StaticType>,
@@ -111,13 +102,13 @@ pub(super) fn infer_expr_type(
             Ok(ValueType::F32Array)
         }
         Expr::CollectionIndex { collection, index } => match k.get(collection) {
-            Some(StaticType::Scalar(ValueType::F32Array)) => {
+            Some(value) if value.is_scalar(ValueType::F32Array) => {
                 if infer_expr_type(index, k, p)? != ValueType::Int {
                     return Err(CompileError::Syntax("Array<F32> index must be Int".into()));
                 }
                 Ok(ValueType::F32)
             }
-            Some(StaticType::Scalar(ValueType::StringList)) => {
+            Some(value) if value.is_scalar(ValueType::StringList) => {
                 if infer_expr_type(index, k, p)? != ValueType::Int {
                     return Err(CompileError::Syntax(
                         "List<String> index must be Int".into(),
@@ -125,7 +116,7 @@ pub(super) fn infer_expr_type(
                 }
                 Ok(ValueType::String)
             }
-            Some(StaticType::Scalar(ValueType::StringDict)) => {
+            Some(value) if value.is_scalar(ValueType::StringDict) => {
                 if infer_expr_type(index, k, p)? != ValueType::String {
                     return Err(CompileError::Syntax(
                         "Dict<String,String> key must be String".into(),
@@ -138,16 +129,25 @@ pub(super) fn infer_expr_type(
             ))),
         },
         Expr::CollectionLen { collection } => {
-            if matches!(
-                k.get(collection),
-                Some(StaticType::Scalar(
-                    ValueType::F32Array | ValueType::StringList | ValueType::StringDict
-                ))
-            ) {
+            let supports_len = k
+                .get(collection)
+                .and_then(StaticType::scalar)
+                .map(|scalar| {
+                    matches!(
+                        p.representation_type(scalar.value_type)
+                            .unwrap_or(scalar.value_type),
+                        ValueType::String
+                            | ValueType::F32Array
+                            | ValueType::StringList
+                            | ValueType::StringDict
+                    )
+                })
+                .unwrap_or(false);
+            if supports_len {
                 Ok(ValueType::Int)
             } else {
                 Err(CompileError::Syntax(format!(
-                    "`{collection}` is not a collection"
+                    "`{collection}` does not support len(...)"
                 )))
             }
         }
@@ -157,7 +157,7 @@ pub(super) fn infer_expr_type(
         Expr::Bool(_) => Ok(ValueType::Bool),
         Expr::EnumLiteral { enum_id, .. } => Ok(ValueType::Enum(*enum_id)),
         Expr::Slugify(inner) => {
-            if infer_expr_type(inner, k, p)? != ValueType::String {
+            if !represented_as(p, infer_expr_type(inner, k, p)?, ValueType::String) {
                 return Err(CompileError::Syntax(
                     "slug(...) requires a String expression".into(),
                 ));
@@ -165,7 +165,7 @@ pub(super) fn infer_expr_type(
             Ok(ValueType::Slug)
         }
         Expr::Variable(n) => match k.get(n) {
-            Some(StaticType::Scalar(t)) => Ok(*t),
+            Some(StaticType::Scalar(t)) => Ok(t.value_type),
             Some(StaticType::Upload) => Err(CompileError::Syntax(format!(
                 "Upload `{n}` cannot be interpolated directly; use a metadata field"
             ))),
@@ -181,8 +181,8 @@ pub(super) fn infer_expr_type(
             None => Err(CompileError::UnknownVariable(n.clone())),
         },
         Expr::Field { base, field } => match k.get(base) {
-            Some(StaticType::Model(m)) => p
-                .model(m)
+            Some(StaticType::Model(model_type)) => p
+                .model(&model_type.name)
                 .and_then(|x| x.fields.iter().find(|f| f.name == *field))
                 .map(|f| f.ty)
                 .ok_or_else(|| CompileError::Syntax(format!("unknown field `{base}.{field}`"))),
@@ -242,14 +242,17 @@ pub(super) fn infer_expr_type(
                 }
                 BinaryOp::Lt | BinaryOp::Le | BinaryOp::Gt | BinaryOp::Ge
                     if l == r
-                        && matches!(l, ValueType::Int | ValueType::F32 | ValueType::Decimal) =>
+                        && matches!(
+                            p.representation_type(l).unwrap_or(l),
+                            ValueType::Int | ValueType::F32 | ValueType::Decimal
+                        ) =>
                 {
                     Ok(ValueType::Bool)
                 }
                 BinaryOp::Eq | BinaryOp::Ne
                     if l == r
                         && matches!(
-                            l,
+                            p.representation_type(l).unwrap_or(l),
                             ValueType::String
                                 | ValueType::Int
                                 | ValueType::F32

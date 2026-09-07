@@ -10,4 +10,4 @@ page fn article(ctx: PageContext, db: Db, id: Int) -> Result<Json, PageError> {
     authorize article owner authorUsername;
     return Ok(json(article));
 }
-route article GET "/articles/:id<Int>" => article;
+route article GET "/articles/:id<Int>" public => article;

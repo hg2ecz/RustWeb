@@ -19,4 +19,4 @@ object Article {
     }
 }
 
-route article GET "/cikk/:slug<Slug>" => Article.show;
+route article GET "/cikk/:slug<Slug>" public => Article.show;

@@ -57,12 +57,37 @@ fn parse_template_param_type(
 }
 pub(super) fn template_static_type(t: &TemplateParamType) -> StaticType {
     match t {
-        TemplateParamType::Scalar(v) => StaticType::Scalar(*v),
-        TemplateParamType::Model(v) => StaticType::Model(v.clone()),
+        TemplateParamType::Scalar(v) => StaticType::trusted_scalar(*v),
+        TemplateParamType::Model(v) => StaticType::model(v.clone()),
         TemplateParamType::OptionalModel(v) => StaticType::OptionalModel(v.clone()),
         TemplateParamType::ListModel(v) => StaticType::ListModel(v.clone()),
     }
 }
+
+pub(super) fn argument_type_compatible(
+    actual: &StaticType,
+    expected: &TemplateParamType,
+    program: &Program,
+) -> bool {
+    match (actual, expected) {
+        (StaticType::Scalar(actual), TemplateParamType::Scalar(expected)) => {
+            if matches!(expected, ValueType::Domain(_) | ValueType::Credential(_)) {
+                actual.value_type == *expected
+            } else {
+                program.representation_type(actual.value_type) == Some(*expected)
+            }
+        }
+        (StaticType::Model(actual), TemplateParamType::Model(expected)) => actual.name == *expected,
+        (StaticType::OptionalModel(actual), TemplateParamType::OptionalModel(expected)) => {
+            actual == expected
+        }
+        (StaticType::ListModel(actual), TemplateParamType::ListModel(expected)) => {
+            actual == expected
+        }
+        _ => false,
+    }
+}
+
 fn parse_template_params(
     input: &str,
     namespace: &str,

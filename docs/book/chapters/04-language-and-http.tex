@@ -38,7 +38,7 @@ mod catalog::queries;
 mod catalog::pages;
 
 route catalogIndex GET "/catalog"
-    => catalog::pages::index;
+    public => catalog::pages::index;
 \end{lstlisting}
 
 Across a module boundary, use the qualified name. A declaration in \code{catalog/queries.rw} is referenced as \code{catalog::queries::recent(...)}, and a type in \code{models.rw} as \code{models::Article}. Inside the declaration's own module, the short local name remains valid. This keeps local code concise while making dependencies between source modules visible.
@@ -292,7 +292,7 @@ Related model/query/page operations can be grouped under a domain object. This i
 \subsection*{Route}
 
 \begin{lstlisting}[language=RWLang]
-route article GET "/article/:slug<Slug>" => article;
+route article GET "/article/:slug<Slug>" public => article;
 \end{lstlisting}
 
 The path parameter type is declared in the route. Invalid input never reaches the handler as a typed value.

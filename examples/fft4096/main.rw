@@ -103,4 +103,4 @@ page fn fft4096(ctx: PageContext) -> Result<Html, PageError> {
     });
 }
 
-route fft4096 GET "/fft4096" => fft4096;
+route fft4096 GET "/fft4096" public => fft4096;

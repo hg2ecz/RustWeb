@@ -212,12 +212,23 @@ fn decode_path_param(program: &Program, raw: &str, ty: ValueType) -> Result<Valu
     decode_scalar(program, &percent_decode(raw, false)?, ty)
 }
 use crate::scalars::{is_canonical_slug, normalize_email, normalize_url};
+use language_core::CredentialPurpose;
 
 pub(crate) fn decode_scalar(
     program: &Program,
     raw: &str,
     ty: ValueType,
 ) -> Result<Value, AppError> {
+    if let ValueType::Domain(id) = ty {
+        let base = program
+            .domain_type_by_id(id)
+            .ok_or(AppError::Internal)?
+            .base;
+        return decode_scalar(program, raw, base);
+    }
+    if let ValueType::Credential(purpose) = ty {
+        return decode_credential(raw, purpose);
+    }
     match ty {
         ValueType::String => Ok(Value::String(raw.into())),
         ValueType::Email => normalize_email(raw)
@@ -278,7 +289,36 @@ pub(crate) fn decode_scalar(
             }
         }
         ValueType::Upload => Err(AppError::BadRequest),
+        ValueType::Credential(_) => {
+            unreachable!("credential types are decoded before scalar decoding")
+        }
+        ValueType::Domain(_) => unreachable!("domain types are unwrapped before scalar decoding"),
     }
+}
+
+fn decode_credential(raw: &str, purpose: CredentialPurpose) -> Result<Value, AppError> {
+    let valid_length = match purpose {
+        CredentialPurpose::Password => (12..=1024).contains(&raw.len()),
+        CredentialPurpose::PasswordHash => (32..=512).contains(&raw.len()),
+        CredentialPurpose::ApiToken => (16..=4096).contains(&raw.len()),
+        CredentialPurpose::SessionToken
+        | CredentialPurpose::PasswordResetToken
+        | CredentialPurpose::CsrfToken => {
+            raw.len() == 64 && raw.bytes().all(|byte| byte.is_ascii_hexdigit())
+        }
+        CredentialPurpose::SessionTokenHash
+        | CredentialPurpose::PasswordResetTokenHash
+        | CredentialPurpose::CsrfTokenHash => false,
+        CredentialPurpose::CryptoKey => (16..=4096).contains(&raw.len()),
+    };
+    if !valid_length
+        || raw
+            .bytes()
+            .any(|byte| byte == 0 || byte == b'\r' || byte == b'\n')
+    {
+        return Err(AppError::BadRequest);
+    }
+    Ok(Value::String(raw.into()))
 }
 
 pub fn decode_urlencoded_limited(

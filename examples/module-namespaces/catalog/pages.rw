@@ -12,4 +12,4 @@ page fn index(ctx: PageContext, db: Db) -> Result<Html, PageError> {
     });
 }
 
-route catalogIndex GET "/catalog" => catalog::pages::index;
+route catalogIndex GET "/catalog" public => catalog::pages::index;

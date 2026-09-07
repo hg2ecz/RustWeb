@@ -17,12 +17,18 @@ query fn wikiBySlug(db: Db, slug: Slug) -> Result<WikiPage, DbError> sql {
     WHERE slug = :slug
 }
 
+query fn wikiById(db: Db, id: Int) -> Result<WikiPage, DbError> sql {
+    SELECT id, slug, title, body
+    FROM wiki_pages
+    WHERE id = :id
+}
+
 query fn updateWikiPage(
     tx: Transaction,
     id: Int,
     title: String,
     body: String
-) -> Result<Void, DbError> sql {
+) -> Result<Void, DbError> mutates WikiPage by id sql {
     UPDATE wiki_pages
     SET title = :title, body = :body
     WHERE id = :id
@@ -66,14 +72,16 @@ action fn wikiEdit(
     title: String,
     body: String
 ) -> Result<Redirect, PageError> {
+    let page = wikiById(db, id)?;
+    authorize page authenticated;
     transaction db {
-        updateWikiPage(tx, id, title, body)?;
+        updateWikiPage(tx, page.id, title, body)?;
     }
-    return Ok(redirect("/wiki"));
+    return Ok(redirect(wikiIndex()));
 }
 
-route wikiIndex GET "/wiki" => wikiIndex;
-route wikiShow GET "/wiki/:slug<Slug>" => wikiShow;
+route wikiIndex GET "/wiki" public => wikiIndex;
+route wikiShow GET "/wiki/:slug<Slug>" public => wikiShow;
 route wikiEdit POST "/admin/wiki/:id<Int>"
     form WikiForm
     auth role Editor

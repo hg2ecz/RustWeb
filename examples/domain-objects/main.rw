@@ -22,4 +22,4 @@ object Article {
     }
 }
 
-route articleShow GET "/cikk/:slug<Slug>" cache public ttl 60 => Article.show;
+route articleShow GET "/cikk/:slug<Slug>" public cache public ttl 60 => Article.show;

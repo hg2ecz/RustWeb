@@ -22,7 +22,7 @@ page fn productsApi(
     offset: Int
 ) -> Result<Json, PageError> {
     let products = listProducts(db, limit, offset)?;
-    return Ok(json(products));
+    return Ok(json(expose(products, id, name, price)));
 }
 
 page fn csrfApi(ctx: PageContext) -> Result<Json, PageError> {
@@ -41,7 +41,7 @@ action fn echoApi(
 route productsApi GET "/api/products"
     query limit<Int> offset<Int>
     validate limit range 1 100 offset range 0 1000000
-    => productsApi;
+    public => productsApi;
 
 route csrfApi GET "/api/csrf" auth user => csrfApi;
 

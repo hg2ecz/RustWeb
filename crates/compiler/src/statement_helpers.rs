@@ -3,81 +3,12 @@ use crate::domain_symbols::{display_domain_symbol, internal_domain_symbol};
 use crate::expression::{infer_expr_type, parse_expr_in_namespace, validate_expr};
 use crate::handler_types::{StaticType, query_static_type};
 use crate::module_namespace::{is_symbol_path, last_segment, resolve};
-use crate::source_syntax::{is_identifier, read_ident, split_top_level};
-use language_core::{
-    BusinessAudit, ObjectAuthorization, Program, QueryCall, QueryCapability, ValueType,
-};
+use crate::mutation_security::{validate_mutation_call, validate_mutation_inputs};
+use crate::secret_usage::{reject_audit_secret, validate_query_argument};
+use crate::source_syntax::{read_ident, split_top_level};
+use crate::type_semantics::display;
+use language_core::{BusinessAudit, Program, QueryCall, QueryCapability, ValueType};
 use std::collections::HashMap;
-
-pub(super) fn parse_object_authorize(
-    text: &str,
-    known: &HashMap<String, StaticType>,
-    p: &Program,
-    handler: &str,
-) -> Result<ObjectAuthorization, CompileError> {
-    // Grammar: authorize <record> owner <String-field> [or role <Role>]...
-    let words: Vec<&str> = text.split_whitespace().collect();
-    if words.len() < 4 || words[0] != "authorize" || words[2] != "owner" {
-        return Err(CompileError::Syntax(format!(
-            "{handler} authorization syntax is `authorize <record> owner <field> [or role <Role>]...`"
-        )));
-    }
-    let object = words[1];
-    let owner_field = words[3];
-    if !is_identifier(object) || !is_identifier(owner_field) {
-        return Err(CompileError::Syntax(format!(
-            "{handler} authorization identifiers are invalid"
-        )));
-    }
-    let model_name = match known.get(object) {
-        Some(StaticType::Model(m)) => m,
-        Some(StaticType::OptionalModel(_)) => {
-            return Err(CompileError::Syntax(format!(
-                "{handler} authorization requires a non-optional loaded object; handle absence before authorization"
-            )));
-        }
-        _ => {
-            return Err(CompileError::Syntax(format!(
-                "{handler} authorization object `{object}` must be a loaded model"
-            )));
-        }
-    };
-    let model = p
-        .model(model_name)
-        .ok_or_else(|| CompileError::UnknownModel(model_name.clone()))?;
-    let field=model.fields.iter().find(|f|f.name==owner_field).ok_or_else(||CompileError::Syntax(format!("{handler} authorization owner field `{owner_field}` does not exist on model `{model_name}`")))?;
-    if field.ty != ValueType::String {
-        return Err(CompileError::Syntax(format!(
-            "{handler} authorization owner field `{owner_field}` must be String"
-        )));
-    }
-    let mut roles = Vec::new();
-    let mut i = 4;
-    while i < words.len() {
-        if i + 2 >= words.len()
-            || words[i] != "or"
-            || words[i + 1] != "role"
-            || !is_identifier(words[i + 2])
-        {
-            return Err(CompileError::Syntax(format!(
-                "{handler} authorization expected `or role <Role>`"
-            )));
-        }
-        let role = words[i + 2].to_string();
-        if roles.contains(&role) {
-            return Err(CompileError::Syntax(format!(
-                "{handler} duplicate authorization role `{role}`"
-            )));
-        }
-        roles.push(role);
-        i += 3;
-    }
-    Ok(ObjectAuthorization {
-        object: object.into(),
-        owner_field: owner_field.into(),
-        allow_roles: roles,
-    })
-}
 
 fn audit_object_id_type_allowed(ty: ValueType) -> bool {
     !matches!(
@@ -150,6 +81,7 @@ pub(super) fn parse_business_audit(
     }
     let object_id = parse_expr_in_namespace(object_id_raw, namespace, p)?;
     validate_expr(&object_id, known, p)?;
+    reject_audit_secret(&object_id, "business audit object id", known, p)?;
     let id_ty = infer_expr_type(&object_id, known, p)?;
     if !audit_object_id_type_allowed(id_ty) {
         return Err(CompileError::Syntax(format!(
@@ -184,6 +116,8 @@ pub(super) fn parse_business_audit(
         let new = parse_expr_in_namespace(new_raw, namespace, p)?;
         validate_expr(&old, known, p)?;
         validate_expr(&new, known, p)?;
+        reject_audit_secret(&old, "business audit previous value", known, p)?;
+        reject_audit_secret(&new, "business audit new value", known, p)?;
         let old_ty = infer_expr_type(&old, known, p)?;
         let new_ty = infer_expr_type(&new, known, p)?;
         if old_ty != new_ty {
@@ -263,14 +197,26 @@ pub(super) fn parse_query_call(
     for (raw, param) in raw_args.iter().skip(1).zip(&q.params) {
         let e = parse_expr_in_namespace(raw.trim(), namespace, p)?;
         validate_expr(&e, known, p)?;
-        if infer_expr_type(&e, known, p)? != param.ty {
-            return Err(CompileError::Syntax(format!(
-                "query `{qname}` argument `{}` type mismatch",
-                param.name
-            )));
+        let actual = infer_expr_type(&e, known, p)?;
+        validate_query_argument(&qname, param, &e, known, p)?;
+        if actual != param.ty {
+            return Err(CompileError::security(
+                "SEC-TYPE-001",
+                format!(
+                    "query `{qname}` argument `{}` expects `{}`, got `{}`",
+                    param.name,
+                    display(p, param.ty),
+                    display(p, actual)
+                ),
+                Some("nominal domain types are not interchangeable even when they share the same String/Int representation".into()),
+            ));
         }
         args.push(e);
     }
+    if cap == QueryCapability::Transaction {
+        validate_mutation_inputs(q, &args, known, p)?;
+    }
+    validate_mutation_call(q, &args, known, p)?;
     Ok(Some((
         QueryCall {
             query: qname.into(),

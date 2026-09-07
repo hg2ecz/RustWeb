@@ -26,7 +26,7 @@ mod m36_modules_slug_compile_tests {
 page fn article(ctx: PageContext, slug: Slug) -> Result<Html, PageError> {
     return Ok(html {<h1>{{ slug }}</h1>});
 }
-route article GET "/cikk/:slug<Slug>" => pages::article;
+route article GET "/cikk/:slug<Slug>" public => pages::article;
 "#,
         )
         .unwrap();
@@ -46,7 +46,7 @@ route article GET "/cikk/:slug<Slug>" => pages::article;
             dir.join("pages/article.rw"),
             r#"
 page fn article(ctx: PageContext) -> Result<Html, PageError> { return Ok(html {ok}); }
-route article GET "/article" => pages::article::article;
+route article GET "/article" public => pages::article::article;
 "#,
         )
         .unwrap();
@@ -73,7 +73,7 @@ route article GET "/article" => pages::article::article;
             dir.join("pages/article.rw"),
             r#"
 page fn article(ctx: PageContext, slug: Slug) -> Result<Html, PageError> { return Ok(html {ok}); }
-route article GET "/cikk/:slug<Slug>" => pages::article::article;
+route article GET "/cikk/:slug<Slug>" public => pages::article::article;
 "#,
         )
         .unwrap();
@@ -102,7 +102,7 @@ route article GET "/cikk/:slug<Slug>" => pages::article::article;
             dir.join("a.rw"),
             r#"
 page fn show(ctx: PageContext) -> Result<Html, PageError> { return Ok(html {a}); }
-route showA GET "/a" => a::show;
+route showA GET "/a" public => a::show;
 "#,
         )
         .unwrap();
@@ -128,7 +128,7 @@ page fn show(ctx: PageContext) -> Result<Html, PageError> { return Ok(html {b});
             dir.join("pages.rw"),
             r#"
 page fn show(ctx: PageContext) -> Result<Html, PageError> { return Ok(html {ok}); }
-route show GET "/" => show;
+route show GET "/" public => show;
 "#,
         )
         .unwrap();
@@ -151,7 +151,7 @@ page fn show(ctx: PageContext) -> Result<Html, PageError> { return Ok(html {ok})
         fs::write(
             dir.join("routes.rw"),
             r#"
-route show GET "/" => show;
+route show GET "/" public => show;
 "#,
         )
         .unwrap();
@@ -206,7 +206,7 @@ page fn article(ctx: PageContext, title: String) -> Result<Html, PageError> {
     let canonical = slug(title);
     return Ok(html {<p>{{ canonical }}</p>});
 }
-route article GET "/" query title<String> => article;
+route article GET "/" query title<String> public => article;
 "#;
         let p = compile_source(src).unwrap();
         assert!(p.page("article").is_some());

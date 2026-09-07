@@ -39,7 +39,7 @@ has the symbol name `pages::article::show`.
 Inside the defining module, a local declaration may be referenced by its short name and resolves in that module namespace. Crossing a module boundary requires the qualified namespace path. For example, an external reference is explicit:
 
 ```rwlang
-route articleShow GET "/articles/:slug<Slug>" => pages::article::show;
+route articleShow GET "/articles/:slug<Slug>" public => pages::article::show;
 ```
 
 `mod pages::article;` does **not** make `show` a global name.
@@ -88,7 +88,7 @@ page fn show(ctx: PageContext, db: Db, id: Int) -> Result<Html, PageError> {
     return Ok(html {<h1>{{ article.title }}</h1>});
 }
 
-route articleShow GET "/articles/:id<Int>" => pages::show;
+route articleShow GET "/articles/:id<Int>" public => pages::show;
 ```
 
 The explicit namespace is intentional: dependencies remain visible in source and name collisions between modules do not silently change meaning.

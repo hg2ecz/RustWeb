@@ -19,6 +19,8 @@ pub enum RouteAuth {
     User,
     Mfa,
     Role(String),
+    Permission { name: String, roles: Vec<String> },
+    PermissionMfa { name: String, roles: Vec<String> },
 }
 
 impl Default for RouteAuth {

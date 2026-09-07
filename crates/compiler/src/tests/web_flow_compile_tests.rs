@@ -19,7 +19,7 @@ page fn show(ctx: PageContext, db: Db, slug: Slug) -> Result<Html, PageError> {
     canonical slug slug from article.slug;
     return Ok(html {<h1>{{ article.title }}</h1>});
 }
-route article GET "/articles/:slug<Slug>" => show;
+route article GET "/articles/:slug<Slug>" public => show;
 "#;
         let p = compile_source(src).unwrap();
         let page = p.page("show").unwrap();
@@ -36,7 +36,7 @@ page fn show(ctx: PageContext, slug: Slug) -> Result<Html, PageError> {
     canonical slug slug from slug;
     return Ok(html {ok});
 }
-route article GET "/articles" query slug<Slug> => show;
+route article GET "/articles" query slug<Slug> public => show;
 "#;
         assert!(compile_source(src).is_err());
     }
@@ -48,7 +48,7 @@ page fn show(ctx: PageContext, slug: Slug) -> Result<Html, PageError> {
     canonical slug slug from slug;
     return Ok(html {ok});
 }
-route article GET "/articles/:slug<Slug>" cache public ttl 60 => show;
+route article GET "/articles/:slug<Slug>" public cache public ttl 60 => show;
 "#;
         assert!(compile_source(src).is_err());
     }
@@ -66,10 +66,10 @@ page fn index(ctx: PageContext) -> Result<Html, PageError> {
 }
 action fn save(ctx: ActionContext) -> Result<Redirect, PageError> {
     flash success "Article saved";
-    return Ok(redirect("/articles"));
+    return Ok(redirect(articles()));
 }
-route articles GET "/articles" => index;
-route saveArticle POST "/articles" => save;
+route articles GET "/articles" public => index;
+route saveArticle POST "/articles" public => save;
 "#;
         let p = compile_source(src).unwrap();
         let action = p.action("save").unwrap();
@@ -88,7 +88,7 @@ action fn save(ctx: ActionContext, message: String) -> Result<Redirect, PageErro
     flash success message;
     return Ok(redirect("/"));
 }
-route save POST "/" form message<String> => save;
+route save POST "/" form message<String> public => save;
 "#;
         assert!(compile_source(dynamic).is_err());
 
@@ -98,7 +98,7 @@ action fn save(ctx: ActionContext) -> Result<Redirect, PageError> {
     flash info "Done";
     return Ok(redirect("/"));
 }
-route save POST "/" => save;
+route save POST "/" public => save;
 "#;
         assert!(compile_source(multiple).is_err());
     }
@@ -109,7 +109,7 @@ route save POST "/" => save;
 page fn index(ctx: PageContext) -> Result<Html, PageError> {
     return Ok(html {@flash()<p>ok</p>});
 }
-route index GET "/" cache public ttl 60 => index;
+route index GET "/" public cache public ttl 60 => index;
 "#;
         assert!(compile_source(src).is_err());
     }

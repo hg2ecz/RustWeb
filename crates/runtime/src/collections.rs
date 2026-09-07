@@ -29,6 +29,7 @@ pub(super) fn get(
 pub(super) fn len(env: &HashMap<String, Value>, collection: &str) -> Result<i64, AppError> {
     let len = match env.get(collection) {
         Some(Value::F32Array(_)) => return arrays::len_f32(env, collection),
+        Some(Value::String(value)) => value.chars().count(),
         Some(Value::StringList(items)) => items.len(),
         Some(Value::StringDict(items)) => items.len(),
         _ => return Err(AppError::Internal),

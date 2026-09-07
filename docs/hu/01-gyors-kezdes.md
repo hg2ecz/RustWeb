@@ -26,7 +26,7 @@ page fn home(ctx: PageContext) -> Result<Html, PageError> {
     });
 }
 
-route home GET "/" => home;
+route home GET "/" public => home;
 ```
 
 A `home` rövid handlernév itt azért érvényes, mert a route és a page ugyanabban a `pages` modulban van. A `mod pages;` nem emeli be a `home` nevet a `main.rw` scope-jába. Ha a route a `main.rw`-ben lenne, explicit `pages::home` handlernév kellene.

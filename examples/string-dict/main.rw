@@ -13,4 +13,4 @@ page fn dict_demo(ctx: PageContext, key: String) -> Result<Json, PageError> {
 
 route dict_demo GET "/dict"
     query key<String>
-    => dict_demo;
+    public => dict_demo;

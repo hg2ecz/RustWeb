@@ -43,7 +43,7 @@ object Article {
     }
 }
 
-route articleShow GET "/cikk/:slug<Slug>" => Article.show;
+route articleShow GET "/cikk/:slug<Slug>" public => Article.show;
 ```
 
 A fejlesztő így `Article.bySlug`, `Article.show`, később például `Invoice.approve` vagy `User.disable` nevekkel dolgozik, nem több száz globális `articleBySlug`, `invoiceApprove`, `userDisable` függvénnyel.
@@ -67,7 +67,7 @@ A route szándékosan top-level marad. Például:
 
 ```rwlang
 route articleShow GET "/cikk/:slug<Slug>"
-    cache public ttl 60
+    public cache public ttl 60
     => Article.show;
 
 route articlePublish POST "/admin/cikk/:id<Int>/publish"

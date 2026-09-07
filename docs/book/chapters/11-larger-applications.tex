@@ -179,7 +179,7 @@ Routes deliberately do not disappear entirely into objects:
 
 \begin{lstlisting}[language=RWLang]
 route articleShow GET "/article/:slug<Slug>"
-    cache public ttl 60
+    public cache public ttl 60
     => article::Article.show;
 
 route articlePublish POST "/admin/article/:id<Int>/publish"

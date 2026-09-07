@@ -194,7 +194,7 @@ A route matters, but it is the external boundary of the system. For example:
 route create POST "/products"
     form name<String> price<Int>
     validate name length 1 100 price range 0 100000000
-    => create;
+    public => create;
 \end{lstlisting}
 
 This states how an HTTP request enters the system: method, path, typed input, validation, and later authentication/cache/rate-limit policy.

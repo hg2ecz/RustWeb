@@ -95,7 +95,7 @@ Declaration:
 
 \begin{lstlisting}[language=RWLang]
 route frontPage GET "/"
-    cache public ttl 60
+    public cache public ttl 60
     => frontPage;
 \end{lstlisting}
 
@@ -151,7 +151,7 @@ A state-changing route can declare which cached routes become invalid:
 
 \begin{lstlisting}[language=RWLang]
 route publish POST "/publish"
-    invalidate cache frontPage article
+    public invalidate cache frontPage article
     => publish;
 \end{lstlisting}
 
@@ -184,7 +184,7 @@ A route does not embed numeric limits in source; it requests a trusted policy by
 
 \begin{lstlisting}[language=RWLang]
 route api GET "/api/status"
-    rate publicApi
+    public rate publicApi
     => api;
 \end{lstlisting}
 
@@ -343,7 +343,7 @@ page fn frontPage(ctx: PageContext, db: Db)
 }
 
 route frontPage GET "/"
-    cache public ttl 60
+    public cache public ttl 60
     => frontPage;
 \end{lstlisting}
 

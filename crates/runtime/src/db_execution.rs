@@ -22,8 +22,8 @@ pub(super) async fn execute_read_query(
     let model_name = q.return_type.model_name().ok_or(AppError::Internal)?;
     let model = program.model(model_name).ok_or(AppError::Internal)?;
     let sql = PreparedSql::compile(q.sql.clone()).map_err(|_| AppError::Database)?;
-    let binds = build_binds(q, &call.args, env, budget)?;
-    let shape = row_shape(model);
+    let binds = build_binds(program, q, &call.args, env, budget)?;
+    let shape = row_shape(program, model);
     let rows = db
         .fetch_all(&sql, &binds, &shape)
         .await
@@ -41,7 +41,7 @@ pub(crate) async fn execute_tx_query(
     budget.charge(5)?;
     let q = program.query(&call.query).ok_or(AppError::Internal)?;
     let sql = PreparedSql::compile(q.sql.clone()).map_err(|_| AppError::Database)?;
-    let binds = build_binds(q, &call.args, env, budget)?;
+    let binds = build_binds(program, q, &call.args, env, budget)?;
     if matches!(&q.return_type, &QueryReturn::Void | &QueryReturn::Changed) {
         let result = tx.execute(&sql, &binds).await.map_err(|e| {
             if e.is_unique_violation() {
@@ -61,7 +61,7 @@ pub(crate) async fn execute_tx_query(
     }
     let model_name = q.return_type.model_name().ok_or(AppError::Internal)?;
     let model = program.model(model_name).ok_or(AppError::Internal)?;
-    let shape = row_shape(model);
+    let shape = row_shape(program, model);
     let rows = tx.fetch_all(&sql, &binds, &shape).await.map_err(|e| {
         if e.is_unique_violation() {
             AppError::Conflict
@@ -123,6 +123,7 @@ fn decode_query_rows(
 }
 
 fn build_binds(
+    program: &Program,
     q: &language_core::QueryFunction,
     args: &[Expr],
     env: &HashMap<String, Value>,
@@ -134,7 +135,10 @@ fn build_binds(
     let mut binds = BindSet::new();
     for (param, expr) in q.params.iter().zip(args) {
         let value = eval_expr(expr, env, budget)?;
-        let db_value = match (value, param.ty) {
+        let param_type = program
+            .representation_type(param.ty)
+            .ok_or(AppError::Internal)?;
+        let db_value = match (value, param_type) {
             (Value::String(x), ValueType::String | ValueType::Slug) => DbValue::String(x),
             (Value::Email(x), ValueType::Email) => DbValue::String(x),
             (Value::Url(x), ValueType::Url) => DbValue::String(x),
@@ -162,14 +166,14 @@ fn build_binds(
     Ok(binds)
 }
 
-fn row_shape(model: &language_core::Model) -> RowShape {
+fn row_shape(program: &Program, model: &language_core::Model) -> RowShape {
     RowShape {
         columns: model
             .fields
             .iter()
             .map(|field| ColumnSpec {
                 name: field.name.clone(),
-                ty: match field.ty {
+                ty: match program.representation_type(field.ty).unwrap_or(field.ty) {
                     ValueType::String | ValueType::Email | ValueType::Url | ValueType::Slug => {
                         DbScalarType::String
                     }
@@ -188,6 +192,12 @@ fn row_shape(model: &language_core::Model) -> RowShape {
                     | ValueType::Image
                     | ValueType::Enum(_) => DbScalarType::String,
                     ValueType::Upload => unreachable!("Upload cannot be a model field"),
+                    ValueType::Credential(_) => {
+                        unreachable!("credential model fields are represented by String")
+                    }
+                    ValueType::Domain(_) => {
+                        unreachable!("domain model fields are represented by their base type")
+                    }
                 },
             })
             .collect(),
@@ -199,6 +209,10 @@ pub(crate) fn db_to_value(
     value: &DbValue,
     ty: ValueType,
 ) -> Result<Value, AppError> {
+    if matches!(ty, ValueType::Domain(_) | ValueType::Credential(_)) {
+        let base = program.representation_type(ty).ok_or(AppError::Internal)?;
+        return db_to_value(program, value, base);
+    }
     match (value, ty) {
         (DbValue::String(x), ValueType::String | ValueType::Slug) => {
             if ty == ValueType::Slug && !is_canonical_slug(x) {

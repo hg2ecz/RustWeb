@@ -25,8 +25,8 @@ action fn contact_submit(
     return Ok(json(name));
 }
 
-route contact_form GET "/contact" => contact_form;
+route contact_form GET "/contact" public => contact_form;
 
 route contact_submit POST "/contact"
     form name<String>
-    => contact_submit;
+    public => contact_submit;

@@ -22,7 +22,7 @@ page fn statusApi(ctx: PageContext) -> Result<Json, PageError> {
     return Ok(json(healthy));
 }
 
-route statusApi GET "/api/status" => statusApi;
+route statusApi GET "/api/status" public => statusApi;
 \end{lstlisting}
 
 A sikeres válasz reprezentációja JSON, például:
@@ -66,7 +66,7 @@ page fn productsApi(ctx: PageContext, db: Db,
 route productsApi GET "/api/products"
     query limit<Int> offset<Int>
     validate limit range 1 100 offset range 0 1000000
-    => productsApi;
+    public => productsApi;
 \end{lstlisting}
 
 A fontos rész itt nem a JSON, hanem az, hogy az input ugyanúgy typed és validált, mint HTML route esetén. A kliens nem tudja például egy korlátlan \code{limit} értékkel megkerülni az alkalmazás route policy-ját.

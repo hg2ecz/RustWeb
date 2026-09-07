@@ -50,6 +50,9 @@ fn eval_simple(function: BuiltinFunction, stack: &mut Vec<Value>) -> Result<Valu
     if super::string_builtins::handles(function) {
         return super::string_builtins::eval(function, stack);
     }
+    if super::credential_builtins::handles(function) {
+        return super::credential_builtins::eval(function, stack);
+    }
 
     match function {
         BuiltinFunction::DictNew => Ok(Value::StringDict(BTreeMap::new())),
@@ -84,6 +87,9 @@ fn estimated_simple_result_alloc(
     }
     if super::string_builtins::handles(function) {
         return super::string_builtins::estimated_result_alloc(function, stack);
+    }
+    if super::credential_builtins::handles(function) {
+        return super::credential_builtins::estimated_result_alloc(function, stack);
     }
 
     match function {

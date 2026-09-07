@@ -36,8 +36,8 @@ page fn products(ctx: PageContext, db: Db, page: Int, pageSize: Int) -> Result<H
     return Ok(html {<ul>@for product in products {<li><a @href(product, product.id)>{{ product.name }}</a></li>}</ul><a @href(products, page + 1, pageSize)>next</a>});
 }
 page fn product(ctx: PageContext, id: Int) -> Result<Html, PageError> { return Ok(html {product}); }
-route products GET "/products" query page<Int> pageSize<Int> validate page range 1 100 pageSize range 1 2 => products;
-route product GET "/products/:id<Int>" => product;
+route products GET "/products" query page<Int> pageSize<Int> validate page range 1 100 pageSize range 1 2 public => products;
+route product GET "/products/:id<Int>" public => product;
 "#;
 
     #[tokio::test]
@@ -128,7 +128,7 @@ page fn home(ctx: PageContext) -> Result<Html, PageError> {
     let x = "abcdefghijklmnopqrstuvwxyz";
     return Ok(html {<p>{{ x }}</p>});
 }
-route home GET "/" => home;
+route home GET "/" public => home;
 "#;
         let program = compile_source(source).unwrap();
         let limits = ExecutionLimits {
@@ -164,7 +164,7 @@ page fn home(ctx: PageContext) -> Result<Html, PageError> {
         return Ok(html {<p>{{ x }}</p>});
     }
 }
-route home GET "/" => home;
+route home GET "/" public => home;
 "#;
         let program = compile_source(src).unwrap();
         let request = ExecutionLimits {

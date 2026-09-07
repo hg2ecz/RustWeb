@@ -13,4 +13,4 @@ page fn string_list_demo(ctx: PageContext, text: String) -> Result<Html, PageErr
 
 route string_list_demo GET "/string-list"
     query text<String>
-    => string_list_demo;
+    public => string_list_demo;

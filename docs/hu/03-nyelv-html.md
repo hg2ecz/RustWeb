@@ -6,7 +6,7 @@ Az RWLang explicit pontosvesszőt használ. Az egyszerű statementek `;` jellel 
 
 ```rw
 mod products;
-route product GET "/products/:id<Int>" => products::show;
+route product GET "/products/:id<Int>" public => products::show;
 
 let gross = price * quantity;
 return Ok(json(gross));

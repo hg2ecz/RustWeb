@@ -18,6 +18,10 @@ This convention also applies to READMEs in examples and other subdirectories.
 - [Typed string builtins](46-string-builtins.md) - Unicode-aware trimming, case conversion, search, `replace`, `split`, substring/index operations, character access and repetition.
 - [Regular expressions](49-regular-expressions.md) - typed regex matching, replacement and captures.
 - [Statement terminators](56-statement-terminators.md) - explicit `;`, no automatic semicolon insertion, and the `mod`/`route` top-level rule.
+- [Secure-by-construction foundation](57-secure-by-construction-foundation.md) - explicit route access, safe local redirects, bounded external strings, and stable security diagnostics.
+- [Domain types and bounded collections](62-domain-types-and-bounded-collections.md) - reusable input invariants and fail-closed collection construction.
+- [Secret consumer contracts](66-secret-consumer-contracts.md) - explicit secret sinks, query contracts, and audit leakage prevention.
+- [Token hashes at rest](70-token-hash-at-rest.md) - purpose-safe bearer-token persistence and verification without storing raw tokens.
 
 ## Current canonical English documents
 
@@ -85,3 +89,23 @@ When adding a document:
 
 - [55. Typed backend, reload, and HTTP boundaries](55-typed-backend-reload-and-http-boundaries.md)
 - [Statement terminators](56-statement-terminators.md) - explicit `;`, no automatic semicolon insertion.
+
+- [Secure-by-construction foundation](57-secure-by-construction-foundation.md) - first breaking security-language layer.
+
+- [65. Explicit public projections](65-explicit-public-projections.md) - response-boundary field allowlists for model JSON output.
+- [66. Secret consumer contracts](66-secret-consumer-contracts.md) - explicit secret sinks and fail-closed audit boundaries.
+
+- [Typed credentials and password primitives](67-typed-credentials-and-passwords.md)
+
+- [Credential purpose types](68-credential-purpose-types.md) - non-interchangeable password, token, session, CSRF, and key identities.
+
+- [Purpose-safe token primitives](69-purpose-safe-token-primitives.md) - purpose-typed issuance, validated presentation, and constant-time token comparison.
+- [Expiry-aware token verification](71-expiry-aware-token-verification.md) - session/reset verification that cannot omit expiry.
+- [Atomic token lifecycle](72-atomic-token-lifecycle.md) - consume-once reset grants and current-session revocation with compiler proofs.
+- [Atomic session rotation](73-atomic-session-rotation.md) - guarded session hash replacement with presented-token and fresh-issued-token proofs.
+
+- [Platform-owned browser sessions](74-platform-owned-browser-sessions.md)
+
+- [Function-level permissions](75-function-level-permissions.md) - named business permissions with compiler-enforced handler contracts and role-backed runtime authorization.
+
+- [MFA elevation proofs](76-mfa-elevation-proofs.md) - handler-level MFA contracts composable with named permissions.

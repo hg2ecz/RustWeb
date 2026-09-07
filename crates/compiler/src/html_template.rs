@@ -5,9 +5,11 @@ use crate::expression::{
 };
 use crate::handler_types::StaticType;
 use crate::module_namespace::resolve;
+use crate::response_security::{ResponseBoundary, validate_response_expression};
 use crate::source_syntax::{
     is_identifier, matching_brace, matching_paren, skip_ws_and_comments, split_top_level,
 };
+use crate::type_semantics::represented_as;
 use language_core::{
     HtmlAttrKind, HtmlPart, HtmlTemplate, HttpMethod, Program, RouteSegment, ValueType,
 };
@@ -88,6 +90,7 @@ fn parse_html_parts_mode(
                 .ok_or_else(|| CompileError::Syntax("unclosed HTML interpolation".into()))?;
             let e = parse_expr_in_namespace(input[s..close].trim(), namespace, p)?;
             validate_expr(&e, known, p)?;
+            validate_response_expression(&e, known, p, ResponseBoundary::Html)?;
             if infer_expr_type(&e, known, p)? == ValueType::Image {
                 return Err(CompileError::Syntax(
                     "Image cannot be interpolated directly; use @image(image, alt)".into(),
@@ -124,9 +127,10 @@ fn parse_html_parts_mode(
             }
             let e = parse_expr_in_namespace(raw, namespace, p)?;
             validate_expr(&e, known, p)?;
-            if infer_expr_type(&e, known, p)? != ValueType::String {
+            validate_response_expression(&e, known, p, ResponseBoundary::Html)?;
+            if !represented_as(p, infer_expr_type(&e, known, p)?, ValueType::String) {
                 return Err(CompileError::Syntax(
-                    "@markdown expression must have type String".into(),
+                    "@markdown expression must have String representation".into(),
                 ));
             }
             parts.push(HtmlPart::Markdown(e));
@@ -147,14 +151,16 @@ fn parse_html_parts_mode(
             let alt = parse_expr_in_namespace(raw[1].trim(), namespace, p)?;
             validate_expr(&image, known, p)?;
             validate_expr(&alt, known, p)?;
+            validate_response_expression(&image, known, p, ResponseBoundary::Html)?;
+            validate_response_expression(&alt, known, p, ResponseBoundary::Html)?;
             if infer_expr_type(&image, known, p)? != ValueType::Image {
                 return Err(CompileError::Syntax(
                     "@image first expression must have type Image".into(),
                 ));
             }
-            if infer_expr_type(&alt, known, p)? != ValueType::String {
+            if !represented_as(p, infer_expr_type(&alt, known, p)?, ValueType::String) {
                 return Err(CompileError::Syntax(
-                    "@image alt expression must have type String".into(),
+                    "@image alt expression must have String representation".into(),
                 ));
             }
             parts.push(HtmlPart::Image { image, alt });
@@ -204,12 +210,14 @@ fn parse_html_parts_mode(
                 let e = parse_expr_in_namespace(piece.trim(), namespace, p)?;
                 validate_expr(&e, known, p)?;
                 let actual = infer_static_expr_type(&e, known, p)?;
-                let expected = super::template_declarations::template_static_type(&param.ty);
-                if actual != expected {
+                if !super::template_declarations::argument_type_compatible(&actual, &param.ty, p) {
                     return Err(CompileError::Syntax(format!(
                         "template `{name}` argument `{}` type mismatch",
                         param.name
                     )));
+                }
+                if actual.scalar().is_some() {
+                    validate_response_expression(&e, known, p, ResponseBoundary::Html)?;
                 }
                 args.push(e);
             }
@@ -346,7 +354,7 @@ fn parse_html_parts_mode(
             let close = matching_brace(input, open)
                 .ok_or_else(|| CompileError::Syntax("@for body unclosed".into()))?;
             let mut nested = known.clone();
-            nested.insert(item.into(), StaticType::Model(model));
+            nested.insert(item.into(), StaticType::model(model));
             let template =
                 parse_html_parts_mode(&input[open + 1..close], namespace, &nested, p, false)?;
             parts.push(HtmlPart::For {
@@ -379,7 +387,7 @@ fn parse_html_parts_mode(
         let close = matching_brace(input, open)
             .ok_or_else(|| CompileError::Syntax("@if body unclosed".into()))?;
         let mut nested = known.clone();
-        nested.insert(value.into(), StaticType::Model(model));
+        nested.insert(value.into(), StaticType::model(model));
         let template =
             parse_html_parts_mode(&input[open + 1..close], namespace, &nested, p, false)?;
         parts.push(HtmlPart::IfSome {

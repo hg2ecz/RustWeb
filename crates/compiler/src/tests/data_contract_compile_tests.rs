@@ -18,14 +18,19 @@ model Article {
     status: ArticleStatus
 }
 
-query fn setStatus(tx: Transaction, id: Int, status: ArticleStatus) -> Result<Void, DbError> sql {
+query fn loadArticle(db: Db, id: Int) -> Result<Article, DbError> sql {
+    SELECT id, status FROM articles WHERE id = :id
+}
+query fn setStatus(tx: Transaction, id: Int, status: ArticleStatus) -> Result<Void, DbError> mutates Article by id sql {
     UPDATE articles SET status = :status WHERE id = :id
 }
 
 action fn publish(ctx: ActionContext, db: Db, id: Int) -> Result<Json, PageError> {
     let status = ArticleStatus.Published;
+    let article = loadArticle(db, id)?;
+    authorize article authenticated;
     transaction db {
-        setStatus(tx, id, status)?;
+        setStatus(tx, article.id, status)?;
     }
     return Ok(json(status));
 }
@@ -56,13 +61,13 @@ page fn x(ctx: PageContext) -> Result<Json, PageError> {
     let s = State.Missing;
     return Ok(json(s));
 }
-route x GET "/" => x;
+route x GET "/" public => x;
 "#;
         assert!(compile_source(bad_variant).is_err());
 
         let bad_type = r#"
 page fn x(ctx: PageContext, status: MissingState) -> Result<Json, PageError> { return Ok(json(status)); }
-route x GET "/:status<MissingState>" => x;
+route x GET "/:status<MissingState>" public => x;
 "#;
         assert!(compile_source(bad_type).is_err());
     }
@@ -80,15 +85,22 @@ model Article {
     title: String
     version: Int
 }
-query fn updateArticle(tx: Transaction, id: Int, title: String, version: Int) -> Result<Changed, DbError> sql {
+query fn loadArticle(db: Db, id: Int) -> Result<Article, DbError> sql {
+    SELECT id, title, version FROM articles WHERE id = :id
+}
+query fn updateArticle(tx: Transaction, id: Int, title: String, version: Int) -> Result<Changed, DbError> mutates Article by id sql {
     UPDATE articles SET title = :title, version = version + 1 WHERE id = :id AND version = :version
 }
 action fn update(ctx: ActionContext, db: Db, id: Int, title: String, version: Int) -> Result<Redirect, PageError> {
+    let article = loadArticle(db, id)?;
+    authorize article authenticated;
     transaction db {
-        updateArticle(tx, id, title, version)?;
+        updateArticle(tx, article.id, title, version)?;
     }
-    return Ok(redirect("/articles"));
+    return Ok(redirect(articles()));
 }
+page fn articles(ctx: PageContext) -> Result<Html, PageError> { return Ok(html {articles}); }
+route articles GET "/articles" public => articles;
 route update POST "/articles/:id<Int>" form title<String> version<Int> auth user => update;
 "#;
         let p = compile_source(src).unwrap();
@@ -104,7 +116,7 @@ route update POST "/articles/:id<Int>" form title<String> version<Int> auth user
 model Article {
     id: Int
 }
-query fn bad(db: Db, id: Int) -> Result<Changed, DbError> sql {
+query fn bad(db: Db, id: Int) -> Result<Changed, DbError> mutates Article by id sql {
     SELECT id FROM articles WHERE id = :id
 }
 "#;
@@ -114,7 +126,7 @@ query fn bad(db: Db, id: Int) -> Result<Changed, DbError> sql {
 model Article {
     id: Int
 }
-query fn bad(tx: Transaction, id: Int) -> Result<Changed, DbError> sql {
+query fn bad(tx: Transaction, id: Int) -> Result<Changed, DbError> mutates Article by id sql {
     UPDATE articles SET id = :id WHERE id = :id RETURNING id
 }
 "#;
@@ -138,13 +150,14 @@ model Article {
     status: ArticleStatus
     version: Int
 }
-query fn publish(tx: Transaction, id: Int, version: Int) -> Result<Changed, DbError> sql {
+query fn publish(tx: Transaction, id: Int, version: Int) -> Result<Changed, DbError> mutates Article by id sql {
     UPDATE articles SET status = 'Published', version = version + 1 WHERE id = :id AND version = :version
 }
 action fn publishAction(ctx: ActionContext, db: Db, id: Int, version: Int) -> Result<Json, PageError> {
     let article = articleById(db, id)?;
+    authorize article authenticated;
     transaction db {
-        publish(tx, id, version)?;
+        publish(tx, article.id, version)?;
         audit Article id action publish from article.status to ArticleStatus.Published;
     }
     return Ok(json(true));
@@ -180,7 +193,7 @@ route publishRoute POST "/articles/:id<Int>/publish" form version<Int> auth role
 model Article {
     id: Int
 }
-query fn touch(tx: Transaction, id: Int) -> Result<Changed, DbError> sql { UPDATE articles SET id = id WHERE id = :id }
+query fn touch(tx: Transaction, id: Int) -> Result<Changed, DbError> mutates Article by id sql { UPDATE articles SET id = id WHERE id = :id }
 action fn x(ctx: ActionContext, db: Db, id: Int) -> Result<Json, PageError> {
     transaction db {
         touch(tx, id)?;
@@ -188,7 +201,7 @@ action fn x(ctx: ActionContext, db: Db, id: Int) -> Result<Json, PageError> {
     }
     return Ok(json(true));
 }
-route x POST "/:id<Int>" => x;
+route x POST "/:id<Int>" public => x;
 "#;
         assert!(compile_source(public).is_err());
 
@@ -208,7 +221,7 @@ route x POST "/:id<Int>" auth user => x;
 model X {
     id: Int
 }
-query fn bad(db: Db, id: Int) -> Result<X, DbError> sql { SELECT id FROM _rw_business_audit WHERE id = :id }
+query fn bad(db: Db, id: Int) -> Result<X, DbError> mutates Article by id sql { SELECT id FROM _rw_business_audit WHERE id = :id }
 "#;
         assert!(compile_source(reserved).is_err());
     }
@@ -288,7 +301,7 @@ form LinkForm {
 action fn save(ctx: ActionContext, target: Url, code: String) -> Result<Json, PageError> {
     return Ok(json(target));
 }
-route save POST "/links" form LinkForm => save;
+route save POST "/links" form LinkForm public => save;
 "#;
         let p = compile_source(src).unwrap();
         assert_eq!(p.model("Link").unwrap().fields[1].ty, ValueType::Url);
@@ -339,7 +352,7 @@ query fn resolveBySlug(db: Db, slug: Slug) -> Result<Article, DbError> sql {
 page fn home(ctx: PageContext) -> Result<Html, PageError> {
     return Ok(html {ok});
 }
-route home GET "/" => home;
+route home GET "/" public => home;
 "#;
         let result = compile_source(src);
         assert!(
@@ -364,7 +377,7 @@ query fn resolveBySlug(db: Db, slug: Slug) -> Result<Article, DbError> sql {
 page fn home(ctx: PageContext) -> Result<Html, PageError> {
     return Ok(html {ok});
 }
-route home GET "/" => home;
+route home GET "/" public => home;
 "#;
         let err = compile_source(src).expect_err("wrong projection alias must be rejected");
         assert!(err.to_string().contains("must exactly match model"));

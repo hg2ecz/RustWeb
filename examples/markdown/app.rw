@@ -18,4 +18,4 @@ page fn article(ctx: PageContext, db: Db, id: Int) -> Result<Html, PageError> {
     });
 }
 
-route article GET "/articles/:id<Int>" => article;
+route article GET "/articles/:id<Int>" public => article;

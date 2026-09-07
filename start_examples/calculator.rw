@@ -37,4 +37,4 @@ page fn calculator(
     });
 }
 
-route calculator GET "/calculator" query a<Int> b<Int> => calculator;
+route calculator GET "/calculator" query a<Int> b<Int> public => calculator;

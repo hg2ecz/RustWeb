@@ -25,4 +25,4 @@ page fn preview(ctx: PageContext, hero: Image, title: String) -> Result<Html, Pa
 
 route preview GET "/preview"
     query hero<Image> title<String>
-    => preview;
+    public => preview;

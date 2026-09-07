@@ -28,7 +28,7 @@ object Article {
     }
 }
 
-route article GET "/cikk/:slug<Slug>" => Article.show;
+route article GET "/cikk/:slug<Slug>" public => Article.show;
 ```
 
 Ha a kérés `/cikk/regi-cim`, de a rekord `article.slug` értéke `uj-cim`, a runtime ezt adja:

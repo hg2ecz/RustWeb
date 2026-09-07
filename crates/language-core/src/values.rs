@@ -1,3 +1,4 @@
+use crate::CredentialPurpose;
 use chrono::{DateTime, NaiveDate, Utc};
 use rust_decimal::Decimal;
 use std::collections::{BTreeMap, HashMap};
@@ -21,6 +22,8 @@ pub enum ValueType {
     Decimal,
     Image,
     Upload,
+    Credential(CredentialPurpose),
+    Domain(u16),
     Enum(u16),
 }
 impl ValueType {
@@ -42,8 +45,21 @@ impl ValueType {
             "Decimal" => Some(Self::Decimal),
             "Image" => Some(Self::Image),
             "Upload" => Some(Self::Upload),
-            _ => None,
+            other => CredentialPurpose::parse(other).map(Self::Credential),
         }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum DataSensitivity {
+    Public,
+    Sensitive,
+    Secret,
+}
+
+impl Default for DataSensitivity {
+    fn default() -> Self {
+        Self::Public
     }
 }
 
@@ -51,6 +67,17 @@ impl ValueType {
 pub struct FunctionParam {
     pub name: String,
     pub ty: ValueType,
+    pub sensitivity: DataSensitivity,
+}
+
+impl FunctionParam {
+    pub fn public(name: impl Into<String>, ty: ValueType) -> Self {
+        Self {
+            name: name.into(),
+            ty,
+            sensitivity: DataSensitivity::Public,
+        }
+    }
 }
 pub type PageParam = FunctionParam;
 

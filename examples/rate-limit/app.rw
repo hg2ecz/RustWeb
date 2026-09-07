@@ -3,4 +3,4 @@ page fn api(ctx: PageContext) -> Result<Json, PageError> {
     return Ok(json(ok));
 }
 
-route api GET "/api/status" rate publicApi => api;
+route api GET "/api/status" public rate publicApi => api;

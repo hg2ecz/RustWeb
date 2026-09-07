@@ -44,7 +44,7 @@ mod catalog::pages;
 route catalogIndex GET "/catalog"
     query page<Int>
     validate page range 1 1000
-    => catalog::pages::index;
+    public => catalog::pages::index;
 ```
 
 The route scanner considers the declaration complete only after the final `;`; neither a newline nor `=> handler` alone terminates a route.

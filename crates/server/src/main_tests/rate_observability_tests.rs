@@ -57,7 +57,7 @@ mod m22_route_rate_limit_tests {
 page fn home(ctx: PageContext) -> Result<Html, PageError> {
     return Ok(html {ok});
 }
-route home GET "/" rate perUser => home;
+route home GET "/" public rate perUser => home;
 "#,
         )
         .unwrap();

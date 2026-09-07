@@ -95,6 +95,7 @@ fn render_template_into(
                     .find(|r| r.name == *route)
                     .ok_or(AppError::Internal)?;
                 let url = build_route_url(
+                    program,
                     target,
                     args,
                     env,

@@ -194,7 +194,7 @@ A route fontos, de a rendszer külső határa. Például:
 route create POST "/products"
     form name<String> price<Int>
     validate name length 1 100 price range 0 100000000
-    => create;
+    public => create;
 \end{lstlisting}
 
 Ez azt mondja meg, hogyan léphet be egy HTTP kérés a rendszerbe: melyik metóduson és pathon, milyen typed inputtal, milyen validációval és később milyen auth/cache/rate-limit policy-val.

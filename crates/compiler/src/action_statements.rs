@@ -1,14 +1,18 @@
+use crate::authorization::parse_and_refine_authorization;
 use crate::diagnostics::CompileError;
+use crate::domain_refinement;
 use crate::domain_symbols::display_domain_symbol;
-use crate::expression::{
-    infer_expr_type, infer_static_expr_type, parse_expr_in_namespace, validate_expr,
-};
-use crate::handler_types::{HandlerReturnKind, StaticType, scalar_known};
+use crate::expression::{infer_static_expr_type, parse_expr_in_namespace, validate_expr};
+use crate::handler_types::{HandlerReturnKind, StaticType};
+use crate::input_security::handler_input_types;
+use crate::public_projection::parse_public_projection;
+use crate::response_security::{ResponseBoundary, validate_response_expression};
+use crate::route_calls::parse_redirect_route_call;
 use crate::source_syntax::{
     consume_return_tail, find_statement_end, is_identifier, matching_brace, matching_paren,
     preview, read_ident, skip_ws_and_comments,
 };
-use crate::statement_helpers::{parse_business_audit, parse_object_authorize, parse_query_call};
+use crate::statement_helpers::{parse_business_audit, parse_query_call};
 use crate::{arrays, control_flow, dicts};
 use language_core::{
     ActionStatement, Expr, FlashKind, FlashMessage, FunctionParam, Program, QueryCapability,
@@ -26,14 +30,14 @@ pub(super) fn parse_action_statements(
     allow_resource: bool,
 ) -> Result<Vec<ActionStatement>, CompileError> {
     let mut out = Vec::new();
-    let mut known = scalar_known(params);
+    let mut known = handler_input_types(name, params, p);
     known.insert(
         "authPrincipal".into(),
-        StaticType::Scalar(ValueType::String),
+        StaticType::trusted_scalar(ValueType::String),
     );
     known.insert(
         "authMfaVerified".into(),
-        StaticType::Scalar(ValueType::Bool),
+        StaticType::trusted_scalar(ValueType::Bool),
     );
     let mut cursor = 0;
     while cursor < body.len() {
@@ -205,7 +209,14 @@ pub(super) fn parse_action_statements(
             }
             let end = find_statement_end(body, eq + 1)?;
             let rhs = body[eq + 1..end].trim();
-            if let Some((call, ty)) =
+            if let Some(refinement) = domain_refinement::parse(rhs, namespace, &known, p)? {
+                known.insert(local.into(), refinement.static_type);
+                out.push(ActionStatement::LetValidated {
+                    name: local.into(),
+                    domain: refinement.domain,
+                    expr: refinement.expr,
+                });
+            } else if let Some((call, ty)) =
                 parse_query_call(rhs, namespace, p, &known, QueryCapability::Db)?
             {
                 known.insert(local.into(), ty);
@@ -216,8 +227,7 @@ pub(super) fn parse_action_statements(
             } else {
                 let expr = parse_expr_in_namespace(rhs, namespace, p)?;
                 validate_expr(&expr, &known, p)?;
-                let ty = infer_expr_type(&expr, &known, p)?;
-                known.insert(local.into(), StaticType::Scalar(ty));
+                known.insert(local.into(), infer_static_expr_type(&expr, &known, p)?);
                 out.push(ActionStatement::Let {
                     name: local.into(),
                     expr,
@@ -261,7 +271,7 @@ pub(super) fn parse_action_statements(
                     .unwrap_or("");
                 let collection = target.split('[').next().unwrap_or("").trim();
                 match known.get(collection) {
-                    Some(StaticType::Scalar(ValueType::F32Array)) => {
+                    Some(value) if value.is_scalar(ValueType::F32Array) => {
                         let (array, index, value) = arrays::parse_f32_array_set(
                             "action", name, text, namespace, &known, p,
                         )?;
@@ -271,7 +281,7 @@ pub(super) fn parse_action_statements(
                             value,
                         });
                     }
-                    Some(StaticType::Scalar(ValueType::StringDict)) => {
+                    Some(value) if value.is_scalar(ValueType::StringDict) => {
                         let (dict, key, value) = dicts::parse_string_dict_set(
                             "action", name, text, namespace, &known, p,
                         )?;
@@ -310,7 +320,8 @@ pub(super) fn parse_action_statements(
         if body[cursor..].starts_with("authorize ") {
             let end = find_statement_end(body, cursor)?;
             let text = body[cursor..end].trim().trim_end_matches(';').trim();
-            let rule = parse_object_authorize(text, &known, p, &format!("action `{name}`"))?;
+            let rule =
+                parse_and_refine_authorization(text, &mut known, p, &format!("action `{name}`"))?;
             out.push(ActionStatement::Authorize(rule));
             cursor = end + 1;
             continue;
@@ -359,9 +370,15 @@ pub(super) fn parse_action_statements(
             let close = matching_paren(body, start - 1).ok_or_else(|| {
                 CompileError::Syntax(format!("action `{name}` json return unclosed"))
             })?;
-            let expr = parse_expr_in_namespace(body[start..close].trim(), namespace, p)?;
-            validate_expr(&expr, &known, p)?;
-            out.push(ActionStatement::ReturnJson(expr));
+            let raw = body[start..close].trim();
+            if let Some(projection) = parse_public_projection(raw, &known, p)? {
+                out.push(ActionStatement::ReturnJsonProjection(projection));
+            } else {
+                let expr = parse_expr_in_namespace(raw, namespace, p)?;
+                validate_expr(&expr, &known, p)?;
+                validate_response_expression(&expr, &known, p, ResponseBoundary::Json)?;
+                out.push(ActionStatement::ReturnJson(expr));
+            }
             cursor = consume_return_tail(body, close + 1)?;
             continue;
         }
@@ -370,14 +387,9 @@ pub(super) fn parse_action_statements(
             let close = matching_paren(body, start - 1).ok_or_else(|| {
                 CompileError::Syntax(format!("action `{name}` redirect unclosed"))
             })?;
-            let expr = parse_expr_in_namespace(body[start..close].trim(), namespace, p)?;
-            validate_expr(&expr, &known, p)?;
-            if infer_expr_type(&expr, &known, p)? != ValueType::String {
-                return Err(CompileError::Syntax(
-                    "redirect target must be String".into(),
-                ));
-            }
-            out.push(ActionStatement::ReturnRedirect(expr));
+            let route_call =
+                parse_redirect_route_call(body[start..close].trim(), namespace, &known, p)?;
+            out.push(ActionStatement::ReturnRedirect(route_call));
             cursor = consume_return_tail(body, close + 1)?;
             continue;
         }
@@ -390,6 +402,7 @@ pub(super) fn parse_action_statements(
         out.last(),
         Some(ActionStatement::ReturnRedirect(_))
             | Some(ActionStatement::ReturnJson(_))
+            | Some(ActionStatement::ReturnJsonProjection(_))
             | Some(ActionStatement::Resource { .. })
     ) {
         return Err(CompileError::Syntax(format!(

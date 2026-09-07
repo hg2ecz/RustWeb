@@ -308,7 +308,7 @@ page fn api(ctx: PageContext) -> Result<Json, PageError> {
     let ok = true;
     return Ok(json(ok));
 }
-route api GET "/api" => api;
+route api GET "/api" public => api;
 "#,
         )
         .unwrap();

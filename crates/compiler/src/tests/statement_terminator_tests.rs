@@ -7,7 +7,7 @@ page fn home(ctx: PageContext) -> Result<Json, PageError> {
 let value = 42
 return Ok(json(value));
 }
-route home GET "/" => home;
+route home GET "/" public => home;
 "#;
     assert!(compile_source(missing_let).is_err());
 
@@ -16,7 +16,7 @@ page fn home(ctx: PageContext) -> Result<Json, PageError> {
 let value = 42;
 return Ok(json(value))
 }
-route home GET "/" => home;
+route home GET "/" public => home;
 "#;
     assert!(compile_source(missing_return).is_err());
 }
@@ -30,7 +30,7 @@ let value = 10
     * 3;
 return Ok(json(value));
 }
-route home GET "/" => home;
+route home GET "/" public => home;
 "#;
     assert!(compile_source(src).is_ok());
 }
@@ -48,7 +48,7 @@ while value < 2 {
 }
 return Ok(json(value));
 }
-route home GET "/" => home;
+route home GET "/" public => home;
 "#;
     assert!(compile_source(src).is_ok());
 }
@@ -59,7 +59,7 @@ fn route_declarations_require_semicolons() {
 page fn home(ctx: PageContext) -> Result<Json, PageError> {
     return Ok(json(1));
 }
-route home GET "/" => home
+route home GET "/" public => home
 "#;
     let err = compile_source(missing).expect_err("route without semicolon must fail");
     assert!(
@@ -77,6 +77,7 @@ page fn home(ctx: PageContext, q: String) -> Result<Json, PageError> {
 }
 route home GET "/"
     query q<String>
+    public
     => home;
 "#;
     assert!(compile_source(src).is_ok());

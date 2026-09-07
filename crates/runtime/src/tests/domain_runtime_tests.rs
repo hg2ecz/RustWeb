@@ -3,7 +3,7 @@ use crate::test_support::*;
 #[cfg(test)]
 mod m35_object_authorization_runtime_tests {
     use super::*;
-    use language_core::ObjectAuthorization;
+    use language_core::{AuthorizationMode, ObjectAuthorization};
 
     fn budget() -> Budget {
         let limits = ExecutionLimits {
@@ -38,7 +38,9 @@ mod m35_object_authorization_runtime_tests {
     fn rule() -> ObjectAuthorization {
         ObjectAuthorization {
             object: "article".into(),
-            owner_field: "authorUsername".into(),
+            mode: AuthorizationMode::Owner {
+                field: "authorUsername".into(),
+            },
             allow_roles: vec!["Publisher".into()],
         }
     }
@@ -100,7 +102,7 @@ form ContactForm {
 action fn save(ctx: ActionContext, email: Email, confirmEmail: Email) -> Result<Json, PageError> {
     return Ok(json(email));
 }
-route save POST "/contact" form ContactForm => save;
+route save POST "/contact" form ContactForm public => save;
 "#;
         let p = compile_source(src).unwrap();
         let ok = execute_request(
@@ -172,7 +174,7 @@ form CodeForm {
 action fn save(ctx: ActionContext, code: String) -> Result<Json, PageError> {
     return Ok(json(code));
 }
-route save POST "/code" form CodeForm => save;
+route save POST "/code" form CodeForm public => save;
 "#;
         let p = compile_source(src).unwrap();
         let ok = execute_request(
@@ -206,7 +208,7 @@ action fn create(ctx: ActionContext, db: Db, email: Email) -> Result<Json, PageE
     transaction db { createContact(tx, email)?; }
     return Ok(json(true));
 }
-route create POST "/contacts" form email<Email> => create;
+route create POST "/contacts" form email<Email> public => create;
 "#;
         let p = compile_source(src).unwrap();
         let mut cfg = DbConfig::secure_default("sqlite::memory:");
@@ -254,7 +256,7 @@ page fn show(ctx: PageContext, slug: Slug, title: String) -> Result<Html, PageEr
     canonical slug slug from canonical;
     return Ok(html {ok});
 }
-route article GET "/articles/:slug<Slug>" query title<String> => show;
+route article GET "/articles/:slug<Slug>" query title<String> public => show;
 "#;
         let p = compile_source(src).unwrap();
         let response = execute_request_with_query_context(
@@ -285,7 +287,7 @@ page fn show(ctx: PageContext, slug: Slug) -> Result<Html, PageError> {
     canonical slug slug from slug;
     return Ok(html {ok});
 }
-route article GET "/articles/:slug<Slug>" => show;
+route article GET "/articles/:slug<Slug>" public => show;
 "#;
         let p = compile_source(src).unwrap();
         let response = execute_request(&p, HttpMethod::Get, "/articles/current", &[], None)
@@ -296,7 +298,7 @@ route article GET "/articles/:slug<Slug>" => show;
 
     #[test]
     fn post_redirects_remain_303() {
-        let redirect = Redirect::new("/done".into());
+        let redirect = Redirect::new(language_core::LocalUrl::parse("/done".into()).unwrap());
         assert_eq!(redirect.status().code(), 303);
         assert_eq!(redirect.status().reason(), "See Other");
     }

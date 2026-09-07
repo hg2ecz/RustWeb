@@ -15,7 +15,7 @@ model Article {
 The edit page includes the current `version` as a typed form value. The update query checks it:
 
 ```rwlang
-query fn updateArticle(tx: Transaction, id: Int, title: String, version: Int) -> Result<Changed, DbError> sql {
+query fn updateArticle(tx: Transaction, id: Int, title: String, version: Int) -> Result<Changed, DbError> mutates Article by id sql {
     UPDATE articles
     SET title = :title, version = version + 1
     WHERE id = :id AND version = :version

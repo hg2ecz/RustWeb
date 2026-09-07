@@ -1,19 +1,7 @@
 use super::{CompileError, tokenize};
+use crate::declarations;
 
 pub(super) fn top_level_route_declarations(source: &str) -> Result<Vec<String>, CompileError> {
-    const DECL_PREFIXES: &[&str] = &[
-        "enum ",
-        "object ",
-        "model ",
-        "query fn ",
-        "form ",
-        "component fn ",
-        "layout fn ",
-        "page fn ",
-        "action fn ",
-        "route ",
-    ];
-
     let mut out = Vec::new();
     let mut depth = 0i32;
     let mut active: Option<(usize, String)> = None;
@@ -21,10 +9,7 @@ pub(super) fn top_level_route_declarations(source: &str) -> Result<Vec<String>, 
     for (line_idx, raw) in source.lines().enumerate() {
         let trimmed = raw.trim_start();
         let is_top_level = depth == 0;
-        let starts_decl = is_top_level
-            && DECL_PREFIXES
-                .iter()
-                .any(|prefix| trimmed.starts_with(prefix));
+        let starts_decl = is_top_level && declarations::starts_top_level_declaration(trimmed);
 
         if let Some((start_line, buf)) = active.as_mut() {
             // A multiline route may legitimately continue with tokens that are also
@@ -100,6 +85,7 @@ fn is_route_continuation_line(trimmed: &str) -> bool {
         "json ",
         "upload ",
         "validate ",
+        "public",
         "auth ",
         "rate ",
         "cache ",

@@ -1,14 +1,19 @@
+use crate::authorization::parse_and_refine_authorization;
 use crate::diagnostics::CompileError;
+use crate::domain_refinement;
 use crate::domain_symbols::display_domain_symbol;
 use crate::expression::{
     infer_expr_type, infer_static_expr_type, parse_expr_in_namespace, validate_expr,
 };
-use crate::handler_types::{StaticType, scalar_known};
+use crate::handler_types::StaticType;
+use crate::input_security::handler_input_types;
+use crate::public_projection::parse_public_projection;
+use crate::response_security::{ResponseBoundary, validate_response_expression};
 use crate::source_syntax::{
     consume_return_tail, find_statement_end, is_identifier, matching_brace, matching_paren,
     preview, read_ident, skip_ws_and_comments,
 };
-use crate::statement_helpers::{parse_object_authorize, parse_query_call};
+use crate::statement_helpers::parse_query_call;
 use crate::{arrays, control_flow, dicts, html_template};
 use language_core::{
     FunctionParam, Program, QueryCapability, ResourceUse, SourceLocation, Statement, ValueType,
@@ -25,15 +30,18 @@ pub(super) fn parse_page_statements(
     allow_resource: bool,
 ) -> Result<Vec<Statement>, CompileError> {
     let mut out = Vec::new();
-    let mut known = scalar_known(params);
-    known.insert("csrfToken".into(), StaticType::Scalar(ValueType::String));
+    let mut known = handler_input_types(name, params, p);
+    known.insert(
+        "csrfToken".into(),
+        StaticType::trusted_scalar(ValueType::String),
+    );
     known.insert(
         "authPrincipal".into(),
-        StaticType::Scalar(ValueType::String),
+        StaticType::trusted_scalar(ValueType::String),
     );
     known.insert(
         "authMfaVerified".into(),
-        StaticType::Scalar(ValueType::Bool),
+        StaticType::trusted_scalar(ValueType::Bool),
     );
     let mut cursor = 0;
     while cursor < body.len() {
@@ -120,7 +128,14 @@ pub(super) fn parse_page_statements(
             }
             let end = find_statement_end(body, eq + 1)?;
             let rhs = body[eq + 1..end].trim();
-            if let Some((call, ty)) =
+            if let Some(refinement) = domain_refinement::parse(rhs, namespace, &known, p)? {
+                known.insert(local.into(), refinement.static_type);
+                out.push(Statement::LetValidated {
+                    name: local.into(),
+                    domain: refinement.domain,
+                    expr: refinement.expr,
+                });
+            } else if let Some((call, ty)) =
                 parse_query_call(rhs, namespace, p, &known, QueryCapability::Db)?
             {
                 known.insert(local.into(), ty);
@@ -131,8 +146,7 @@ pub(super) fn parse_page_statements(
             } else {
                 let expr = parse_expr_in_namespace(rhs, namespace, p)?;
                 validate_expr(&expr, &known, p)?;
-                let ty = infer_expr_type(&expr, &known, p)?;
-                known.insert(local.into(), StaticType::Scalar(ty));
+                known.insert(local.into(), infer_static_expr_type(&expr, &known, p)?);
                 out.push(Statement::Let {
                     name: local.into(),
                     expr,
@@ -175,7 +189,7 @@ pub(super) fn parse_page_statements(
                     .unwrap_or("");
                 let collection = target.split('[').next().unwrap_or("").trim();
                 match known.get(collection) {
-                    Some(StaticType::Scalar(ValueType::F32Array)) => {
+                    Some(value) if value.is_scalar(ValueType::F32Array) => {
                         let (array, index, value) =
                             arrays::parse_f32_array_set("page", name, text, namespace, &known, p)?;
                         out.push(Statement::F32ArraySet {
@@ -184,7 +198,7 @@ pub(super) fn parse_page_statements(
                             value,
                         });
                     }
-                    Some(StaticType::Scalar(ValueType::StringDict)) => {
+                    Some(value) if value.is_scalar(ValueType::StringDict) => {
                         let (dict, key, value) =
                             dicts::parse_string_dict_set("page", name, text, namespace, &known, p)?;
                         out.push(Statement::StringDictSet { dict, key, value });
@@ -222,7 +236,8 @@ pub(super) fn parse_page_statements(
         if body[cursor..].starts_with("authorize ") {
             let end = find_statement_end(body, cursor)?;
             let text = body[cursor..end].trim().trim_end_matches(';').trim();
-            let rule = parse_object_authorize(text, &known, p, &format!("page `{name}`"))?;
+            let rule =
+                parse_and_refine_authorization(text, &mut known, p, &format!("page `{name}`"))?;
             out.push(Statement::Authorize(rule));
             cursor = end + 1;
             continue;
@@ -258,7 +273,7 @@ pub(super) fn parse_page_statements(
                 )));
             }
             match known.get(param) {
-                Some(StaticType::Scalar(ValueType::Slug)) => {}
+                Some(value) if value.is_scalar(ValueType::Slug) => {}
                 _ => {
                     return Err(CompileError::Syntax(format!(
                         "page `{name}` canonical slug parameter `{param}` must have type Slug"
@@ -284,9 +299,15 @@ pub(super) fn parse_page_statements(
             let close = matching_paren(body, start - 1).ok_or_else(|| {
                 CompileError::Syntax(format!("page `{name}` json return unclosed"))
             })?;
-            let expr = parse_expr_in_namespace(body[start..close].trim(), namespace, p)?;
-            validate_expr(&expr, &known, p)?;
-            out.push(Statement::ReturnJson(expr));
+            let raw = body[start..close].trim();
+            if let Some(projection) = parse_public_projection(raw, &known, p)? {
+                out.push(Statement::ReturnJsonProjection(projection));
+            } else {
+                let expr = parse_expr_in_namespace(raw, namespace, p)?;
+                validate_expr(&expr, &known, p)?;
+                validate_response_expression(&expr, &known, p, ResponseBoundary::Json)?;
+                out.push(Statement::ReturnJson(expr));
+            }
             cursor = consume_return_tail(body, close + 1)?;
             continue;
         }
@@ -316,6 +337,7 @@ pub(super) fn parse_page_statements(
         out.last(),
         Some(Statement::ReturnHtml(_))
             | Some(Statement::ReturnJson(_))
+            | Some(Statement::ReturnJsonProjection(_))
             | Some(Statement::Resource { .. })
     ) {
         return Err(CompileError::Syntax(format!(

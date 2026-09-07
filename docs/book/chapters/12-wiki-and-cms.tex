@@ -46,7 +46,7 @@ page fn wikiShow(ctx: PageContext, db: Db, slug: Slug)
     });
 }
 
-route wikiShow GET "/wiki/:slug<Slug>" => wikiShow;
+route wikiShow GET "/wiki/:slug<Slug>" public => wikiShow;
 \end{lstlisting}
 
 \subsection*{Editor form}
@@ -127,7 +127,7 @@ page fn article(ctx: PageContext, db: Db, slug: Slug)
 }
 
 route article GET "/article/:slug<Slug>"
-    cache public ttl 60
+    public cache public ttl 60
     => article;
 \end{lstlisting}
 

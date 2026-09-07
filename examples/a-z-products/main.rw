@@ -58,11 +58,11 @@ action fn create(
     transaction db {
         createProduct(tx, name, price)?;
     }
-    return Ok(redirect("/"));
+    return Ok(redirect(home()));
 }
 
-route home GET "/" => home;
+route home GET "/" public => home;
 route create POST "/products"
     form name<String> price<Int>
     validate name length 1 100 price range 0 100000000
-    => create;
+    public => create;

@@ -221,7 +221,7 @@ pub(super) async fn auth_login(
     let mut response = Response::redirect(303, "See Other", "/");
     response.headers.push((
         "Set-Cookie".into(),
-        session_cookie(config, &rotated.id, web.cors_allow_credentials),
+        crate::session_cookie::render(config, &rotated.id, web.cors_allow_credentials),
     ));
     audit_auth_activity(request_id, &canonical_principal, "success", peer_key);
     response
@@ -267,7 +267,7 @@ pub(super) async fn auth_logout(
     let mut response = Response::redirect(303, "See Other", "/");
     response.headers.push((
         "Set-Cookie".into(),
-        session_cookie(config, &fresh.id, web.cors_allow_credentials),
+        crate::session_cookie::render(config, &fresh.id, web.cors_allow_credentials),
     ));
     let actor = session.principal.as_deref().unwrap_or("anonymous");
     if let Ok(line) = json_line(&ActivityEvent {
@@ -287,40 +287,9 @@ pub(super) async fn auth_logout(
 }
 
 pub(super) fn session_cookie_name(config: &ServerConfig) -> &'static str {
-    if config.insecure_dev_cookies {
-        "rw_session"
-    } else {
-        "__Host-rw_session"
-    }
-}
-
-pub(super) fn session_cookie(config: &ServerConfig, id: &str, cors_credentials: bool) -> String {
-    let secure = if config.insecure_dev_cookies {
-        ""
-    } else {
-        "; Secure"
-    };
-    let same_site = if cors_credentials { "None" } else { "Lax" };
-    format!(
-        "{}={}; Path=/; HttpOnly; SameSite={}{}; Max-Age={}",
-        session_cookie_name(config),
-        id,
-        same_site,
-        secure,
-        config.session_ttl_secs
-    )
+    crate::session_cookie::name(config)
 }
 
 pub(super) fn parse_cookie<'a>(header: &'a str, wanted: &str) -> Option<&'a str> {
-    let mut found = None;
-    for pair in header.split(';') {
-        let (name, value) = pair.trim().split_once('=')?;
-        if name == wanted {
-            if found.is_some() || value.is_empty() {
-                return None;
-            }
-            found = Some(value);
-        }
-    }
-    found
+    crate::session_cookie::parse(header, wanted)
 }

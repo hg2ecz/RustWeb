@@ -12,7 +12,7 @@ page fn statusApi(ctx: PageContext) -> Result<Json, PageError> {
     return Ok(json(healthy));
 }
 
-route statusApi GET "/api/status" => statusApi;
+route statusApi GET "/api/status" public => statusApi;
 ```
 
 DB modell vagy lista:
@@ -31,7 +31,7 @@ page fn productsApi(
 route productsApi GET "/api/products"
     query limit<Int> offset<Int>
     validate limit range 1 100 offset range 0 1000000
-    => productsApi;
+    public => productsApi;
 ```
 
 `json(value)` támogatott runtime értékei: `String`, `Int`, `Bool`, model record, optional model (`null`) és modell-lista.

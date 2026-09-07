@@ -34,10 +34,10 @@ pub(super) fn parse_f32_array_set(
     }
     let array = lhs[..open].trim();
     if !is_identifier(array)
-        || !matches!(
-            known.get(array),
-            Some(StaticType::Scalar(ValueType::F32Array))
-        )
+        || !known
+            .get(array)
+            .map(|value| value.is_scalar(ValueType::F32Array))
+            .unwrap_or(false)
     {
         return Err(CompileError::Syntax(format!(
             "{handler_kind} `{handler_name}` set target `{array}` is not Array<F32>"

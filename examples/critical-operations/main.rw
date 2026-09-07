@@ -1,0 +1,30 @@
+permission BillingWrite {
+    role Admin
+    role BillingAdmin
+}
+
+critical Payment {
+    permission BillingWrite
+    mfa
+    transaction
+    audit
+}
+
+model Payment {
+    id: Int
+}
+
+action fn refund(
+    ctx: ActionContext,
+    db: Db,
+    id: Int
+) -> Result<Json, PageError> critical Payment {
+    transaction db {
+        audit Payment id action refund;
+    }
+    return Ok(json(true));
+}
+
+route refund POST "/billing/:id<Int>/refund"
+    auth critical Payment
+    => refund;

@@ -19,7 +19,7 @@ object Article {
         WHERE id = :id
     }
 
-    query fn publishChanged(tx: Transaction, id: Int, version: Int) -> Result<Changed, DbError> sql {
+    query fn publishChanged(tx: Transaction, id: Int, version: Int) -> Result<Changed, DbError> mutates Article by id sql {
         UPDATE articles
         SET status = 'Published', version = version + 1
         WHERE id = :id AND version = :version
@@ -29,10 +29,10 @@ object Article {
         let article = Article.byId(db, id)?;
         authorize article owner authorUsername or role Publisher;
         transaction db {
-            Article.publishChanged(tx, id, version)?;
+            Article.publishChanged(tx, article.id, version)?;
             audit Article id action publish from article.status to ArticleStatus.Published;
         }
-        return Ok(redirect("/admin/articles"));
+        return Ok(redirect(adminArticles()));
     }
 }
 

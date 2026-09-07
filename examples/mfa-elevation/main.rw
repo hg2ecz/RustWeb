@@ -1,0 +1,15 @@
+permission BillingWrite {
+    role Admin
+    role BillingAdmin
+}
+
+action fn refund(
+    ctx: ActionContext,
+    id: Int
+) -> Result<Json, PageError> requires BillingWrite + mfa {
+    return Ok(json(true));
+}
+
+route refund POST "/billing/:id<Int>/refund"
+    auth permission BillingWrite mfa
+    => refund;

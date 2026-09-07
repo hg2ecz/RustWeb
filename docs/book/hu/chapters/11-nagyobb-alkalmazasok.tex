@@ -179,7 +179,7 @@ A route tudatosan nem olvad bele teljesen az objectbe:
 
 \begin{lstlisting}[language=RWLang]
 route articleShow GET "/cikk/:slug<Slug>"
-    cache public ttl 60
+    public cache public ttl 60
     => article::Article.show;
 
 route articlePublish POST "/admin/cikk/:id<Int>/publish"

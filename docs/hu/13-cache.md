@@ -5,7 +5,7 @@ A public cache célja, hogy nyilvános, userfüggetlen GET oldalaknál ne fusson
 ## Deklaráció
 
 ```text
-route frontPage GET "/" cache public ttl 60 => frontPage;
+route frontPage GET "/" public cache public ttl 60 => frontPage;
 ```
 
 A fejlesztő csak a cache-elési szándékot és TTL-t deklarálja. A compiler ellenőrzi, hogy a route valóban public GET legyen, és a page ne függjön request-specifikus értéktől, például:
@@ -58,7 +58,7 @@ State-changing route explicit invalidálhat cache-elt route-ot:
 
 ```text
 route publish POST "/publish"
-    invalidate cache frontPage article
+    public invalidate cache frontPage article
     => publish;
 ```
 

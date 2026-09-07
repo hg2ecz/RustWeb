@@ -34,4 +34,4 @@ page fn numeric_operators(ctx: PageContext) -> Result<Html, PageError> {
     });
 }
 
-route numeric_operators GET "/numeric-operators" => numeric_operators;
+route numeric_operators GET "/numeric-operators" public => numeric_operators;

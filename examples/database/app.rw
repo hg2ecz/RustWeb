@@ -60,9 +60,9 @@ action fn createProduct(
     transaction db {
         insertProduct(tx, name, price)?;
     }
-    return Ok(redirect("/products/1"));
+    return Ok(redirect(product(1)));
 }
 
-route product GET "/products/:id<Int>" => product;
-route productNew GET "/products/new" => newProduct;
-route productCreate POST "/products" form name<String> price<Int> => createProduct;
+route product GET "/products/:id<Int>" public => product;
+route productNew GET "/products/new" public => newProduct;
+route productCreate POST "/products" form name<String> price<Int> public => createProduct;

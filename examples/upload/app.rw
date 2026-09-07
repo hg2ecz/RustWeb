@@ -13,13 +13,13 @@ action fn uploadFile(ctx: ActionContext, file: Upload) -> Result<Redirect, PageE
     let savedPath = file.path;
     let originalName = file.filename;
     let byteCount = file.bytes;
-    return Ok(redirect("/uploaded"));
+    return Ok(redirect(uploaded()));
 }
 
 page fn uploaded(ctx: PageContext) -> Result<Html, PageError> {
     return Ok(html {<h1>Upload complete</h1>});
 }
 
-route uploadForm GET "/upload" => uploadForm;
-route uploadFile POST "/upload" upload file<Upload> to "uploads" => uploadFile;
-route uploaded GET "/uploaded" => uploaded;
+route uploadForm GET "/upload" public => uploadForm;
+route uploadFile POST "/upload" upload file<Upload> to "uploads" public => uploadFile;
+route uploaded GET "/uploaded" public => uploaded;

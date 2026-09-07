@@ -122,3 +122,21 @@ A fejezetenként `\\input`-olt, webalkalmazás-fejlesztőknek szóló könyv for
 
 - [54. Típusos backend, reload és HTTP hibahatárok](54-tipusos-backend-reload-es-http-hatarok.md)
 - [Statement terminátorok](55-statement-terminatorok.md) - explicit `;`, nincs automatikus semicolon insertion.
+
+- [65. Explicit publikus projection](65-explicit-public-projection.md) - mező-allowlist alapú modell JSON-kimenet.
+- [66. Secret-fogyasztói szerződések](66-secret-fogyasztoi-szerzodesek.md) - explicit secret sinkek és fail-closed audit boundaryk.
+
+- [Típusos credentialek és jelszó-primitívek](67-tipusos-credential-es-jelszo.md)
+
+- [Credential-purpose típusok](68-credential-purpose-tipusok.md) - nem felcserélhető jelszó-, token-, session-, CSRF- és kulcsidentitások.
+
+- [Purpose-biztos token primitívek](69-purpose-safe-token-primitives.md) - purpose-típusos kiadás, validált bemutatás és constant-time token összehasonlítás.
+- [Lejárat-tudatos tokenellenőrzés](71-lejarat-tudatos-token-ellenorzes.md) - session/reset ellenőrzés kötelező lejárati feltétellel.
+- [Atomikus token-életciklus](72-atomikus-token-eletciklus.md) - egyszer használható reset grant és aktuális session visszavonás compiler proofokkal.
+- [Atomikus session rotáció](73-atomikus-session-rotacio.md) - őrzött session-hash csere presented-token és friss issued-token proofokkal.
+
+- [Platform által kezelt böngészős session](74-platform-altal-kezelt-browser-session.md)
+
+- [Függvényszintű jogosultságok](75-fuggvenyszintu-jogosultsagok.md) - névvel ellátott üzleti permissionök compiler által kikényszerített handler-szerződéssel.
+
+- [MFA-elevációs proofok](76-mfa-elevacios-proofok.md) - handler-szintű MFA-szerződés névvel ellátott permissionnel kombinálva.

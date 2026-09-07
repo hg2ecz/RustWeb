@@ -1,4 +1,4 @@
-use crate::FunctionParam;
+use crate::{CredentialPurpose, FunctionParam};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum QueryCapability {
@@ -26,10 +26,35 @@ impl QueryReturn {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MutationTarget {
+    pub model: String,
+    pub key: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CredentialLifecycleMode {
+    ConsumeReset,
+    RevokeSession,
+    RotateSession,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CredentialLifecycleTarget {
+    pub mode: CredentialLifecycleMode,
+    pub model: String,
+    pub hash_field: String,
+    pub expiry_field: Option<String>,
+    pub hash_purpose: CredentialPurpose,
+    pub replacement_hash_param: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct QueryFunction {
     pub name: String,
     pub capability: QueryCapability,
     pub params: Vec<FunctionParam>,
     pub return_type: QueryReturn,
+    pub mutation_target: Option<MutationTarget>,
+    pub credential_lifecycle: Option<CredentialLifecycleTarget>,
     pub sql: String,
 }

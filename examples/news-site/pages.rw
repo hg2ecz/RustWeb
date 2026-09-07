@@ -10,7 +10,7 @@ page fn article(ctx: PageContext, db: Db, slug: Slug) -> Result<Html, PageError>
     });
 }
 
-route article GET "/cikk/:slug<Slug>" cache public ttl 60 => pages::article;
+route article GET "/cikk/:slug<Slug>" public cache public ttl 60 => pages::article;
 
 page fn adminArticles(ctx: PageContext) -> Result<Html, PageError> {
     return Ok(html {

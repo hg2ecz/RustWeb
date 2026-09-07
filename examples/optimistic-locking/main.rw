@@ -8,17 +8,19 @@ query fn articleById(db: Db, id: Int) -> Result<Article, DbError> sql {
     SELECT id, title, version FROM articles WHERE id = :id
 }
 
-query fn updateArticle(tx: Transaction, id: Int, title: String, version: Int) -> Result<Changed, DbError> sql {
+query fn updateArticle(tx: Transaction, id: Int, title: String, version: Int) -> Result<Changed, DbError> mutates Article by id sql {
     UPDATE articles
     SET title = :title, version = version + 1
     WHERE id = :id AND version = :version
 }
 
 action fn articleUpdate(ctx: ActionContext, db: Db, id: Int, title: String, version: Int) -> Result<Redirect, PageError> {
+    let article = articleById(db, id)?;
+    authorize article authenticated;
     transaction db {
-        updateArticle(tx, id, title, version)?;
+        updateArticle(tx, article.id, title, version)?;
     }
-    return Ok(redirect("/articles"));
+    return Ok(redirect(articlesIndex()));
 }
 
 route articleUpdate POST "/articles/:id<Int>"

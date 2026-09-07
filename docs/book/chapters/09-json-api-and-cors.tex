@@ -22,7 +22,7 @@ page fn statusApi(ctx: PageContext) -> Result<Json, PageError> {
     return Ok(json(healthy));
 }
 
-route statusApi GET "/api/status" => statusApi;
+route statusApi GET "/api/status" public => statusApi;
 \end{lstlisting}
 
 A successful response is JSON, for example:
@@ -66,7 +66,7 @@ page fn productsApi(ctx: PageContext, db: Db,
 route productsApi GET "/api/products"
     query limit<Int> offset<Int>
     validate limit range 1 100 offset range 0 1000000
-    => productsApi;
+    public => productsApi;
 \end{lstlisting}
 
 The important point is not the JSON but the fact that input remains typed and validated just as it is for an HTML route. A client cannot bypass route policy by supplying an unbounded \code{limit}.

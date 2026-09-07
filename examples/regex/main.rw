@@ -27,4 +27,4 @@ page fn regex_demo(
 
 route regex_demo GET "/regex"
     query text<String>
-    => regex_demo;
+    public => regex_demo;

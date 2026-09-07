@@ -1,6 +1,8 @@
 use crate::control_flow;
 use crate::db_execution::{execute_read_query, execute_tx_query};
+use crate::domain_values;
 use crate::execution_context::Budget;
+use crate::public_projection::evaluate_public_projection;
 use crate::rendering::build_current_route_url;
 use crate::request_binding::validate_redirect_location;
 use crate::response::AppResponse;
@@ -10,8 +12,8 @@ use crate::vm::eval_expr;
 use chrono::Utc;
 use data::{BindSet, Database, DbTransaction, DbValue, PreparedSql};
 use language_core::{
-    ActionStatement, AppError, FlashKind, FlashMessage, Program, Redirect, Route, Statement,
-    TxStatement, Value,
+    ActionStatement, AppError, AuthorizationMode, FlashKind, FlashMessage, LocalUrl, Program,
+    Redirect, Route, Statement, TxStatement, Value,
 };
 use std::collections::HashMap;
 use uuid::Uuid;
@@ -35,13 +37,18 @@ pub(crate) fn authorize_object(
     if role_allowed {
         return Ok(());
     }
-    let record = match env.get(&rule.object) {
-        Some(Value::Record(v)) => v,
-        _ => return Err(AppError::Forbidden),
-    };
-    match record.get(&rule.owner_field) {
-        Some(Value::String(owner)) if owner == principal => Ok(()),
-        _ => Err(AppError::Forbidden),
+    match &rule.mode {
+        AuthorizationMode::Authenticated => Ok(()),
+        AuthorizationMode::Owner { field } => {
+            let record = match env.get(&rule.object) {
+                Some(Value::Record(v)) => v,
+                _ => return Err(AppError::Forbidden),
+            };
+            match record.get(field) {
+                Some(Value::String(owner)) if owner == principal => Ok(()),
+                _ => Err(AppError::Forbidden),
+            }
+        }
     }
 }
 
@@ -77,6 +84,13 @@ pub(crate) async fn execute_page_statement(
             let v = eval_expr(expr, env, budget)?;
             budget.charge_value(&v)?;
             env.insert(name.clone(), v);
+            Ok(None)
+        }
+        Statement::LetValidated { name, domain, expr } => {
+            let value = eval_expr(expr, env, budget)?;
+            let value = domain_values::validate(program, *domain, value)?;
+            budget.charge_value(&value)?;
+            env.insert(name.clone(), value);
             Ok(None)
         }
         Statement::Set { name, expr } => {
@@ -124,9 +138,11 @@ pub(crate) async fn execute_page_statement(
                 Ok(None)
             } else {
                 let location =
-                    build_current_route_url(route, env, Some((param, &canonical_value)))?;
+                    build_current_route_url(program, route, env, Some((param, &canonical_value)))?;
                 validate_redirect_location(&location)?;
-                Ok(Some(AppResponse::Redirect(Redirect::permanent(location))))
+                Ok(Some(AppResponse::Redirect(Redirect::permanent(
+                    LocalUrl::parse(location).ok_or(AppError::Internal)?,
+                ))))
             }
         }
         Statement::ReturnHtml(t) => {
@@ -134,6 +150,12 @@ pub(crate) async fn execute_page_statement(
         }
         Statement::ReturnJson(expr) => {
             let value = eval_expr(expr, env, budget)?;
+            let json = serialize_json_value(&value)?;
+            budget.charge_alloc(json.len() as u64)?;
+            Ok(Some(AppResponse::Json(json)))
+        }
+        Statement::ReturnJsonProjection(projection) => {
+            let value = evaluate_public_projection(projection, env, budget)?;
             let json = serialize_json_value(&value)?;
             budget.charge_alloc(json.len() as u64)?;
             Ok(Some(AppResponse::Json(json)))
@@ -268,6 +290,13 @@ pub(crate) async fn execute_action_statement(
             env.insert(name.clone(), v);
             Ok(None)
         }
+        ActionStatement::LetValidated { name, domain, expr } => {
+            let value = eval_expr(expr, env, budget)?;
+            let value = domain_values::validate(program, *domain, value)?;
+            budget.charge_value(&value)?;
+            env.insert(name.clone(), value);
+            Ok(None)
+        }
         ActionStatement::Set { name, expr } => {
             control_flow::assign(name, expr, env, budget).map(|_| None)
         }
@@ -345,11 +374,14 @@ pub(crate) async fn execute_action_statement(
             tx.commit().await.map_err(|_| AppError::Database)?;
             Ok(None)
         }
-        ActionStatement::ReturnRedirect(expr) => {
-            let location = match eval_expr(expr, env, budget)? {
-                Value::String(v) => v,
-                _ => return Err(AppError::Internal),
-            };
+        ActionStatement::ReturnRedirect(call) => {
+            let route = program
+                .routes
+                .iter()
+                .find(|route| route.name == call.route)
+                .ok_or(AppError::Internal)?;
+            let location =
+                crate::rendering::build_route_url(program, route, &call.args, env, budget, true)?;
             validate_redirect_location(&location)?;
             let redirect = match (env.get("__flashKind"), env.get("__flashMessage")) {
                 (Some(Value::String(kind)), Some(Value::String(message))) => {
@@ -360,18 +392,26 @@ pub(crate) async fn execute_action_statement(
                         "error" => FlashKind::Error,
                         _ => return Err(AppError::Internal),
                     };
-                    Redirect::new(location).with_flash(FlashMessage {
-                        kind,
-                        message: message.clone(),
-                    })
+                    Redirect::new(LocalUrl::parse(location).ok_or(AppError::Internal)?).with_flash(
+                        FlashMessage {
+                            kind,
+                            message: message.clone(),
+                        },
+                    )
                 }
-                (None, None) => Redirect::new(location),
+                (None, None) => Redirect::new(LocalUrl::parse(location).ok_or(AppError::Internal)?),
                 _ => return Err(AppError::Internal),
             };
             Ok(Some(AppResponse::Redirect(redirect)))
         }
         ActionStatement::ReturnJson(expr) => {
             let value = eval_expr(expr, env, budget)?;
+            let json = serialize_json_value(&value)?;
+            budget.charge_alloc(json.len() as u64)?;
+            Ok(Some(AppResponse::Json(json)))
+        }
+        ActionStatement::ReturnJsonProjection(projection) => {
+            let value = evaluate_public_projection(projection, env, budget)?;
             let json = serialize_json_value(&value)?;
             budget.charge_alloc(json.len() as u64)?;
             Ok(Some(AppResponse::Json(json)))

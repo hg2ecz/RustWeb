@@ -3,7 +3,7 @@
 ## Path
 
 ```text
-route product GET "/products/:id<Int>" => product;
+route product GET "/products/:id<Int>" public => product;
 ```
 
 A handlerben ugyanaz a név/típus kell:
@@ -18,7 +18,7 @@ page fn product(ctx: PageContext, db: Db, id: Int) ...
 route products GET "/products"
     query page<Int> pageSize<Int>
     validate page range 1 100000 pageSize range 1 100
-    => products;
+    public => products;
 ```
 
 A schema closed-world: hiányzó, duplikált vagy ismeretlen mező `400`.
@@ -29,7 +29,7 @@ A schema closed-world: hiányzó, duplikált vagy ismeretlen mező `400`.
 route create POST "/products"
     form name<String> price<Int>
     validate name length 1 100 price range 0 100000000
-    => create;
+    public => create;
 ```
 
 Jelenlegi validation szabályok:
@@ -44,7 +44,7 @@ State-changing route-ot `action fn` kezeljen. A kliens által küldött `price`,
 ## Keresőbarát path: Slug
 
 ```rwlang
-route articleShow GET "/cikk/:slug<Slug>" => articleShow;
+route articleShow GET "/cikk/:slug<Slug>" public => articleShow;
 ```
 
 A `Slug` canonical, max. 160 byte, és nem tetszőleges String. Így `../`, slash, szóköz és nem canonical forma nem jut át typed path paraméterként.

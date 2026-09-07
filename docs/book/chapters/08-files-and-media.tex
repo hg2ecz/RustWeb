@@ -23,7 +23,7 @@ The route declaration tells the runtime that a multipart file is expected and na
 \begin{lstlisting}[language=RWLang]
 route uploadFile POST "/upload"
     upload file<Upload> to "uploads"
-    => uploadFile;
+    public => uploadFile;
 \end{lstlisting}
 
 \newpage

@@ -10,4 +10,4 @@ page fn product(ctx: PageContext, db: Db, id: Int) -> Result<Html, PageError> {
     let product = findProduct(db, id)?;
     return Ok(html {<h1>{{ product.name }}</h1>});
 }
-route product GET "/products/:id<Int>" => product;
+route product GET "/products/:id<Int>" public => product;

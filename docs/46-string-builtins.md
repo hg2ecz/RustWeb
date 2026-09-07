@@ -60,3 +60,7 @@ See `examples/string-operations/main.rw` and `examples/string-list/main.rw` for 
 ## Statement syntax
 
 The examples use explicit `;` terminators because each `let` is a simple statement. A newline does not terminate a statement. See [Statement terminators](56-statement-terminators.md). `String + String` concatenation and the numeric/logical operator precedence are documented in [Numeric operators, F32 math and monotonic timing](44-math-and-timing.md).
+
+## Explicitly bounded split
+
+Use `splitBounded(text, delimiter, maxItems)` when the domain has a smaller known cardinality limit. `maxItems` must be a compile-time integer literal in `1..4096`, and execution fails rather than truncating when the input would exceed the bound.

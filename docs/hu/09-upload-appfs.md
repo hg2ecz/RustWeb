@@ -5,7 +5,7 @@
 ```text
 route uploadFile POST "/upload"
     upload file<Upload> to "uploads"
-    => uploadFile;
+    public => uploadFile;
 ```
 
 ## Action

@@ -10,6 +10,7 @@ examples/components/app.rw
 examples/crud/app.rw
 examples/database/app.rw
 examples/domain-objects/main.rw
+examples/domain-types/main.rw
 examples/domain-validation-m42/main.rw
 examples/domain-validation/main.rw
 examples/enums/main.rw
@@ -21,6 +22,7 @@ examples/markdown/app.rw
 examples/media/app.rw
 examples/module-namespaces/main.rw
 examples/news-site/main.rw
+examples/nominal-domain-types/main.rw
 examples/numeric-operators/main.rw
 examples/object-authorization/app.rw
 examples/optimistic-locking/main.rw
@@ -35,3 +37,8 @@ examples/string-list/main.rw
 examples/string-operations/main.rw
 examples/upload/app.rw
 examples/wiki/main.rw
+
+examples/function-permissions/main.rw
+
+examples/mfa-elevation/main.rw
+examples/critical-operations/main.rw

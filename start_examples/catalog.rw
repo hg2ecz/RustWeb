@@ -52,11 +52,11 @@ action fn calculate_product(
 route product_form GET "/catalog"
     query tax<Int>
     validate tax range 0 100
-    => product_form;
+    public => product_form;
 
 route calculate_product POST "/catalog/calculate"
     form name<String> price<Int> quantity<Int> tax<Int>
     validate price range 0 100000000
              quantity range 1 100000
              tax range 0 100
-    => calculate_product;
+    public => calculate_product;

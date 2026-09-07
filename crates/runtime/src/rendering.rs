@@ -1,9 +1,10 @@
 use crate::execution_context::Budget;
 use crate::vm::eval_expr;
-use language_core::{AppError, Expr, Route, RouteSegment, Value, ValueType};
+use language_core::{AppError, Expr, Program, Route, RouteSegment, Value, ValueType};
 use std::collections::HashMap;
 
 pub(crate) fn build_current_route_url(
+    program: &Program,
     route: &Route,
     env: &HashMap<String, Value>,
     replacement: Option<(&str, &Value)>,
@@ -23,7 +24,7 @@ pub(crate) fn build_current_route_url(
                         }
                         _ => env.get(name).ok_or(AppError::Internal)?,
                     };
-                    append_url_value(&mut out, value, *ty, true)?;
+                    append_url_value(program, &mut out, value, *ty, true)?;
                 }
             }
         }
@@ -37,13 +38,14 @@ pub(crate) fn build_current_route_url(
             out.push_str(&field.name);
             out.push('=');
             let value = env.get(&field.name).ok_or(AppError::Internal)?;
-            append_url_value(&mut out, value, field.ty, false)?;
+            append_url_value(program, &mut out, value, field.ty, false)?;
         }
     }
     Ok(out)
 }
 
 pub(crate) fn build_route_url(
+    program: &Program,
     route: &Route,
     args: &[Expr],
     env: &HashMap<String, Value>,
@@ -66,7 +68,7 @@ pub(crate) fn build_route_url(
                 RouteSegment::Param { ty, .. } => {
                     let value = values.get(idx).ok_or(AppError::Internal)?;
                     idx += 1;
-                    append_url_value(&mut out, value, *ty, true)?;
+                    append_url_value(program, &mut out, value, *ty, true)?;
                 }
             }
         }
@@ -81,7 +83,7 @@ pub(crate) fn build_route_url(
             out.push('=');
             let value = values.get(idx).ok_or(AppError::Internal)?;
             idx += 1;
-            append_url_value(&mut out, value, field.ty, false)?;
+            append_url_value(program, &mut out, value, field.ty, false)?;
         }
     }
     if idx != values.len() {
@@ -90,11 +92,13 @@ pub(crate) fn build_route_url(
     Ok(out)
 }
 fn append_url_value(
+    program: &Program,
     out: &mut String,
     value: &Value,
     ty: ValueType,
     path: bool,
 ) -> Result<(), AppError> {
+    let ty = program.representation_type(ty).ok_or(AppError::Internal)?;
     let raw = match (value, ty) {
         (Value::String(v), ValueType::String | ValueType::Slug) => v.clone(),
         (Value::Email(v), ValueType::Email) => v.clone(),
@@ -116,6 +120,9 @@ fn append_url_value(
             _,
             ValueType::Upload | ValueType::F32Array | ValueType::StringList | ValueType::StringDict,
         ) => return Err(AppError::Internal),
+        (_, ValueType::Domain(_)) => {
+            unreachable!("domain route arguments are represented by their base type")
+        }
         _ => return Err(AppError::Internal),
     };
     percent_encode_into(&raw, out, path);

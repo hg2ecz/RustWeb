@@ -1,3 +1,25 @@
+const TOP_LEVEL_DECLARATION_PREFIXES: &[&str] = &[
+    "type ",
+    "enum ",
+    "object ",
+    "model ",
+    "permission ",
+    "critical ",
+    "query fn ",
+    "form ",
+    "component fn ",
+    "layout fn ",
+    "page fn ",
+    "action fn ",
+    "route ",
+];
+
+pub(super) fn starts_top_level_declaration(line: &str) -> bool {
+    TOP_LEVEL_DECLARATION_PREFIXES
+        .iter()
+        .any(|prefix| line.starts_with(prefix))
+}
+
 pub(super) fn is_top_level_declaration_at(source: &str, pos: usize) -> bool {
     let line_start = source[..pos].rfind('\n').map(|v| v + 1).unwrap_or(0);
     if !source[line_start..pos].trim().is_empty() {

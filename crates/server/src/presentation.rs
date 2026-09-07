@@ -121,7 +121,8 @@ pub(super) fn render_form_failure(
         body.push_str("<div><label>");
         push_html_escaped(&mut body, &field.name);
         body.push(' ');
-        match field.ty {
+        let field_type = program.representation_type(field.ty).unwrap_or(field.ty);
+        match field_type {
             ValueType::Bool => {
                 body.push_str("<select name=\"");
                 push_html_escaped(&mut body, &field.name);
@@ -155,7 +156,7 @@ pub(super) fn render_form_failure(
                 body.push_str("</select>");
             }
             _ => {
-                let input_type = match field.ty {
+                let input_type = match field_type {
                     ValueType::Int => "number",
                     ValueType::Date => "date",
                     ValueType::Email => "email",
@@ -214,7 +215,25 @@ pub(super) fn authorize_route(
         RouteAuth::User if session.is_authenticated() => None,
         RouteAuth::Mfa if session.is_authenticated() && session.mfa_verified => None,
         RouteAuth::Role(role) if session.is_authenticated() && session.has_role(role) => None,
-        RouteAuth::User | RouteAuth::Mfa | RouteAuth::Role(_) if !session.is_authenticated() => {
+        RouteAuth::Permission { roles, .. }
+            if session.is_authenticated() && roles.iter().any(|role| session.has_role(role)) =>
+        {
+            None
+        }
+        RouteAuth::PermissionMfa { roles, .. }
+            if session.is_authenticated()
+                && session.mfa_verified
+                && roles.iter().any(|role| session.has_role(role)) =>
+        {
+            None
+        }
+        RouteAuth::User
+        | RouteAuth::Mfa
+        | RouteAuth::Role(_)
+        | RouteAuth::Permission { .. }
+        | RouteAuth::PermissionMfa { .. }
+            if !session.is_authenticated() =>
+        {
             if json_api {
                 Some(endpoint_error(
                     true,
@@ -240,14 +259,15 @@ pub(super) fn authorize_route(
 pub(super) fn route_returns_json(program: &Program, route: &Route) -> bool {
     fn page_json(statements: &[Statement]) -> bool {
         match statements.last() {
-            Some(Statement::ReturnJson(_)) => true,
+            Some(Statement::ReturnJson(_)) | Some(Statement::ReturnJsonProjection(_)) => true,
             Some(Statement::Resource { statements, .. }) => page_json(statements),
             _ => false,
         }
     }
     fn action_json(statements: &[ActionStatement]) -> bool {
         match statements.last() {
-            Some(ActionStatement::ReturnJson(_)) => true,
+            Some(ActionStatement::ReturnJson(_))
+            | Some(ActionStatement::ReturnJsonProjection(_)) => true,
             Some(ActionStatement::Resource { statements, .. }) => action_json(statements),
             _ => false,
         }
@@ -328,4 +348,58 @@ pub(super) fn accepts_media(header: Option<&str>, wanted: &str) -> bool {
         (ty.eq_ignore_ascii_case(want_type) && sub == "*")
             || (ty.eq_ignore_ascii_case(want_type) && sub.eq_ignore_ascii_case(want_sub))
     })
+}
+
+#[cfg(test)]
+mod permission_auth_tests {
+    use super::authorize_route;
+    use auth::SessionSnapshot;
+    use language_core::RouteAuth;
+
+    fn session(roles: &[&str]) -> SessionSnapshot {
+        session_with_mfa(roles, false)
+    }
+
+    fn session_with_mfa(roles: &[&str], mfa_verified: bool) -> SessionSnapshot {
+        SessionSnapshot {
+            id: "a".repeat(64),
+            csrf_token: "b".repeat(64),
+            principal: Some("alice".into()),
+            mfa_verified,
+            roles: roles.iter().map(|role| (*role).to_string()).collect(),
+            auth_generation: 0,
+        }
+    }
+
+    #[test]
+    fn permission_auth_accepts_any_granting_role() {
+        let policy = RouteAuth::Permission {
+            name: "UserAdmin".into(),
+            roles: vec!["Admin".into(), "SecurityAdmin".into()],
+        };
+        assert!(authorize_route(&policy, &session(&["SecurityAdmin"]), true).is_none());
+    }
+
+    #[test]
+    fn permission_auth_rejects_unrelated_role() {
+        let policy = RouteAuth::Permission {
+            name: "UserAdmin".into(),
+            roles: vec!["Admin".into()],
+        };
+        assert!(authorize_route(&policy, &session(&["Viewer"]), true).is_some());
+    }
+    #[test]
+    fn permission_mfa_requires_both_granting_role_and_elevation() {
+        let policy = RouteAuth::PermissionMfa {
+            name: "BillingWrite".into(),
+            roles: vec!["BillingAdmin".into()],
+        };
+        assert!(
+            authorize_route(&policy, &session_with_mfa(&["BillingAdmin"], true), true).is_none()
+        );
+        assert!(
+            authorize_route(&policy, &session_with_mfa(&["BillingAdmin"], false), true).is_some()
+        );
+        assert!(authorize_route(&policy, &session_with_mfa(&["Viewer"], true), true).is_some());
+    }
 }

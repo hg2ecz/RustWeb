@@ -15,12 +15,12 @@ use crate::sql_syntax::{first_sql_keyword, scan_bind_names};
 use crate::type_resolution::resolve_value_type;
 use crate::{CompileError, compile_file, compile_file_with_dependencies, compile_source};
 use language_core::{
-    ActionBody, ActionFunction, ActionStatement, BinaryOp, BuiltinFunction, BusinessAudit,
-    ComponentFunction, ComputeStatement, Expr, FlashKind, FlashMessage, HtmlAttrKind, HtmlPart,
-    HtmlTemplate, HttpMethod, LayoutFunction, ObjectAuthorization, PageBody, PageFunction, Program,
-    PublicCachePolicy, QueryCall, QueryCapability, QueryFunction, QueryReturn, ResourceUse, Route,
-    RouteAuth, RouteSegment, SourceLocation, Statement, TemplateParam, TemplateParamType,
-    TxStatement, UploadField, ValidationKind, ValueType,
+    ActionBody, ActionFunction, ActionStatement, AuthorizationMode, BinaryOp, BuiltinFunction,
+    BusinessAudit, ComponentFunction, ComputeStatement, Expr, FlashKind, FlashMessage,
+    HtmlAttrKind, HtmlPart, HtmlTemplate, HttpMethod, LayoutFunction, ObjectAuthorization,
+    PageBody, PageFunction, Program, PublicCachePolicy, QueryCall, QueryCapability, QueryFunction,
+    QueryReturn, ResourceUse, Route, RouteAuth, RouteSegment, SourceLocation, Statement,
+    TemplateParam, TemplateParamType, TxStatement, UploadField, ValidationKind, ValueType,
 };
 use std::collections::{HashMap, HashSet};
 use std::fs;
@@ -37,3 +37,5 @@ mod numeric_string_core_tests;
 mod presentation_compile_tests;
 mod statement_terminator_tests;
 mod web_flow_compile_tests;
+
+mod security_language_tests;

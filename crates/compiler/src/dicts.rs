@@ -34,10 +34,10 @@ pub(super) fn parse_string_dict_set(
     }
     let dict = lhs[..open].trim();
     if !is_identifier(dict)
-        || !matches!(
-            known.get(dict),
-            Some(StaticType::Scalar(ValueType::StringDict))
-        )
+        || !known
+            .get(dict)
+            .map(|value| value.is_scalar(ValueType::StringDict))
+            .unwrap_or(false)
     {
         return Err(CompileError::Syntax(format!(
             "{handler_kind} `{handler_name}` set target `{dict}` is not Dict<String,String>"

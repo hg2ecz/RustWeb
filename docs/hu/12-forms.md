@@ -16,7 +16,7 @@ form ProductForm {
 A schema compiler-owned contract. A route csak a nevét használja:
 
 ```text
-route create POST "/products" form ProductForm => create;
+route create POST "/products" form ProductForm public => create;
 ```
 
 A handler paraméterei ugyanabban a sorrendben és ugyanazzal a típussal követik a form mezőit:
@@ -74,7 +74,7 @@ A régi forma változatlan:
 route create POST "/products"
     form name<String> price<Int>
     validate name length 1 100 price range 0 100000
-    => create;
+    public => create;
 ```
 
 Named formot akkor használj, ha ugyanaz a contract több helyen vagy hosszabb távon karbantartandó.

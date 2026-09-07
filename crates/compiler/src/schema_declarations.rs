@@ -1,10 +1,11 @@
 use crate::declarations;
 use crate::diagnostics::CompileError;
+use crate::domain_validation;
 use crate::lexer::tokenize;
 use crate::module_namespace::qualify;
 use crate::routes;
 use crate::source_syntax::{is_identifier, matching_brace, read_ident};
-use crate::type_resolution::resolve_value_type;
+use crate::type_resolution::resolve_annotated_value_type;
 use language_core::{
     FormField, FormSchema, FunctionParam, Model, Program, ValidationKind, ValidationRule, ValueType,
 };
@@ -158,7 +159,14 @@ pub(super) fn parse_form_schemas(
                 }
                 break;
             }
-            let field = routes::parse_typed_binding(&name, &tokens[i], namespace, p)?;
+            let raw = &tokens[i];
+            let field = routes::parse_typed_binding(&name, raw, namespace, p)?;
+            validations.extend(domain_validation::rules_for_binding(
+                raw,
+                &field.name,
+                namespace,
+                p,
+            ));
             if fields.iter().any(|f: &FormField| f.name == field.name) {
                 return Err(CompileError::Syntax(format!(
                     "form `{name}` duplicate field `{}`",
@@ -405,10 +413,10 @@ pub(super) fn parse_models(
                     "model `{name}` invalid field `{field}`"
                 )));
             }
-            let ty = resolve_value_type(ty, namespace, p)
-                .filter(|t| {
+            let annotated = resolve_annotated_value_type(ty, namespace, p)
+                .filter(|resolved| {
                     !matches!(
-                        t,
+                        resolved.value_type,
                         ValueType::Upload
                             | ValueType::F32Array
                             | ValueType::StringList
@@ -425,7 +433,8 @@ pub(super) fn parse_models(
             }
             fields.push(FunctionParam {
                 name: field.into(),
-                ty,
+                ty: annotated.value_type,
+                sensitivity: annotated.sensitivity,
             });
         }
         if fields.is_empty() {

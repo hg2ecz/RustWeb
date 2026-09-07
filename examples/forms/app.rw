@@ -11,7 +11,7 @@ action fn create(
     price: Int,
     published: Bool
 ) -> Result<Redirect, PageError> {
-    return Ok(redirect("/products/new"));
+    return Ok(redirect(newProduct()));
 }
 
 page fn newProduct(ctx: PageContext) -> Result<Html, PageError> {
@@ -29,5 +29,5 @@ page fn newProduct(ctx: PageContext) -> Result<Html, PageError> {
     });
 }
 
-route newProduct GET "/products/new" => newProduct;
-route create POST "/products" form ProductForm => create;
+route newProduct GET "/products/new" public => newProduct;
+route create POST "/products" form ProductForm public => create;

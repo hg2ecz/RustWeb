@@ -19,4 +19,4 @@ action fn calculate(
 
 route calculate POST "/api/calculate"
     json net<Decimal> tax<Decimal> invoiceId<Uuid> issued<Date> createdAt<DateTime>
-    => calculate;
+    public => calculate;

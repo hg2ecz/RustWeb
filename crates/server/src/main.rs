@@ -180,6 +180,7 @@ mod request_pipeline;
 mod resource_limits;
 mod server_config_file;
 mod server_errors;
+mod session_cookie;
 mod source_reload;
 mod static_delivery;
 mod tls_support;
