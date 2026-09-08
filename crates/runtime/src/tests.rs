@@ -1,17 +1,17 @@
 #[cfg(test)]
+mod bounded_request_collection_tests;
+#[cfg(test)]
 mod core_runtime_tests;
 #[cfg(test)]
 mod db_runtime_tests;
 #[cfg(test)]
-mod serialization_runtime_tests;
+mod domain_runtime_tests;
+#[cfg(test)]
+mod outbound_runtime_tests;
 #[cfg(test)]
 mod presentation_runtime_tests;
 #[cfg(test)]
-mod domain_runtime_tests;
-#[cfg(test)]
-mod bounded_request_collection_tests;
-#[cfg(test)]
-mod outbound_runtime_tests;
+mod serialization_runtime_tests;
 
 #[cfg(test)]
 mod sum_match_runtime_tests;

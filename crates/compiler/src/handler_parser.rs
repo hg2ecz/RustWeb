@@ -1,12 +1,20 @@
-use crate::{action_statements, control_flow, declarations, page_statements};
 use crate::diagnostics::CompileError;
 use crate::handler_types::HandlerReturnKind;
 use crate::module_namespace::qualify;
 use crate::source_syntax::{function_bounds, line_number, split_top_level};
 use crate::type_resolution::resolve_annotated_value_type;
-use language_core::{ActionBody, ActionFunction, FunctionParam, HandlerSecurityContract, PageBody, PageFunction, Program};
+use crate::{action_statements, control_flow, declarations, page_statements};
+use language_core::{
+    ActionBody, ActionFunction, FunctionParam, HandlerSecurityContract, PageBody, PageFunction,
+    Program,
+};
 
-pub(super) fn parse_pages(source: &str, source_name: &str, namespace: &str, p: &mut Program) -> Result<(), CompileError> {
+pub(super) fn parse_pages(
+    source: &str,
+    source_name: &str,
+    namespace: &str,
+    p: &mut Program,
+) -> Result<(), CompileError> {
     let mut off = 0;
     while let Some(rel) = source[off..].find("page fn ") {
         let keyword = off + rel;
@@ -32,8 +40,13 @@ pub(super) fn parse_pages(source: &str, source_name: &str, namespace: &str, p: &
             namespace,
             p,
         )?;
-        let (params, needs_db) =
-            parse_handler_params(&name, "PageContext", &source[sig_open + 1..sig_close], namespace, p)?;
+        let (params, needs_db) = parse_handler_params(
+            &name,
+            "PageContext",
+            &source[sig_open + 1..sig_close],
+            namespace,
+            p,
+        )?;
         let base_line = line_number(source, body_open + 1);
         let statements = page_statements::parse_page_statements(
             &symbol_name,
@@ -51,7 +64,12 @@ pub(super) fn parse_pages(source: &str, source_name: &str, namespace: &str, p: &
             )));
         }
         let inferred_effects = crate::effect_security::collect_page(&statements);
-        crate::effect_security::validate_network_capabilities("page", &name, &declared_effects, &inferred_effects)?;
+        crate::effect_security::validate_network_capabilities(
+            "page",
+            &name,
+            &declared_effects,
+            &inferred_effects,
+        )?;
         let effects = crate::effect_security::merge(declared_effects, inferred_effects);
         crate::effect_security::validate_db_capability("page", &name, needs_db, &effects)?;
         p.pages.push(PageFunction {
@@ -67,7 +85,12 @@ pub(super) fn parse_pages(source: &str, source_name: &str, namespace: &str, p: &
     Ok(())
 }
 
-pub(super) fn parse_actions(source: &str, source_name: &str, namespace: &str, p: &mut Program) -> Result<(), CompileError> {
+pub(super) fn parse_actions(
+    source: &str,
+    source_name: &str,
+    namespace: &str,
+    p: &mut Program,
+) -> Result<(), CompileError> {
     let mut off = 0;
     while let Some(rel) = source[off..].find("action fn ") {
         let keyword = off + rel;
@@ -93,8 +116,13 @@ pub(super) fn parse_actions(source: &str, source_name: &str, namespace: &str, p:
             namespace,
             p,
         )?;
-        let (params, needs_db) =
-            parse_handler_params(&name, "ActionContext", &source[sig_open + 1..sig_close], namespace, p)?;
+        let (params, needs_db) = parse_handler_params(
+            &name,
+            "ActionContext",
+            &source[sig_open + 1..sig_close],
+            namespace,
+            p,
+        )?;
         let base_line = line_number(source, body_open + 1);
         let statements = action_statements::parse_action_statements(
             &symbol_name,
@@ -112,7 +140,12 @@ pub(super) fn parse_actions(source: &str, source_name: &str, namespace: &str, p:
             )));
         }
         let inferred_effects = crate::effect_security::collect_action(&statements);
-        crate::effect_security::validate_network_capabilities("action", &name, &declared_effects, &inferred_effects)?;
+        crate::effect_security::validate_network_capabilities(
+            "action",
+            &name,
+            &declared_effects,
+            &inferred_effects,
+        )?;
         let effects = crate::effect_security::merge(declared_effects, inferred_effects);
         crate::effect_security::validate_db_capability("action", &name, needs_db, &effects)?;
         p.actions.push(ActionFunction {
@@ -171,7 +204,8 @@ fn parse_handler_params(
                 "function `{function}` unsupported parameter type `{ty}`"
             ))
         })?;
-        if matches!(annotated.value_type, language_core::ValueType::Credential(purpose) if purpose.is_crypto_key()) {
+        if matches!(annotated.value_type, language_core::ValueType::Credential(purpose) if purpose.is_crypto_key())
+        {
             return Err(CompileError::security(
                 "SEC-A04-023",
                 format!("web handler parameter `{function}.{name}` cannot accept cryptographic key material from the request boundary"),
@@ -192,14 +226,20 @@ fn parse_handler_params(
     Ok((params, needs_db))
 }
 
-
 fn parse_handler_contract(
     kind: &str,
     name: &str,
     tail: &str,
     namespace: &str,
     program: &Program,
-) -> Result<(HandlerReturnKind, HandlerSecurityContract, Vec<language_core::Effect>), CompileError> {
+) -> Result<
+    (
+        HandlerReturnKind,
+        HandlerSecurityContract,
+        Vec<language_core::Effect>,
+    ),
+    CompileError,
+> {
     let (tail, declared_effects) = match tail.rsplit_once(" uses ") {
         Some((before, raw)) => (
             before.trim_end(),
@@ -214,7 +254,8 @@ fn parse_handler_contract(
     }
     if let Some((return_tail, critical)) = tail.split_once(" critical ") {
         let return_kind = parse_handler_return_kind(kind, name, return_tail)?;
-        let security = crate::handler_security::parse_critical(name, critical.trim(), namespace, program)?;
+        let security =
+            crate::handler_security::parse_critical(name, critical.trim(), namespace, program)?;
         return Ok((return_kind, security, declared_effects));
     }
     let (return_tail, requirements) = match tail.split_once("requires") {

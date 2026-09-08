@@ -8,7 +8,9 @@ pub(super) fn sql_has_tenant_guard(keyword: &str, sql: &str, field: &str) -> boo
 
 fn where_has_field_bind_equality(sql: &str, field: &str) -> bool {
     let lower = sql.to_ascii_lowercase();
-    let Some(where_pos) = lower.find("where") else { return false; };
+    let Some(where_pos) = lower.find("where") else {
+        return false;
+    };
     let tokens = tenant_predicate_tokens(&lower[where_pos + 5..]);
     let field = field.to_ascii_lowercase();
     let bind = format!(":{field}");
@@ -60,10 +62,15 @@ fn tenant_predicate_tokens(sql: &str) -> Vec<String> {
                     cursor += 1;
                 }
             }
-            b':' if bytes.get(cursor + 1).is_some_and(|next| next.is_ascii_alphabetic() || *next == b'_') => {
+            b':' if bytes
+                .get(cursor + 1)
+                .is_some_and(|next| next.is_ascii_alphabetic() || *next == b'_') =>
+            {
                 let start = cursor;
                 cursor += 2;
-                while cursor < bytes.len() && (bytes[cursor].is_ascii_alphanumeric() || bytes[cursor] == b'_') {
+                while cursor < bytes.len()
+                    && (bytes[cursor].is_ascii_alphanumeric() || bytes[cursor] == b'_')
+                {
                     cursor += 1;
                 }
                 tokens.push(sql[start..cursor].to_string());
@@ -71,7 +78,9 @@ fn tenant_predicate_tokens(sql: &str) -> Vec<String> {
             b if b.is_ascii_alphabetic() || b == b'_' => {
                 let start = cursor;
                 cursor += 1;
-                while cursor < bytes.len() && (bytes[cursor].is_ascii_alphanumeric() || bytes[cursor] == b'_') {
+                while cursor < bytes.len()
+                    && (bytes[cursor].is_ascii_alphanumeric() || bytes[cursor] == b'_')
+                {
                     cursor += 1;
                 }
                 tokens.push(sql[start..cursor].to_string());
@@ -103,17 +112,33 @@ fn matches_field(value: Option<&str>, field: &str) -> bool {
 
 fn insert_pairs_field_with_bind(sql: &str, field: &str) -> bool {
     let lower = sql.to_ascii_lowercase();
-    let Some(values_pos) = lower.find("values") else { return false; };
+    let Some(values_pos) = lower.find("values") else {
+        return false;
+    };
     let before = &lower[..values_pos];
     let after = &lower[values_pos + 6..];
-    let Some(columns_open) = before.rfind('(') else { return false; };
-    let Some(columns_close_rel) = before[columns_open + 1..].find(')') else { return false; };
+    let Some(columns_open) = before.rfind('(') else {
+        return false;
+    };
+    let Some(columns_close_rel) = before[columns_open + 1..].find(')') else {
+        return false;
+    };
     let columns_close = columns_open + 1 + columns_close_rel;
-    let Some(values_open) = after.find('(') else { return false; };
-    let Some(values_close_rel) = after[values_open + 1..].find(')') else { return false; };
+    let Some(values_open) = after.find('(') else {
+        return false;
+    };
+    let Some(values_close_rel) = after[values_open + 1..].find(')') else {
+        return false;
+    };
     let values_close = values_open + 1 + values_close_rel;
-    let columns: Vec<_> = before[columns_open + 1..columns_close].split(',').map(|v| v.trim()).collect();
-    let values: Vec<_> = after[values_open + 1..values_close].split(',').map(|v| v.trim()).collect();
+    let columns: Vec<_> = before[columns_open + 1..columns_close]
+        .split(',')
+        .map(|v| v.trim())
+        .collect();
+    let values: Vec<_> = after[values_open + 1..values_close]
+        .split(',')
+        .map(|v| v.trim())
+        .collect();
     let field_lower = field.to_ascii_lowercase();
     let bind = format!(":{field_lower}");
     columns.iter().zip(values.iter()).any(|(column, value)| {

@@ -1,9 +1,9 @@
-use crate::startup_args::StartupArgs;
 use crate::cli_config_apply;
 use crate::cli_finalize;
 use crate::cli_overrides;
 use crate::cli_scan;
 use crate::server_errors::CliParseError;
+use crate::startup_args::StartupArgs;
 use std::env;
 
 pub(super) fn parse_args() -> Result<StartupArgs, CliParseError> {

@@ -1,4 +1,4 @@
-use super::{tokenize, CompileError};
+use super::{CompileError, tokenize};
 use crate::declarations;
 
 pub(super) struct RouteDeclaration {
@@ -6,7 +6,9 @@ pub(super) struct RouteDeclaration {
     pub(super) line: usize,
 }
 
-pub(super) fn top_level_route_declarations(source: &str) -> Result<Vec<RouteDeclaration>, CompileError> {
+pub(super) fn top_level_route_declarations(
+    source: &str,
+) -> Result<Vec<RouteDeclaration>, CompileError> {
     let mut out = Vec::new();
     let mut depth = 0i32;
     let mut active: Option<(usize, String)> = None;
@@ -21,20 +23,30 @@ pub(super) fn top_level_route_declarations(source: &str) -> Result<Vec<RouteDecl
             // top-level declaration prefixes, most notably `form`. Decide this from
             // the route grammar rather than indentation so formatting stays free-form.
             if starts_decl && !is_route_continuation_line(trimmed) {
-                return Err(route_termination_error(*start_line, buf, Some(line_idx + 1))?);
+                return Err(route_termination_error(
+                    *start_line,
+                    buf,
+                    Some(line_idx + 1),
+                )?);
             }
             if !buf.is_empty() {
                 buf.push('\n');
             }
             buf.push_str(raw);
             if route_declaration_complete(buf)? {
-                out.push(RouteDeclaration { source: std::mem::take(buf), line: *start_line });
+                out.push(RouteDeclaration {
+                    source: std::mem::take(buf),
+                    line: *start_line,
+                });
                 active = None;
             }
         } else if is_top_level && trimmed.starts_with("route ") {
             let mut buf = raw.to_string();
             if route_declaration_complete(&buf)? {
-                out.push(RouteDeclaration { source: buf, line: line_idx + 1 });
+                out.push(RouteDeclaration {
+                    source: buf,
+                    line: line_idx + 1,
+                });
             } else {
                 active = Some((line_idx + 1, std::mem::take(&mut buf)));
             }
@@ -65,9 +77,7 @@ fn route_termination_error(
         )));
     }
     Ok(CompileError::Syntax(match next_decl_line {
-        Some(line) => format!(
-            "line {start_line}: incomplete route declaration before line {line}"
-        ),
+        Some(line) => format!("line {start_line}: incomplete route declaration before line {line}"),
         None => format!("line {start_line}: incomplete route declaration"),
     }))
 }
@@ -148,4 +158,3 @@ fn update_brace_depth(line: &str, mut depth: i32) -> Result<i32, CompileError> {
     }
     Ok(depth)
 }
-

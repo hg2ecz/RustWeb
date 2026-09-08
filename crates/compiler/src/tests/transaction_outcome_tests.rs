@@ -8,7 +8,8 @@ query fn record(tx: Transaction) -> Result<Changed, DbError> sql {
 
 #[test]
 fn captured_transaction_outcome_is_exhaustively_matchable() {
-    let src = format!(r#"
+    let src = format!(
+        r#"
 {QUERY}
 critical Payment {{
     transaction
@@ -26,13 +27,15 @@ action fn charge(ctx: ActionContext, db: Db) -> Result<Json, PageError> critical
     }}
 }}
 route charge POST "/charge" auth critical Payment idempotent => charge;
-"#);
+"#
+    );
     compile_source(&src).expect("critical idempotent transaction outcome should compile");
 }
 
 #[test]
 fn idempotent_critical_transaction_requires_outcome_capture() {
-    let src = format!(r#"
+    let src = format!(
+        r#"
 {QUERY}
 critical Payment {{
     transaction
@@ -43,14 +46,16 @@ action fn charge(ctx: ActionContext, db: Db) -> Result<Json, PageError> critical
     return Ok(json(true));
 }}
 route charge POST "/charge" auth critical Payment idempotent => charge;
-"#);
+"#
+    );
     let error = compile_source(&src).expect_err("outcome capture must be mandatory");
     assert!(error.to_string().contains("SEC-A10-024"), "{error}");
 }
 
 #[test]
 fn idempotent_critical_transaction_requires_outcome_match() {
-    let src = format!(r#"
+    let src = format!(
+        r#"
 {QUERY}
 critical Payment {{
     transaction
@@ -61,7 +66,8 @@ action fn charge(ctx: ActionContext, db: Db) -> Result<Json, PageError> critical
     return Ok(json(true));
 }}
 route charge POST "/charge" auth critical Payment idempotent => charge;
-"#);
+"#
+    );
     let error = compile_source(&src).expect_err("outcome match must be mandatory");
     assert!(error.to_string().contains("SEC-A10-025"), "{error}");
 }

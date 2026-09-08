@@ -1,5 +1,5 @@
-use super::{canonical_local_username, LocalUserStore};
-use crate::{validate_memberships, AuthError, TenantId};
+use super::{LocalUserStore, canonical_local_username};
+use crate::{AuthError, TenantId, validate_memberships};
 use data::{BindSet, ColumnSpec, DbScalarType, DbValue, PreparedSql, RowShape};
 
 impl LocalUserStore {
@@ -44,7 +44,11 @@ impl LocalUserStore {
     ) -> Result<(), AuthError> {
         let username = canonical_local_username(username)?;
         validate_memberships(memberships)?;
-        let mut tx = self.db.begin().await.map_err(|_| AuthError::StoreUnavailable)?;
+        let mut tx = self
+            .db
+            .begin()
+            .await
+            .map_err(|_| AuthError::StoreUnavailable)?;
         let mut b = BindSet::new();
         b.insert("username", DbValue::String(username.clone()))
             .map_err(|_| AuthError::Internal)?;
@@ -84,6 +88,4 @@ impl LocalUserStore {
         .map_err(|_| AuthError::StoreUnavailable)?;
         tx.commit().await.map_err(|_| AuthError::StoreUnavailable)
     }
-
-
 }

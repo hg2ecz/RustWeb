@@ -167,10 +167,7 @@ fn apply_cgroup_v2(dir: &Path, config: &ResourceLimitConfig) -> Result<(), Resou
 }
 
 #[cfg(not(target_os = "linux"))]
-fn apply_cgroup_v2(
-    _dir: &Path,
-    _config: &ResourceLimitConfig,
-) -> Result<(), ResourceLimitError> {
+fn apply_cgroup_v2(_dir: &Path, _config: &ResourceLimitConfig) -> Result<(), ResourceLimitError> {
     Err(ResourceLimitError::Unsupported(
         "cgroup v2 resource limits are Linux-only",
     ))
@@ -197,7 +194,7 @@ fn write_control(dir: &Path, name: &str, value: &str) -> Result<(), ResourceLimi
 
 #[cfg(test)]
 mod tests {
-    use super::{apply, ResourceLimitConfig, ResourceLimitError};
+    use super::{ResourceLimitConfig, ResourceLimitError, apply};
     use std::path::PathBuf;
 
     #[test]

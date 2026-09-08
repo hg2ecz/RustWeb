@@ -5,4 +5,3 @@ pub enum ObsError {
     #[error("serialization failed")]
     Serialization,
 }
-

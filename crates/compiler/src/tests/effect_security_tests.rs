@@ -25,7 +25,8 @@ action fn edit(ctx: ActionContext, db: Db, id: Int, title: String) -> Result<Jso
 }
 route edit POST "/articles/:id<Int>" form title<String> auth user => edit;
 "#;
-    let program = compile_source(src).expect("effect inference should keep the happy path implicit");
+    let program =
+        compile_source(src).expect("effect inference should keep the happy path implicit");
     let action = program.action("edit").expect("action");
     assert_eq!(
         action.effects,

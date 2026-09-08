@@ -1,17 +1,25 @@
-use crate::{arrays, control_flow, dicts, html_template, sum_match};
+use crate::authorization::parse_and_refine_authorization;
 use crate::diagnostics::CompileError;
 use crate::domain_refinement;
 use crate::domain_symbols::display_domain_symbol;
-use crate::expression::{infer_expr_type, infer_static_expr_type, parse_expr_in_namespace, validate_expr};
+use crate::expression::{
+    infer_expr_type, infer_static_expr_type, parse_expr_in_namespace, validate_expr,
+};
 use crate::handler_types::StaticType;
 use crate::input_security::handler_input_types;
-use crate::response_security::{validate_response_expression, ResponseBoundary};
-use crate::public_projection::parse_public_projection;
 use crate::public_errors::parse_fail_statement;
-use crate::source_syntax::{consume_return_tail, find_statement_end, is_identifier, matching_brace, matching_paren, preview, read_ident, skip_ws_and_comments};
+use crate::public_projection::parse_public_projection;
+use crate::response_security::{ResponseBoundary, validate_response_expression};
+use crate::source_syntax::{
+    consume_return_tail, find_statement_end, is_identifier, matching_brace, matching_paren,
+    preview, read_ident, skip_ws_and_comments,
+};
 use crate::statement_helpers::parse_query_call;
-use crate::authorization::parse_and_refine_authorization;
-use language_core::{FunctionParam, PageMatchArm, Program, QueryCapability, ResourceUse, SourceLocation, Statement, ValueType};
+use crate::{arrays, control_flow, dicts, html_template, sum_match};
+use language_core::{
+    FunctionParam, PageMatchArm, Program, QueryCapability, ResourceUse, SourceLocation, Statement,
+    ValueType,
+};
 
 pub(super) fn parse_page_statements(
     name: &str,
@@ -24,7 +32,10 @@ pub(super) fn parse_page_statements(
     allow_resource: bool,
 ) -> Result<Vec<Statement>, CompileError> {
     let mut known = handler_input_types(name, params, p);
-    known.insert("csrfToken".into(), StaticType::trusted_scalar(ValueType::String));
+    known.insert(
+        "csrfToken".into(),
+        StaticType::trusted_scalar(ValueType::String),
+    );
     known.insert(
         "authPrincipal".into(),
         StaticType::trusted_scalar(ValueType::String),
@@ -33,7 +44,16 @@ pub(super) fn parse_page_statements(
         "authMfaVerified".into(),
         StaticType::trusted_scalar(ValueType::Bool),
     );
-    parse_page_statements_known(name, namespace, body, p, source_name, base_line, allow_resource, &mut known)
+    parse_page_statements_known(
+        name,
+        namespace,
+        body,
+        p,
+        source_name,
+        base_line,
+        allow_resource,
+        &mut known,
+    )
 }
 
 fn parse_page_statements_known(
@@ -140,13 +160,17 @@ fn parse_page_statements_known(
                     domain: refinement.domain,
                     expr: refinement.expr,
                 });
-            } else if let Some((call, ty)) = crate::outbound_calls::parse(rhs, namespace, p, &known, false)? {
+            } else if let Some((call, ty)) =
+                crate::outbound_calls::parse(rhs, namespace, p, &known, false)?
+            {
                 known.insert(local.into(), ty);
                 out.push(Statement::LetOutboundStatus {
                     name: local.into(),
                     call,
                 });
-            } else if let Some((call, ty)) = parse_query_call(rhs, namespace, p, &known, QueryCapability::Db)? {
+            } else if let Some((call, ty)) =
+                parse_query_call(rhs, namespace, p, &known, QueryCapability::Db)?
+            {
                 known.insert(local.into(), ty);
                 out.push(Statement::LetQuery {
                     name: local.into(),
@@ -169,53 +193,108 @@ fn parse_page_statements_known(
             let mut arms = Vec::new();
             for arm in parsed.arms {
                 let mut arm_known = known.clone();
-                let arm_base = base_line + body[..arm.body_offset].bytes().filter(|byte| *byte == b'\n').count();
+                let arm_base = base_line
+                    + body[..arm.body_offset]
+                        .bytes()
+                        .filter(|byte| *byte == b'\n')
+                        .count();
                 let statements = parse_page_statements_known(
-                    name, namespace, &arm.body, p, source_name, arm_base, false, &mut arm_known,
+                    name,
+                    namespace,
+                    &arm.body,
+                    p,
+                    source_name,
+                    arm_base,
+                    false,
+                    &mut arm_known,
                 )?;
-                arms.push(PageMatchArm { variant: arm.variant, statements });
+                arms.push(PageMatchArm {
+                    variant: arm.variant,
+                    statements,
+                });
             }
-            out.push(Statement::Match { expr: parsed.expr, enum_id: parsed.enum_id, arms });
+            out.push(Statement::Match {
+                expr: parsed.expr,
+                enum_id: parsed.enum_id,
+                arms,
+            });
             cursor = parsed.close + 1;
             continue;
         }
         if body[cursor..].starts_with("while ") {
-            let (condition, statements, close) = control_flow::parse_while_block("page", name, namespace, body, cursor, &known, p)?;
-            out.push(Statement::While { condition, statements });
+            let (condition, statements, close) =
+                control_flow::parse_while_block("page", name, namespace, body, cursor, &known, p)?;
+            out.push(Statement::While {
+                condition,
+                statements,
+            });
             cursor = close + 1;
             continue;
         }
         if body[cursor..].starts_with("if ") {
-            let (condition, statements, close) = control_flow::parse_if_block("page", name, namespace, body, cursor, &known, p)?;
-            out.push(Statement::If { condition, statements });
+            let (condition, statements, close) =
+                control_flow::parse_if_block("page", name, namespace, body, cursor, &known, p)?;
+            out.push(Statement::If {
+                condition,
+                statements,
+            });
             cursor = close + 1;
             continue;
         }
         if body[cursor..].starts_with("set ") {
             let end = find_statement_end(body, cursor)?;
             let text = body[cursor + 4..end].trim().trim_end_matches(';').trim();
-            if text.split_once('=').map(|(lhs, _)| lhs.contains('[')).unwrap_or(false) {
-                let target = text.split_once('=').map(|(lhs, _)| lhs.trim()).unwrap_or("");
+            if text
+                .split_once('=')
+                .map(|(lhs, _)| lhs.contains('['))
+                .unwrap_or(false)
+            {
+                let target = text
+                    .split_once('=')
+                    .map(|(lhs, _)| lhs.trim())
+                    .unwrap_or("");
                 let collection = target.split('[').next().unwrap_or("").trim();
                 match known.get(collection) {
                     Some(value) if value.is_scalar(ValueType::F32Array) => {
-                        let (array, index, value) = arrays::parse_f32_array_set("page", name, text, namespace, &known, p)?;
-                        out.push(Statement::F32ArraySet { array, index, value });
+                        let (array, index, value) =
+                            arrays::parse_f32_array_set("page", name, text, namespace, &known, p)?;
+                        out.push(Statement::F32ArraySet {
+                            array,
+                            index,
+                            value,
+                        });
                     }
                     Some(value) if value.is_scalar(ValueType::StringDict) => {
-                        let (dict, key, value) = dicts::parse_string_dict_set("page", name, text, namespace, &known, p)?;
+                        let (dict, key, value) =
+                            dicts::parse_string_dict_set("page", name, text, namespace, &known, p)?;
                         out.push(Statement::StringDictSet { dict, key, value });
                     }
-                    _ => return Err(CompileError::Syntax(format!("page `{name}` set target `{collection}` is not a mutable collection"))),
+                    _ => {
+                        return Err(CompileError::Syntax(format!(
+                            "page `{name}` set target `{collection}` is not a mutable collection"
+                        )));
+                    }
                 }
             } else {
-                let (target, rhs) = text.split_once('=').ok_or_else(|| CompileError::Syntax(format!("page `{name}` set requires =")))?;
+                let (target, rhs) = text
+                    .split_once('=')
+                    .ok_or_else(|| CompileError::Syntax(format!("page `{name}` set requires =")))?;
                 let target = target.trim();
-                let expected = known.get(target).cloned().ok_or_else(|| CompileError::UnknownVariable(target.into()))?;
+                let expected = known
+                    .get(target)
+                    .cloned()
+                    .ok_or_else(|| CompileError::UnknownVariable(target.into()))?;
                 let expr = parse_expr_in_namespace(rhs.trim(), namespace, p)?;
                 validate_expr(&expr, &known, p)?;
-                if infer_static_expr_type(&expr, &known, p)? != expected { return Err(CompileError::Syntax(format!("page `{name}` set `{target}` type mismatch"))); }
-                out.push(Statement::Set { name: target.into(), expr });
+                if infer_static_expr_type(&expr, &known, p)? != expected {
+                    return Err(CompileError::Syntax(format!(
+                        "page `{name}` set `{target}` type mismatch"
+                    )));
+                }
+                out.push(Statement::Set {
+                    name: target.into(),
+                    expr,
+                });
             }
             cursor = end + 1;
             continue;
@@ -223,7 +302,8 @@ fn parse_page_statements_known(
         if body[cursor..].starts_with("authorize ") {
             let end = find_statement_end(body, cursor)?;
             let text = body[cursor..end].trim().trim_end_matches(';').trim();
-            let rule = parse_and_refine_authorization(text, &mut *known, p, &format!("page `{name}`"))?;
+            let rule =
+                parse_and_refine_authorization(text, &mut *known, p, &format!("page `{name}`"))?;
             out.push(Statement::Authorize(rule));
             cursor = end + 1;
             continue;
@@ -339,4 +419,3 @@ fn parse_page_statements_known(
     }
     Ok(out)
 }
-

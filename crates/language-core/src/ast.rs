@@ -1,6 +1,6 @@
-use crate::{BuiltinFunction, ObjectAuthorization, PublicError, PublicProjection};
 use crate::values::{F32Value, FunctionParam, ValueType};
 use crate::web_types::FlashMessage;
+use crate::{BuiltinFunction, ObjectAuthorization, PublicError, PublicProjection};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum BinaryOp {
     Add,
@@ -27,9 +27,17 @@ pub enum Expr {
     String(String),
     Int(i64),
     F32(F32Value),
-    F32ArrayNew { len: Box<Expr>, fill: Box<Expr> },
-    CollectionIndex { collection: String, index: Box<Expr> },
-    CollectionLen { collection: String },
+    F32ArrayNew {
+        len: Box<Expr>,
+        fill: Box<Expr>,
+    },
+    CollectionIndex {
+        collection: String,
+        index: Box<Expr>,
+    },
+    CollectionLen {
+        collection: String,
+    },
     Bool(bool),
     EnumLiteral {
         enum_id: u16,
@@ -156,12 +164,32 @@ pub struct OutboundCall {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ComputeStatement {
-    Let { name: String, expr: Expr },
-    Set { name: String, expr: Expr },
-    F32ArraySet { array: String, index: Expr, value: Expr },
-    StringDictSet { dict: String, key: Expr, value: Expr },
-    While { condition: Expr, statements: Vec<ComputeStatement> },
-    If { condition: Expr, statements: Vec<ComputeStatement> },
+    Let {
+        name: String,
+        expr: Expr,
+    },
+    Set {
+        name: String,
+        expr: Expr,
+    },
+    F32ArraySet {
+        array: String,
+        index: Expr,
+        value: Expr,
+    },
+    StringDictSet {
+        dict: String,
+        key: Expr,
+        value: Expr,
+    },
+    While {
+        condition: Expr,
+        statements: Vec<ComputeStatement>,
+    },
+    If {
+        condition: Expr,
+        statements: Vec<ComputeStatement>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -182,17 +210,38 @@ pub enum Statement {
         name: String,
         expr: Expr,
     },
-    LetValidated { name: String, domain: u16, expr: Expr },
-    Set { name: String, expr: Expr },
-    While { condition: Expr, statements: Vec<ComputeStatement> },
-    If { condition: Expr, statements: Vec<ComputeStatement> },
-    Match { expr: Expr, enum_id: u16, arms: Vec<PageMatchArm> },
+    LetValidated {
+        name: String,
+        domain: u16,
+        expr: Expr,
+    },
+    Set {
+        name: String,
+        expr: Expr,
+    },
+    While {
+        condition: Expr,
+        statements: Vec<ComputeStatement>,
+    },
+    If {
+        condition: Expr,
+        statements: Vec<ComputeStatement>,
+    },
+    Match {
+        expr: Expr,
+        enum_id: u16,
+        arms: Vec<PageMatchArm>,
+    },
     F32ArraySet {
         array: String,
         index: Expr,
         value: Expr,
     },
-    StringDictSet { dict: String, key: Expr, value: Expr },
+    StringDictSet {
+        dict: String,
+        key: Expr,
+        value: Expr,
+    },
     LetQuery {
         name: String,
         call: QueryCall,
@@ -240,17 +289,38 @@ pub enum ActionStatement {
         name: String,
         expr: Expr,
     },
-    LetValidated { name: String, domain: u16, expr: Expr },
-    Set { name: String, expr: Expr },
-    While { condition: Expr, statements: Vec<ComputeStatement> },
-    If { condition: Expr, statements: Vec<ComputeStatement> },
-    Match { expr: Expr, enum_id: u16, arms: Vec<ActionMatchArm> },
+    LetValidated {
+        name: String,
+        domain: u16,
+        expr: Expr,
+    },
+    Set {
+        name: String,
+        expr: Expr,
+    },
+    While {
+        condition: Expr,
+        statements: Vec<ComputeStatement>,
+    },
+    If {
+        condition: Expr,
+        statements: Vec<ComputeStatement>,
+    },
+    Match {
+        expr: Expr,
+        enum_id: u16,
+        arms: Vec<ActionMatchArm>,
+    },
     F32ArraySet {
         array: String,
         index: Expr,
         value: Expr,
     },
-    StringDictSet { dict: String, key: Expr, value: Expr },
+    StringDictSet {
+        dict: String,
+        key: Expr,
+        value: Expr,
+    },
     LetQuery {
         name: String,
         call: QueryCall,

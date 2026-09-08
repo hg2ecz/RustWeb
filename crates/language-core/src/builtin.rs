@@ -185,7 +185,9 @@ impl BuiltinFunction {
             Self::Redact => ("redact", 1, 1, 2, false),
         };
         let execution_kind = match self {
-            Self::RegexMatch | Self::RegexReplace | Self::RegexCaptures => BuiltinExecutionKind::Regex,
+            Self::RegexMatch | Self::RegexReplace | Self::RegexCaptures => {
+                BuiltinExecutionKind::Regex
+            }
             _ => BuiltinExecutionKind::Simple,
         };
         BuiltinMetadata {
@@ -215,4 +217,3 @@ impl BuiltinFunction {
         count >= metadata.min_args && count <= metadata.max_args
     }
 }
-

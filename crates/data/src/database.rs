@@ -1,4 +1,7 @@
-use crate::{BindSet, DataError, DbBackend, DbConfig, DbRow, DbScalarType, DbValue, ExecuteResult, PreparedSql, RowShape};
+use crate::{
+    BindSet, DataError, DbBackend, DbConfig, DbRow, DbScalarType, DbValue, ExecuteResult,
+    PreparedSql, RowShape,
+};
 use sqlx::any::{AnyPoolOptions, install_default_drivers};
 use sqlx::{Any, AnyPool, AssertSqlSafe, Column, Row, Transaction};
 use std::collections::{HashMap, HashSet};
@@ -274,4 +277,3 @@ fn validate_db_transport(
     }
     Ok(())
 }
-

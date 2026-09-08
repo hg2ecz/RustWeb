@@ -37,14 +37,20 @@ pub(crate) fn eval_binary_value(
         (Value::F32(a), BinaryOp::Add, Value::F32(b)) => finite_f32(a.get() + b.get()),
         (Value::F32(a), BinaryOp::Sub, Value::F32(b)) => finite_f32(a.get() - b.get()),
         (Value::F32(a), BinaryOp::Mul, Value::F32(b)) => finite_f32(a.get() * b.get()),
-        (Value::F32(_), BinaryOp::Div | BinaryOp::Rem, Value::F32(b)) if b.get() == 0.0 => Err(AppError::Internal),
+        (Value::F32(_), BinaryOp::Div | BinaryOp::Rem, Value::F32(b)) if b.get() == 0.0 => {
+            Err(AppError::Internal)
+        }
         (Value::F32(a), BinaryOp::Div, Value::F32(b)) => finite_f32(a.get() / b.get()),
         (Value::F32(a), BinaryOp::Rem, Value::F32(b)) => finite_f32(a.get() % b.get()),
 
         (Value::Decimal(a), BinaryOp::Add, Value::Decimal(b)) => checked_decimal(a.checked_add(b)),
         (Value::Decimal(a), BinaryOp::Sub, Value::Decimal(b)) => checked_decimal(a.checked_sub(b)),
         (Value::Decimal(a), BinaryOp::Mul, Value::Decimal(b)) => checked_decimal(a.checked_mul(b)),
-        (Value::Decimal(_), BinaryOp::Div | BinaryOp::Rem, Value::Decimal(b)) if b == Decimal::ZERO => Err(AppError::Internal),
+        (Value::Decimal(_), BinaryOp::Div | BinaryOp::Rem, Value::Decimal(b))
+            if b == Decimal::ZERO =>
+        {
+            Err(AppError::Internal)
+        }
         (Value::Decimal(a), BinaryOp::Div, Value::Decimal(b)) => checked_decimal(a.checked_div(b)),
         (Value::Decimal(a), BinaryOp::Rem, Value::Decimal(b)) => Ok(Value::Decimal(a % b)),
 
@@ -87,12 +93,18 @@ fn checked_decimal(value: Option<Decimal>) -> Result<Value, AppError> {
 
 fn checked_shift(value: i64, amount: i64, left: bool) -> Result<Value, AppError> {
     let amount = u32::try_from(amount).map_err(|_| AppError::BadRequest)?;
-    let shifted = if left { value.checked_shl(amount) } else { value.checked_shr(amount) };
+    let shifted = if left {
+        value.checked_shl(amount)
+    } else {
+        value.checked_shr(amount)
+    };
     shifted.map(Value::Int).ok_or(AppError::BadRequest)
 }
 
 fn finite_f32(value: f32) -> Result<Value, AppError> {
-    F32Value::new(value).map(Value::F32).ok_or(AppError::Internal)
+    F32Value::new(value)
+        .map(Value::F32)
+        .ok_or(AppError::Internal)
 }
 
 #[cfg(test)]
@@ -101,9 +113,21 @@ mod tests {
 
     #[test]
     fn remainder_shift_and_bitwise_int_operations_are_checked() {
-        assert_eq!(eval_binary_value(Value::Int(17), BinaryOp::Rem, Value::Int(5)).unwrap(), Value::Int(2));
-        assert_eq!(eval_binary_value(Value::Int(3), BinaryOp::ShiftLeft, Value::Int(2)).unwrap(), Value::Int(12));
-        assert_eq!(eval_binary_value(Value::Int(0b1100), BinaryOp::BitAnd, Value::Int(0b1010)).unwrap(), Value::Int(0b1000));
-        assert_eq!(eval_binary_value(Value::Int(1), BinaryOp::ShiftLeft, Value::Int(64)), Err(AppError::BadRequest));
+        assert_eq!(
+            eval_binary_value(Value::Int(17), BinaryOp::Rem, Value::Int(5)).unwrap(),
+            Value::Int(2)
+        );
+        assert_eq!(
+            eval_binary_value(Value::Int(3), BinaryOp::ShiftLeft, Value::Int(2)).unwrap(),
+            Value::Int(12)
+        );
+        assert_eq!(
+            eval_binary_value(Value::Int(0b1100), BinaryOp::BitAnd, Value::Int(0b1010)).unwrap(),
+            Value::Int(0b1000)
+        );
+        assert_eq!(
+            eval_binary_value(Value::Int(1), BinaryOp::ShiftLeft, Value::Int(64)),
+            Err(AppError::BadRequest)
+        );
     }
 }

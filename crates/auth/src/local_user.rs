@@ -1,4 +1,4 @@
-use crate::{random_hex, AuthError, TenantId};
+use crate::{AuthError, TenantId, random_hex};
 use std::time::Duration;
 
 // --- M25 local authentication -------------------------------------------------
@@ -224,7 +224,6 @@ impl LocalUserStore {
             })
             .collect()
     }
-
 
     pub async fn set_roles(&self, username: &str, roles: &[String]) -> Result<(), AuthError> {
         let username = canonical_local_username(username)?;
@@ -594,4 +593,3 @@ mod local_auth_tests {
         let _ = std::fs::remove_file(path);
     }
 }
-

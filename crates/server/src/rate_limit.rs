@@ -93,14 +93,20 @@ impl RouteRateLimiter {
             .as_secs();
         let bucket = now / policy.window_secs;
         let expires_at = (bucket + 1).saturating_mul(policy.window_secs);
-        let raw = format!("rate:{policy_name}:{bucket}:{}", super::stable_key_hash(&subject));
+        let raw = format!(
+            "rate:{policy_name}:{bucket}:{}",
+            super::stable_key_hash(&subject)
+        );
         let count = if let Some(redis) = &self.redis {
             redis
                 .increment_windowed(&raw, policy.window_secs.saturating_add(1))
                 .await
                 .map_err(|err| RateLimitError::Backend(err.to_string()))? as u64
         } else {
-            let mut map = self.memory.lock().map_err(|_| RateLimitError::LockPoisoned)?;
+            let mut map = self
+                .memory
+                .lock()
+                .map_err(|_| RateLimitError::LockPoisoned)?;
             if map.len() >= 100_000 {
                 map.retain(|_, (expires, _)| *expires > now);
             }

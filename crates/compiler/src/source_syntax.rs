@@ -186,5 +186,9 @@ pub(crate) fn consume_return_tail(body: &str, mut cursor: usize) -> Result<usize
 }
 
 pub(crate) fn preview(value: &str) -> String {
-    value.chars().take(40).collect::<String>().replace('\n', " ")
+    value
+        .chars()
+        .take(40)
+        .collect::<String>()
+        .replace('\n', " ")
 }

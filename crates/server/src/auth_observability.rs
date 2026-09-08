@@ -1,11 +1,6 @@
 use observability::{ActivityEvent, audit_log, json_line, utc_timestamp};
 
-pub(super) fn audit_auth_activity(
-    request_id: &str,
-    actor: &str,
-    outcome: &str,
-    client_ip: &str,
-) {
+pub(super) fn audit_auth_activity(request_id: &str, actor: &str, outcome: &str, client_ip: &str) {
     audit_auth_activity_action(request_id, actor, "login", outcome, client_ip);
 }
 

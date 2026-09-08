@@ -1,7 +1,9 @@
 use language_core::{AppError, Program, ValidationKind, Value};
 
 pub(crate) fn validate(program: &Program, domain: u16, value: Value) -> Result<Value, AppError> {
-    let definition = program.domain_type_by_id(domain).ok_or(AppError::Internal)?;
+    let definition = program
+        .domain_type_by_id(domain)
+        .ok_or(AppError::Internal)?;
     if definition
         .constraints
         .iter()
@@ -21,8 +23,9 @@ fn matches_constraint(constraint: &ValidationKind, value: &Value) -> bool {
         }
         (ValidationKind::Range { min, max }, Value::Int(number)) => number >= min && number <= max,
         (ValidationKind::Items { .. }, _) => false,
-        (ValidationKind::Pattern { regex }, Value::String(text)) => regex::Regex::new(regex)
-            .is_ok_and(|compiled| compiled.is_match(text)),
+        (ValidationKind::Pattern { regex }, Value::String(text)) => {
+            regex::Regex::new(regex).is_ok_and(|compiled| compiled.is_match(text))
+        }
         (ValidationKind::SameAs { .. }, _) => false,
         _ => false,
     }
@@ -59,6 +62,9 @@ mod tests {
             ValueType::String,
             vec![ValidationKind::Length { min: 3, max: 5 }],
         );
-        assert_eq!(validate(&program, 0, Value::String("xx".into())), Err(AppError::BadRequest));
+        assert_eq!(
+            validate(&program, 0, Value::String("xx".into())),
+            Err(AppError::BadRequest)
+        );
     }
 }

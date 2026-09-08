@@ -1,6 +1,6 @@
+use crate::http_io::HttpRequest;
 use crate::response_headers::HeaderName;
 use crate::{Response, WebSecurityCliConfig};
-use crate::http_io::HttpRequest;
 use ipnet::IpNet;
 use language_core::{AppError, HttpMethod, Program};
 use runtime::route_meta_for_request;
@@ -14,9 +14,8 @@ pub(super) fn effective_client_ip(
     let forwarded = request.header("forwarded");
     let xff = request.header("x-forwarded-for");
     let xri = request.header("x-real-ip");
-    let supplied = usize::from(forwarded.is_some())
-        + usize::from(xff.is_some())
-        + usize::from(xri.is_some());
+    let supplied =
+        usize::from(forwarded.is_some()) + usize::from(xff.is_some()) + usize::from(xri.is_some());
     if supplied > 1 {
         return Err(());
     }
@@ -225,8 +224,7 @@ pub(super) fn apply_cors_headers(
     origin: Option<&str>,
     web: &WebSecurityCliConfig,
 ) {
-    if response.has_header(HeaderName::AccessControlAllowOrigin)
-    {
+    if response.has_header(HeaderName::AccessControlAllowOrigin) {
         return;
     }
     let Some(origin) = origin else { return };

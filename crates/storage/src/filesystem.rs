@@ -206,7 +206,10 @@ impl AppFs {
         .map_err(map_open_error)
     }
 
-    pub(crate) async fn create_staged(&self, destination: &str) -> Result<(String, BoundedFile), FsError> {
+    pub(crate) async fn create_staged(
+        &self,
+        destination: &str,
+    ) -> Result<(String, BoundedFile), FsError> {
         self.validate(destination)?;
         let parent = Path::new(destination)
             .parent()

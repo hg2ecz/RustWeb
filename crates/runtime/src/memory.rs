@@ -36,7 +36,6 @@ pub(super) fn estimate_value_bytes(v: &Value) -> u64 {
     }
 }
 
-
 pub(super) fn estimate_string_dict_bytes(items: &BTreeMap<String, String>) -> u64 {
     items
         .iter()

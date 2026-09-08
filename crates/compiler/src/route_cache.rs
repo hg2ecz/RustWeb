@@ -21,7 +21,9 @@ pub(super) fn parse_public_cache(
         .get(*cursor + 3)
         .ok_or_else(|| CompileError::Syntax(format!("route `{route_name}` cache ttl expected")))?
         .parse()
-        .map_err(|_| CompileError::Syntax(format!("route `{route_name}` cache ttl must be integer")))?;
+        .map_err(|_| {
+            CompileError::Syntax(format!("route `{route_name}` cache ttl must be integer"))
+        })?;
     if ttl_secs == 0 {
         return Err(CompileError::Syntax(format!(
             "route `{route_name}` cache ttl must be > 0"

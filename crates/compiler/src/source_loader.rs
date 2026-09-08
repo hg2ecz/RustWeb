@@ -22,7 +22,6 @@ impl SourceUnit {
     }
 }
 
-
 pub(crate) fn source_error(unit: &SourceUnit, err: CompileError) -> CompileError {
     if unit.path == Path::new("<memory>") {
         return err;
@@ -45,7 +44,9 @@ pub(crate) fn load_application(entry: &Path) -> Result<Vec<SourceUnit>, CompileE
     let entry = entry.canonicalize()?;
     let app_root = entry
         .parent()
-        .ok_or_else(|| CompileError::Syntax("application entrypoint has no parent directory".into()))?
+        .ok_or_else(|| {
+            CompileError::Syntax("application entrypoint has no parent directory".into())
+        })?
         .to_path_buf();
     let mut units = Vec::new();
     let mut seen = HashSet::new();
@@ -87,7 +88,10 @@ pub(crate) fn parse_mod_declarations(source: &str) -> Result<Vec<Vec<String>>, C
             )));
         };
         let raw_path = raw_path.trim();
-        if raw_path.starts_with("self::") || raw_path.starts_with("super::") || raw_path.starts_with("crate::") {
+        if raw_path.starts_with("self::")
+            || raw_path.starts_with("super::")
+            || raw_path.starts_with("crate::")
+        {
             return Err(CompileError::Syntax(format!(
                 "line {}: module path `{raw_path}` must be application-root relative; `self::`, `super::`, and `crate::` are not supported",
                 idx + 1
@@ -99,7 +103,11 @@ pub(crate) fn parse_mod_declarations(source: &str) -> Result<Vec<Vec<String>>, C
                 idx + 1
             )));
         }
-        let segments: Vec<String> = raw_path.split("::").map(str::trim).map(str::to_owned).collect();
+        let segments: Vec<String> = raw_path
+            .split("::")
+            .map(str::trim)
+            .map(str::to_owned)
+            .collect();
         if segments.is_empty() || segments.iter().any(|segment| !is_identifier(segment)) {
             return Err(CompileError::Syntax(format!(
                 "line {}: invalid module path `{raw_path}`",

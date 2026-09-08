@@ -289,7 +289,6 @@ impl RequestTimer {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::Metrics;

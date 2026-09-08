@@ -222,4 +222,3 @@ pub(crate) fn validate_redis_config(config: &RedisConfig) -> Result<(), DataErro
     }
     Ok(())
 }
-

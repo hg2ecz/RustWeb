@@ -1,11 +1,11 @@
-use crate::response_headers::HeaderName;
 use crate::StaticAssets;
 use crate::http_io::{HttpRequest, Response};
+use crate::response_headers::HeaderName;
 use crate::server_errors::StaticPrefixError;
 use language_core::{Route, RouteSegment};
 use sha2::{Digest, Sha256};
-use storage::{AppFs, inspect_image};
 use std::path::Path;
+use storage::{AppFs, inspect_image};
 
 pub(super) fn validate_static_prefix(raw: &str) -> Result<String, StaticPrefixError> {
     if !raw.starts_with('/')
@@ -103,7 +103,10 @@ pub(super) async fn serve_media_image(
         "public, max-age=31536000, immutable",
     );
     r.push_header(HeaderName::Etag, etag);
-    r.push_header(HeaderName::ContentDisposition, language_core::ContentDisposition::Inline.to_string());
+    r.push_header(
+        HeaderName::ContentDisposition,
+        language_core::ContentDisposition::Inline.to_string(),
+    );
     if method == "HEAD" {
         r.content_length_override = Some(bytes.len());
         r.body.clear();
@@ -112,7 +115,11 @@ pub(super) async fn serve_media_image(
     r
 }
 
-pub(super) async fn serve_static_asset(assets: &StaticAssets, request: &HttpRequest, path: &str) -> Response {
+pub(super) async fn serve_static_asset(
+    assets: &StaticAssets,
+    request: &HttpRequest,
+    path: &str,
+) -> Response {
     if request.method != "GET" && request.method != "HEAD" {
         let mut r = Response::text(
             405,
@@ -311,4 +318,3 @@ pub(super) fn encoding_accepted(header: &str, wanted: &str) -> bool {
     }
     wildcard.unwrap_or(0.0) > 0.0
 }
-

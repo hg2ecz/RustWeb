@@ -1,5 +1,5 @@
-use crate::{builtin_registry, lexer, CompileError};
 use crate::module_namespace::resolve;
+use crate::{CompileError, builtin_registry, lexer};
 use language_core::{BinaryOp, Expr, Program};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -57,7 +57,11 @@ pub(super) fn parse_expr_in_namespace(
 }
 
 fn binary(left: Expr, op: BinaryOp, right: Expr) -> Expr {
-    Expr::Binary { left: Box::new(left), op, right: Box::new(right) }
+    Expr::Binary {
+        left: Box::new(left),
+        op,
+        right: Box::new(right),
+    }
 }
 
 struct ExprParser<'a> {
@@ -68,11 +72,17 @@ struct ExprParser<'a> {
 }
 impl ExprParser<'_> {
     fn parse_logical_or(&mut self) -> Result<Expr, CompileError> {
-        self.parse_left_associative(Self::parse_logical_and, &[(ExprToken::OrOr, BinaryOp::LogicalOr)])
+        self.parse_left_associative(
+            Self::parse_logical_and,
+            &[(ExprToken::OrOr, BinaryOp::LogicalOr)],
+        )
     }
 
     fn parse_logical_and(&mut self) -> Result<Expr, CompileError> {
-        self.parse_left_associative(Self::parse_bit_or, &[(ExprToken::AndAnd, BinaryOp::LogicalAnd)])
+        self.parse_left_associative(
+            Self::parse_bit_or,
+            &[(ExprToken::AndAnd, BinaryOp::LogicalAnd)],
+        )
     }
 
     fn parse_bit_or(&mut self) -> Result<Expr, CompileError> {
@@ -104,9 +114,18 @@ impl ExprParser<'_> {
             left = binary(left, op, right);
             if matches!(
                 self.tokens.get(self.pos),
-                Some(ExprToken::Lt | ExprToken::Le | ExprToken::Gt | ExprToken::Ge | ExprToken::EqEq | ExprToken::Ne)
+                Some(
+                    ExprToken::Lt
+                        | ExprToken::Le
+                        | ExprToken::Gt
+                        | ExprToken::Ge
+                        | ExprToken::EqEq
+                        | ExprToken::Ne
+                )
             ) {
-                return Err(CompileError::Syntax("chained comparisons are not supported".into()));
+                return Err(CompileError::Syntax(
+                    "chained comparisons are not supported".into(),
+                ));
             }
         }
         Ok(left)
@@ -125,7 +144,10 @@ impl ExprParser<'_> {
     fn parse_add_sub(&mut self) -> Result<Expr, CompileError> {
         self.parse_left_associative(
             Self::parse_mul_div_rem,
-            &[(ExprToken::Plus, BinaryOp::Add), (ExprToken::Minus, BinaryOp::Sub)],
+            &[
+                (ExprToken::Plus, BinaryOp::Add),
+                (ExprToken::Minus, BinaryOp::Sub),
+            ],
         )
     }
 
@@ -155,7 +177,10 @@ impl ExprParser<'_> {
     ) -> Result<Expr, CompileError> {
         let mut left = next(self)?;
         loop {
-            let Some((_, op)) = operators.iter().find(|(token, _)| self.tokens.get(self.pos) == Some(token)) else {
+            let Some((_, op)) = operators
+                .iter()
+                .find(|(token, _)| self.tokens.get(self.pos) == Some(token))
+            else {
                 break;
             };
             self.pos += 1;
@@ -179,9 +204,18 @@ impl ExprParser<'_> {
             ExprToken::Minus => {
                 let inner = self.parse_primary()?;
                 match inner {
-                    Expr::Int(v) => v.checked_neg().map(Expr::Int).ok_or_else(|| CompileError::Syntax("integer out of range".into())),
-                    Expr::F32(v) => language_core::F32Value::new(-v.get()).map(Expr::F32).ok_or_else(|| CompileError::Syntax("F32 literal must be finite and in range".into())),
-                    _ => Err(CompileError::Syntax("unary - requires Int or F32 literal".into())),
+                    Expr::Int(v) => v
+                        .checked_neg()
+                        .map(Expr::Int)
+                        .ok_or_else(|| CompileError::Syntax("integer out of range".into())),
+                    Expr::F32(v) => language_core::F32Value::new(-v.get())
+                        .map(Expr::F32)
+                        .ok_or_else(|| {
+                            CompileError::Syntax("F32 literal must be finite and in range".into())
+                        }),
+                    _ => Err(CompileError::Syntax(
+                        "unary - requires Int or F32 literal".into(),
+                    )),
                 }
             }
             ExprToken::Ident(v) if v == "true" => Ok(Expr::Bool(true)),
@@ -211,7 +245,9 @@ impl ExprParser<'_> {
                     self.pos += 1;
                     let inner = self.parse_logical_or()?;
                     if self.tokens.get(self.pos) != Some(&ExprToken::RParen) {
-                        return Err(CompileError::Syntax("slug(...) expects exactly one expression".into()));
+                        return Err(CompileError::Syntax(
+                            "slug(...) expects exactly one expression".into(),
+                        ));
                     }
                     self.pos += 1;
                     Ok(Expr::Slugify(Box::new(inner)))
@@ -219,24 +255,37 @@ impl ExprParser<'_> {
                     self.pos += 1;
                     let len = self.parse_logical_or()?;
                     if self.tokens.get(self.pos) != Some(&ExprToken::Comma) {
-                        return Err(CompileError::Syntax("arrayF32(len, fill) expects two expressions".into()));
+                        return Err(CompileError::Syntax(
+                            "arrayF32(len, fill) expects two expressions".into(),
+                        ));
                     }
                     self.pos += 1;
                     let fill = self.parse_logical_or()?;
                     if self.tokens.get(self.pos) != Some(&ExprToken::RParen) {
-                        return Err(CompileError::Syntax("arrayF32(len, fill) expects two expressions".into()));
+                        return Err(CompileError::Syntax(
+                            "arrayF32(len, fill) expects two expressions".into(),
+                        ));
                     }
                     self.pos += 1;
-                    Ok(Expr::F32ArrayNew { len: Box::new(len), fill: Box::new(fill) })
+                    Ok(Expr::F32ArrayNew {
+                        len: Box::new(len),
+                        fill: Box::new(fill),
+                    })
                 } else if v == "len" && self.tokens.get(self.pos) == Some(&ExprToken::LParen) {
                     self.pos += 1;
                     let array = match self.tokens.get(self.pos).cloned() {
                         Some(ExprToken::Ident(name)) => name,
-                        _ => return Err(CompileError::Syntax("len(...) expects a collection variable".into())),
+                        _ => {
+                            return Err(CompileError::Syntax(
+                                "len(...) expects a collection variable".into(),
+                            ));
+                        }
                     };
                     self.pos += 1;
                     if self.tokens.get(self.pos) != Some(&ExprToken::RParen) {
-                        return Err(CompileError::Syntax("len(...) expects exactly one variable".into()));
+                        return Err(CompileError::Syntax(
+                            "len(...) expects exactly one variable".into(),
+                        ));
                     }
                     self.pos += 1;
                     Ok(Expr::CollectionLen { collection: array })
@@ -247,7 +296,10 @@ impl ExprParser<'_> {
                         return Err(CompileError::Syntax("array index missing ]".into()));
                     }
                     self.pos += 1;
-                    Ok(Expr::CollectionIndex { collection: v, index: Box::new(index) })
+                    Ok(Expr::CollectionIndex {
+                        collection: v,
+                        index: Box::new(index),
+                    })
                 } else if self.tokens.get(self.pos) == Some(&ExprToken::Dot) {
                     self.pos += 1;
                     let field = match self.tokens.get(self.pos).cloned() {

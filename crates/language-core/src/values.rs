@@ -1,8 +1,8 @@
+use crate::CredentialPurpose;
 use chrono::{DateTime, NaiveDate, Utc};
 use rust_decimal::Decimal;
 use std::collections::{BTreeMap, HashMap};
 use uuid::Uuid;
-use crate::CredentialPurpose;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ValueType {

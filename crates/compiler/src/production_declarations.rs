@@ -18,7 +18,8 @@ pub(super) fn parse_production_policy(
         }
         if program.production.is_some() {
             return Err(CompileError::Syntax(
-                "only one `production { ... }` policy may be declared across the application".into(),
+                "only one `production { ... }` policy may be declared across the application"
+                    .into(),
             ));
         }
         let open = find_open_brace(source, keyword + "production".len())?;

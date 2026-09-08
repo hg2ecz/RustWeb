@@ -5,29 +5,78 @@ use std::path::PathBuf;
 
 #[derive(Debug)]
 pub(crate) enum RatePolicyConfigError {
-    Read { path: PathBuf, source: io::Error },
-    Syntax { path: PathBuf, line: usize, message: String },
-    MissingField { policy: String, field: &'static str },
-    InvalidNumber { policy: String, field: &'static str, source: std::num::ParseIntError },
-    InvalidLimits { policy: String },
-    UnknownScope { policy: String, scope: String },
-    UnknownKey { policy: String, key: String },
-    UnknownRoutePolicy { route: String, policy: String },
-    PublicUserScopedPolicy { route: String, policy: String },
+    Read {
+        path: PathBuf,
+        source: io::Error,
+    },
+    Syntax {
+        path: PathBuf,
+        line: usize,
+        message: String,
+    },
+    MissingField {
+        policy: String,
+        field: &'static str,
+    },
+    InvalidNumber {
+        policy: String,
+        field: &'static str,
+        source: std::num::ParseIntError,
+    },
+    InvalidLimits {
+        policy: String,
+    },
+    UnknownScope {
+        policy: String,
+        scope: String,
+    },
+    UnknownKey {
+        policy: String,
+        key: String,
+    },
+    UnknownRoutePolicy {
+        route: String,
+        policy: String,
+    },
+    PublicUserScopedPolicy {
+        route: String,
+        policy: String,
+    },
 }
 
 impl fmt::Display for RatePolicyConfigError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Read { path, source } => write!(f, "failed to read rate policy file `{}`: {source}", path.display()),
-            Self::Syntax { path, line, message } => write!(f, "{}:{line} {message}", path.display()),
+            Self::Read { path, source } => write!(
+                f,
+                "failed to read rate policy file `{}`: {source}",
+                path.display()
+            ),
+            Self::Syntax {
+                path,
+                line,
+                message,
+            } => write!(f, "{}:{line} {message}", path.display()),
             Self::MissingField { policy, field } => write!(f, "policy `{policy}` missing {field}"),
-            Self::InvalidNumber { policy, field, source } => write!(f, "policy `{policy}` has invalid {field}: {source}"),
-            Self::InvalidLimits { policy } => write!(f, "policy `{policy}` has invalid limit/window_secs"),
-            Self::UnknownScope { policy, scope } => write!(f, "policy `{policy}` unknown scope `{scope}`"),
+            Self::InvalidNumber {
+                policy,
+                field,
+                source,
+            } => write!(f, "policy `{policy}` has invalid {field}: {source}"),
+            Self::InvalidLimits { policy } => {
+                write!(f, "policy `{policy}` has invalid limit/window_secs")
+            }
+            Self::UnknownScope { policy, scope } => {
+                write!(f, "policy `{policy}` unknown scope `{scope}`")
+            }
             Self::UnknownKey { policy, key } => write!(f, "policy `{policy}` unknown key `{key}`"),
-            Self::UnknownRoutePolicy { route, policy } => write!(f, "route `{route}` requests unknown rate policy `{policy}`"),
-            Self::PublicUserScopedPolicy { route, policy } => write!(f, "public route `{route}` cannot use user-scoped rate policy `{policy}`"),
+            Self::UnknownRoutePolicy { route, policy } => {
+                write!(f, "route `{route}` requests unknown rate policy `{policy}`")
+            }
+            Self::PublicUserScopedPolicy { route, policy } => write!(
+                f,
+                "public route `{route}` cannot use user-scoped rate policy `{policy}`"
+            ),
         }
     }
 }
@@ -44,27 +93,87 @@ impl Error for RatePolicyConfigError {
 
 #[derive(Debug)]
 pub(crate) enum ResourceProfileConfigError {
-    Read { path: PathBuf, source: io::Error },
-    Syntax { path: PathBuf, line: usize, message: String },
-    InvalidNumber { path: PathBuf, line: usize, key: String, source: std::num::ParseIntError },
-    MissingField { profile: String, field: &'static str },
-    ConcurrentOverflow { profile: String, source: std::num::TryFromIntError },
-    ExceedsRequestCeiling { profile: String },
+    Read {
+        path: PathBuf,
+        source: io::Error,
+    },
+    Syntax {
+        path: PathBuf,
+        line: usize,
+        message: String,
+    },
+    InvalidNumber {
+        path: PathBuf,
+        line: usize,
+        key: String,
+        source: std::num::ParseIntError,
+    },
+    MissingField {
+        profile: String,
+        field: &'static str,
+    },
+    ConcurrentOverflow {
+        profile: String,
+        source: std::num::TryFromIntError,
+    },
+    ExceedsRequestCeiling {
+        profile: String,
+    },
     InvalidProfile(runtime::ResourceProfileError),
-    UnknownProfileUse { file: String, line: usize, function: String, profile: String },
+    UnknownProfileUse {
+        file: String,
+        line: usize,
+        function: String,
+        profile: String,
+    },
 }
 
 impl fmt::Display for ResourceProfileConfigError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Read { path, source } => write!(f, "failed to read resource profile file `{}`: {source}", path.display()),
-            Self::Syntax { path, line, message } => write!(f, "{}:{line} {message}", path.display()),
-            Self::InvalidNumber { path, line, key, source } => write!(f, "{}:{line} invalid value for `{key}`: {source}", path.display()),
-            Self::MissingField { profile, field } => write!(f, "resource profile `{profile}` missing `{field}`"),
-            Self::ConcurrentOverflow { profile, source } => write!(f, "resource profile `{profile}` max_concurrent is too large: {source}"),
-            Self::ExceedsRequestCeiling { profile } => write!(f, "resource profile `{profile}` exceeds request hard ceiling"),
-            Self::InvalidProfile(source) => write!(f, "invalid resource profile configuration: {source}"),
-            Self::UnknownProfileUse { file, line, function, profile } => write!(f, "{file}:{line} function `{function}` requests unknown resource profile `{profile}`"),
+            Self::Read { path, source } => write!(
+                f,
+                "failed to read resource profile file `{}`: {source}",
+                path.display()
+            ),
+            Self::Syntax {
+                path,
+                line,
+                message,
+            } => write!(f, "{}:{line} {message}", path.display()),
+            Self::InvalidNumber {
+                path,
+                line,
+                key,
+                source,
+            } => write!(
+                f,
+                "{}:{line} invalid value for `{key}`: {source}",
+                path.display()
+            ),
+            Self::MissingField { profile, field } => {
+                write!(f, "resource profile `{profile}` missing `{field}`")
+            }
+            Self::ConcurrentOverflow { profile, source } => write!(
+                f,
+                "resource profile `{profile}` max_concurrent is too large: {source}"
+            ),
+            Self::ExceedsRequestCeiling { profile } => write!(
+                f,
+                "resource profile `{profile}` exceeds request hard ceiling"
+            ),
+            Self::InvalidProfile(source) => {
+                write!(f, "invalid resource profile configuration: {source}")
+            }
+            Self::UnknownProfileUse {
+                file,
+                line,
+                function,
+                profile,
+            } => write!(
+                f,
+                "{file}:{line} function `{function}` requests unknown resource profile `{profile}`"
+            ),
         }
     }
 }

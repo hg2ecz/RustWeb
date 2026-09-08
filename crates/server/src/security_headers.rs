@@ -10,8 +10,7 @@ impl HtmlCapabilities {
     fn inspect(body: &[u8]) -> Self {
         let lower = String::from_utf8_lossy(body).to_ascii_lowercase();
         Self {
-            stylesheet: lower.contains("rel=\"stylesheet\"")
-                || lower.contains("rel='stylesheet'"),
+            stylesheet: lower.contains("rel=\"stylesheet\"") || lower.contains("rel='stylesheet'"),
             image: lower.contains("<img"),
             media: lower.contains("<audio")
                 || lower.contains("<video")
@@ -32,11 +31,31 @@ pub(super) fn content_security_policy(content_type: &str, body: &[u8]) -> String
     }
 
     let capabilities = HtmlCapabilities::inspect(body);
-    let style_src = if capabilities.stylesheet { "'self'" } else { "'none'" };
-    let image_src = if capabilities.image { "'self'" } else { "'none'" };
-    let media_src = if capabilities.media { "'self'" } else { "'none'" };
-    let font_src = if capabilities.stylesheet { "'self'" } else { "'none'" };
-    let form_action = if capabilities.form { "'self'" } else { "'none'" };
+    let style_src = if capabilities.stylesheet {
+        "'self'"
+    } else {
+        "'none'"
+    };
+    let image_src = if capabilities.image {
+        "'self'"
+    } else {
+        "'none'"
+    };
+    let media_src = if capabilities.media {
+        "'self'"
+    } else {
+        "'none'"
+    };
+    let font_src = if capabilities.stylesheet {
+        "'self'"
+    } else {
+        "'none'"
+    };
+    let form_action = if capabilities.form {
+        "'self'"
+    } else {
+        "'none'"
+    };
 
     format!(
         "default-src 'none'; script-src 'none'; style-src {style_src}; img-src {image_src}; font-src {font_src}; media-src {media_src}; connect-src 'none'; frame-src 'none'; worker-src 'none'; object-src 'none'; base-uri 'none'; form-action {form_action}; frame-ancestors 'none'"

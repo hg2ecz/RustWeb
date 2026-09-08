@@ -3,14 +3,16 @@ use crate::backend_support::{bind_application_listener, try_reload_hosting};
 use crate::bootstrap_config::{PublicPageCache, json_log_escape};
 use crate::connection::{ConnectionServices, handle_connection};
 use crate::operations::{run_http_redirect_listener, run_metrics_listener, shutdown_signal};
+use crate::outbound_runtime::ServerOutbound;
 use crate::rate_limit::RouteRateLimiter;
 use crate::server_config_file::{DomainCliConfig, HostingRuntime};
 use crate::server_errors::{ConnectionError, StartupError};
-use crate::{CacheCliConfig, LifecycleCliConfig, ObservabilityCliConfig, TlsCliConfig, WebSecurityCliConfig};
+use crate::{
+    CacheCliConfig, LifecycleCliConfig, ObservabilityCliConfig, TlsCliConfig, WebSecurityCliConfig,
+};
 use auth::SessionBackend;
 use data::{Database, RedisStore};
 use language_core::ServerConfig;
-use crate::outbound_runtime::ServerOutbound;
 use observability::{Metrics, flush_logs, reopen_logs, server_event, server_log};
 #[cfg(unix)]
 use std::fs;
@@ -50,9 +52,11 @@ pub(super) struct TransportRuntime {
 }
 
 pub(super) async fn serve(runtime: TransportRuntime) -> Result<(), StartupError> {
-    let metrics_task = spawn_metrics_listener(&runtime.observability, &runtime.metrics, &runtime.config);
+    let metrics_task =
+        spawn_metrics_listener(&runtime.observability, &runtime.metrics, &runtime.config);
     let redirect_task = spawn_redirect_listener(&runtime.tls, &runtime.config);
-    let listener = bind_application_listener(runtime.unix_socket.as_deref(), runtime.config.listen).await?;
+    let listener =
+        bind_application_listener(runtime.unix_socket.as_deref(), runtime.config.listen).await?;
     log_transport_startup(&runtime);
 
     let TransportRuntime {
@@ -200,7 +204,12 @@ fn spawn_metrics_listener(
         let config = config.clone();
         tokio::spawn(async move {
             if let Err(err) = run_metrics_listener(addr, metrics, config).await {
-                server_event("error", "metrics_listener_stopped", "metrics", &err.to_string());
+                server_event(
+                    "error",
+                    "metrics_listener_stopped",
+                    "metrics",
+                    &err.to_string(),
+                );
             }
         })
     })
@@ -208,11 +217,19 @@ fn spawn_metrics_listener(
 
 fn spawn_redirect_listener(tls: &TlsCliConfig, config: &ServerConfig) -> Option<JoinHandle<()>> {
     tls.http_redirect_listen.map(|addr| {
-        let public_host = tls.public_host.clone().expect("validated redirect public host");
+        let public_host = tls
+            .public_host
+            .clone()
+            .expect("validated redirect public host");
         let config = config.clone();
         tokio::spawn(async move {
             if let Err(err) = run_http_redirect_listener(addr, public_host, config).await {
-                server_event("error", "redirect_listener_stopped", "http", &err.to_string());
+                server_event(
+                    "error",
+                    "redirect_listener_stopped",
+                    "http",
+                    &err.to_string(),
+                );
             }
         })
     })
@@ -220,18 +237,29 @@ fn spawn_redirect_listener(tls: &TlsCliConfig, config: &ServerConfig) -> Option<
 
 fn log_transport_startup(runtime: &TransportRuntime) {
     if let Some(path) = runtime.unix_socket.as_deref() {
-        server_log(&format!("listening on unix:{} (behind-proxy)", path.display()));
+        server_log(&format!(
+            "listening on unix:{} (behind-proxy)",
+            path.display()
+        ));
     } else {
         server_log(&format!(
             "listening on {}://{}",
-            if runtime.tls_acceptor.is_some() { "https" } else { "http" },
+            if runtime.tls_acceptor.is_some() {
+                "https"
+            } else {
+                "http"
+            },
             runtime.config.listen
         ));
     }
     if runtime.reverse_proxy_https {
         server_log(&format!(
             "trusted HTTPS reverse proxy mode: transport={}, public host {}",
-            if runtime.unix_socket.is_some() { "unix-socket" } else { "loopback-tcp" },
+            if runtime.unix_socket.is_some() {
+                "unix-socket"
+            } else {
+                "loopback-tcp"
+            },
             runtime.tls.public_host.as_deref().unwrap_or("multi-domain")
         ));
     }
@@ -245,7 +273,9 @@ fn log_transport_startup(runtime: &TransportRuntime) {
         for domain in &runtime.domains {
             server_log(&format!(
                 "domain: host={} aliases={:?} workdir={}",
-                domain.host, domain.aliases, domain.workdir.display()
+                domain.host,
+                domain.aliases,
+                domain.workdir.display()
             ));
         }
     } else {
@@ -256,7 +286,11 @@ fn log_transport_startup(runtime: &TransportRuntime) {
     }
     server_log(&format!(
         "structured access log: {}",
-        if runtime.observability.access_log { "enabled" } else { "disabled" }
+        if runtime.observability.access_log {
+            "enabled"
+        } else {
+            "disabled"
+        }
     ));
     server_log(&format!(
         "auth sessions: {}",
@@ -271,7 +305,7 @@ fn log_transport_startup(runtime: &TransportRuntime) {
 fn install_hup_handler(hup_tx: mpsc::UnboundedSender<()>) {
     #[cfg(unix)]
     let _hup_task = tokio::spawn(async move {
-        use tokio::signal::unix::{signal, SignalKind};
+        use tokio::signal::unix::{SignalKind, signal};
         match signal(SignalKind::hangup()) {
             Ok(mut hup) => {
                 while hup.recv().await.is_some() {
@@ -280,7 +314,12 @@ fn install_hup_handler(hup_tx: mpsc::UnboundedSender<()>) {
                     }
                 }
             }
-            Err(err) => server_event("error", "sighup_handler_failed", "logging", &err.to_string()),
+            Err(err) => server_event(
+                "error",
+                "sighup_handler_failed",
+                "logging",
+                &err.to_string(),
+            ),
         }
     });
     #[cfg(not(unix))]
@@ -294,7 +333,10 @@ fn abort_task(task: Option<JoinHandle<()>>) {
 }
 
 async fn drain_connections(connections: &mut JoinSet<()>, shutdown_grace_ms: u64) {
-    server_log(&format!("draining {} active connection(s)", connections.len()));
+    server_log(&format!(
+        "draining {} active connection(s)",
+        connections.len()
+    ));
     let drain = async {
         while let Some(joined) = connections.join_next().await {
             if let Err(err) = joined {
@@ -302,7 +344,10 @@ async fn drain_connections(connections: &mut JoinSet<()>, shutdown_grace_ms: u64
             }
         }
     };
-    if timeout(Duration::from_millis(shutdown_grace_ms), drain).await.is_err() {
+    if timeout(Duration::from_millis(shutdown_grace_ms), drain)
+        .await
+        .is_err()
+    {
         server_log("shutdown grace period expired; aborting remaining connections");
         connections.abort_all();
         while connections.join_next().await.is_some() {}

@@ -45,7 +45,9 @@ fn page_has_resource(statements: &[Statement]) -> bool {
 fn action_has_resource(statements: &[ActionStatement]) -> bool {
     statements.iter().any(|statement| match statement {
         ActionStatement::Resource { .. } => true,
-        ActionStatement::Match { arms, .. } => arms.iter().any(|arm| action_has_resource(&arm.statements)),
+        ActionStatement::Match { arms, .. } => {
+            arms.iter().any(|arm| action_has_resource(&arm.statements))
+        }
         _ => false,
     })
 }

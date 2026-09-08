@@ -1,6 +1,6 @@
 use crate::declarations;
-use crate::domain_validation;
 use crate::diagnostics::CompileError;
+use crate::domain_validation;
 use crate::lexer::tokenize;
 use crate::module_namespace::qualify;
 use crate::routes;
@@ -10,7 +10,11 @@ use language_core::{
     FormField, FormSchema, FunctionParam, Model, Program, ValidationKind, ValidationRule, ValueType,
 };
 
-pub(super) fn parse_enums(source: &str, namespace: &str, p: &mut Program) -> Result<(), CompileError> {
+pub(super) fn parse_enums(
+    source: &str,
+    namespace: &str,
+    p: &mut Program,
+) -> Result<(), CompileError> {
     let mut off = 0usize;
     while let Some(rel) = source[off..].find("enum ") {
         let pos = off + rel;
@@ -94,12 +98,19 @@ pub(super) fn parse_enums(source: &str, namespace: &str, p: &mut Program) -> Res
                 "enum `{name}` has too many variants (max 256)"
             )));
         }
-        p.enums.push(language_core::EnumDef { name: symbol_name, variants });
+        p.enums.push(language_core::EnumDef {
+            name: symbol_name,
+            variants,
+        });
         off = close + 1;
     }
     Ok(())
 }
-pub(super) fn parse_form_schemas(source: &str, namespace: &str, p: &mut Program) -> Result<(), CompileError> {
+pub(super) fn parse_form_schemas(
+    source: &str,
+    namespace: &str,
+    p: &mut Program,
+) -> Result<(), CompileError> {
     let mut off = 0usize;
     while let Some(rel) = source[off..].find("form ") {
         let keyword = off + rel;
@@ -151,7 +162,10 @@ pub(super) fn parse_form_schemas(source: &str, namespace: &str, p: &mut Program)
             let raw = &tokens[i];
             let field = routes::parse_typed_binding(&name, raw, namespace, p)?;
             validations.extend(domain_validation::rules_for_binding(
-                raw, &field.name, namespace, p,
+                raw,
+                &field.name,
+                namespace,
+                p,
             ));
             if fields.iter().any(|f: &FormField| f.name == field.name) {
                 return Err(CompileError::Syntax(format!(
@@ -207,7 +221,14 @@ fn validate_form_rules(
                         r.field
                     )));
                 }
-                if matches!(f.ty, ValueType::Upload | ValueType::Image | ValueType::F32Array | ValueType::StringList | ValueType::StringDict) {
+                if matches!(
+                    f.ty,
+                    ValueType::Upload
+                        | ValueType::Image
+                        | ValueType::F32Array
+                        | ValueType::StringList
+                        | ValueType::StringDict
+                ) {
                     return Err(CompileError::Syntax(format!(
                         "form `{name}` same validation does not support Upload/Image field `{}`",
                         r.field
@@ -243,7 +264,11 @@ fn validate_form_rules(
     Ok(())
 }
 
-pub(super) fn parse_models(source: &str, namespace: &str, p: &mut Program) -> Result<(), CompileError> {
+pub(super) fn parse_models(
+    source: &str,
+    namespace: &str,
+    p: &mut Program,
+) -> Result<(), CompileError> {
     let mut off = 0;
     while let Some(rel) = source[off..].find("model ") {
         let keyword = off + rel;
@@ -352,7 +377,11 @@ pub(super) fn parse_models(source: &str, namespace: &str, p: &mut Program) -> Re
                 ));
             }
         }
-        p.models.push(Model { name: symbol_name, fields, tenant_field });
+        p.models.push(Model {
+            name: symbol_name,
+            fields,
+            tenant_field,
+        });
         off = close + 1;
     }
     Ok(())

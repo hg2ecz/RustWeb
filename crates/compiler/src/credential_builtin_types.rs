@@ -2,7 +2,9 @@ use crate::diagnostics::CompileError;
 use crate::expression_security::infer_static_expr_type;
 use crate::handler_types::StaticType;
 use crate::scalar_security::TrustLevel;
-use language_core::{BuiltinFunction, CredentialPurpose, DataSensitivity, Expr, Program, ValueType};
+use language_core::{
+    BuiltinFunction, CredentialPurpose, DataSensitivity, Expr, Program, ValueType,
+};
 use std::collections::HashMap;
 
 pub(super) fn handles(function: BuiltinFunction) -> bool {
@@ -56,7 +58,13 @@ pub(super) fn infer(
             Ok(ValueType::Bool)
         }
         BuiltinFunction::SignWebhook => {
-            require_crypto_key(&args[0], known, program, CredentialPurpose::SigningKeyWebhook, "signWebhook")?;
+            require_crypto_key(
+                &args[0],
+                known,
+                program,
+                CredentialPurpose::SigningKeyWebhook,
+                "signWebhook",
+            )?;
             require_public_string(&args[1], known, program, "signWebhook payload")?;
             Ok(ValueType::String)
         }
@@ -68,7 +76,9 @@ pub(super) fn infer(
         }
         BuiltinFunction::EncryptUserData => {
             require_crypto_key(
-                &args[0], known, program,
+                &args[0],
+                known,
+                program,
                 CredentialPurpose::EncryptionKeyUserData,
                 "encryptUserData",
             )?;
@@ -122,7 +132,9 @@ fn require_password_hash(
         return Err(CompileError::security(
             "SEC-A04-001",
             "passwordVerify hash must be Secret<PasswordHash>",
-            Some("store password hashes in `Secret<PasswordHash>` fields or query parameters".into()),
+            Some(
+                "store password hashes in `Secret<PasswordHash>` fields or query parameters".into(),
+            ),
         ));
     }
     Ok(())
@@ -142,7 +154,10 @@ fn token_hash_type(
         return Err(token_hash_contract_error());
     };
     if token.sensitivity != DataSensitivity::Secret
-        || token.lifecycle != Some(crate::scalar_security::LifecycleEvidence::IssuedToken(raw_purpose))
+        || token.lifecycle
+            != Some(crate::scalar_security::LifecycleEvidence::IssuedToken(
+                raw_purpose,
+            ))
     {
         return Err(token_hash_contract_error());
     }
@@ -188,10 +203,14 @@ fn require_matching_token_pair(
     let stored = scalar(stored, known, program, function)?;
     let presented = scalar(presented, known, program, function)?;
     let Some(raw_purpose) = raw_purpose_for_hash(stored.value_type) else {
-        return Err(token_contract_error(&format!("{function} first argument must be a stored secret token hash")));
+        return Err(token_contract_error(&format!(
+            "{function} first argument must be a stored secret token hash"
+        )));
     };
     if stored.sensitivity != DataSensitivity::Secret {
-        return Err(token_contract_error(&format!("{function} first argument must be Secret<TokenHashPurpose>")));
+        return Err(token_contract_error(&format!(
+            "{function} first argument must be Secret<TokenHashPurpose>"
+        )));
     }
     if presented.value_type != ValueType::Credential(raw_purpose) {
         return Err(CompileError::security(
@@ -244,7 +263,9 @@ fn require_active_token(
         return Err(CompileError::security(
             "SEC-A07-005",
             "CSRF tokens do not use tokenActive(...) expiry verification",
-            Some("use tokenMatches(storedCsrfHash, presentedCsrfToken) for CSRF verification".into()),
+            Some(
+                "use tokenMatches(storedCsrfHash, presentedCsrfToken) for CSRF verification".into(),
+            ),
         ));
     }
     let expires_at = scalar(expires_at, known, program, "tokenActive")?;
@@ -280,9 +301,15 @@ fn hash_purpose(raw: CredentialPurpose) -> CredentialPurpose {
 
 fn raw_purpose_for_hash(value_type: ValueType) -> Option<CredentialPurpose> {
     match value_type {
-        ValueType::Credential(CredentialPurpose::SessionTokenHash) => Some(CredentialPurpose::SessionToken),
-        ValueType::Credential(CredentialPurpose::PasswordResetTokenHash) => Some(CredentialPurpose::PasswordResetToken),
-        ValueType::Credential(CredentialPurpose::CsrfTokenHash) => Some(CredentialPurpose::CsrfToken),
+        ValueType::Credential(CredentialPurpose::SessionTokenHash) => {
+            Some(CredentialPurpose::SessionToken)
+        }
+        ValueType::Credential(CredentialPurpose::PasswordResetTokenHash) => {
+            Some(CredentialPurpose::PasswordResetToken)
+        }
+        ValueType::Credential(CredentialPurpose::CsrfTokenHash) => {
+            Some(CredentialPurpose::CsrfToken)
+        }
         _ => None,
     }
 }
@@ -311,7 +338,9 @@ fn scalar(
 ) -> Result<crate::scalar_security::ScalarType, CompileError> {
     infer_static_expr_type(expr, known, program)?
         .scalar()
-        .ok_or_else(|| CompileError::Syntax(format!("{function}(...) requires scalar credential values")))
+        .ok_or_else(|| {
+            CompileError::Syntax(format!("{function}(...) requires scalar credential values"))
+        })
 }
 
 fn require_crypto_key(
@@ -322,7 +351,9 @@ fn require_crypto_key(
     function: &str,
 ) -> Result<(), CompileError> {
     let scalar = scalar(expr, known, program, function)?;
-    if scalar.value_type != ValueType::Credential(expected) || scalar.sensitivity != DataSensitivity::Secret {
+    if scalar.value_type != ValueType::Credential(expected)
+        || scalar.sensitivity != DataSensitivity::Secret
+    {
         return Err(CompileError::security(
             "SEC-A04-020",
             format!("{function} requires Secret<{}>", expected.source_name()),
@@ -353,7 +384,6 @@ fn require_verification_key(
     Ok(())
 }
 
-
 fn require_decryption_key(
     expr: &Expr,
     known: &HashMap<String, StaticType>,
@@ -383,7 +413,10 @@ fn require_sensitive_string(
 ) -> Result<(), CompileError> {
     let scalar = scalar(expr, known, program, label)?;
     if scalar.value_type != ValueType::String
-        || !matches!(scalar.sensitivity, DataSensitivity::Sensitive | DataSensitivity::Secret)
+        || !matches!(
+            scalar.sensitivity,
+            DataSensitivity::Sensitive | DataSensitivity::Secret
+        )
     {
         return Err(CompileError::security(
             "SEC-A04-025",

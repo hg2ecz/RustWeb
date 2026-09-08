@@ -22,11 +22,14 @@ pub(super) fn parse_integrations(
         validate_symbol_name(&name)?;
         let symbol = qualify(namespace, &name);
         if program.integration(&symbol).is_some() {
-            return Err(CompileError::Syntax(format!("duplicate integration `{name}`")));
+            return Err(CompileError::Syntax(format!(
+                "duplicate integration `{name}`"
+            )));
         }
         let open = skip_to_brace(source, start + name.len(), &name)?;
-        let close = matching_brace(source, open)
-            .ok_or_else(|| CompileError::Syntax(format!("integration `{name}` body is unclosed")))?;
+        let close = matching_brace(source, open).ok_or_else(|| {
+            CompileError::Syntax(format!("integration `{name}` body is unclosed"))
+        })?;
         let egress_target = parse_body(&name, &source[open + 1..close])?;
         program.integrations.push(Integration {
             name: symbol,
@@ -40,7 +43,10 @@ pub(super) fn parse_integrations(
 fn parse_body(name: &str, body: &str) -> Result<String, CompileError> {
     let mut egress_target = None;
     for line in body.lines() {
-        let clean = line.split_once("//").map_or(line, |(before, _)| before).trim();
+        let clean = line
+            .split_once("//")
+            .map_or(line, |(before, _)| before)
+            .trim();
         let clean = clean.trim_end_matches(';').trim();
         if clean.is_empty() {
             continue;
@@ -69,7 +75,12 @@ fn parse_body(name: &str, body: &str) -> Result<String, CompileError> {
 }
 
 fn validate_symbol_name(name: &str) -> Result<(), CompileError> {
-    if !is_identifier(name) || !name.chars().next().is_some_and(|ch| ch.is_ascii_uppercase()) {
+    if !is_identifier(name)
+        || !name
+            .chars()
+            .next()
+            .is_some_and(|ch| ch.is_ascii_uppercase())
+    {
         return Err(CompileError::Syntax(format!(
             "integration `{name}` must start with an uppercase ASCII letter"
         )));
@@ -94,7 +105,11 @@ fn validate_egress_target(name: &str, value: &str) -> Result<(), CompileError> {
 }
 
 fn skip_to_brace(source: &str, mut cursor: usize, name: &str) -> Result<usize, CompileError> {
-    while source.as_bytes().get(cursor).is_some_and(|byte| byte.is_ascii_whitespace()) {
+    while source
+        .as_bytes()
+        .get(cursor)
+        .is_some_and(|byte| byte.is_ascii_whitespace())
+    {
         cursor += 1;
     }
     if source.as_bytes().get(cursor) != Some(&b'{') {

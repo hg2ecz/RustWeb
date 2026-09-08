@@ -7,7 +7,8 @@ pub struct OutboundOutcome {
     pub transferred_bytes: u64,
 }
 
-pub type OutboundFuture<'a> = Pin<Box<dyn Future<Output = Result<OutboundOutcome, ()>> + Send + 'a>>;
+pub type OutboundFuture<'a> =
+    Pin<Box<dyn Future<Output = Result<OutboundOutcome, ()>> + Send + 'a>>;
 
 pub trait OutboundRuntime: Send + Sync {
     fn get_status<'a>(&'a self, target: &'a str, path: &'a str) -> OutboundFuture<'a>;

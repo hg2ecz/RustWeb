@@ -1,6 +1,7 @@
 use crate::{
-    ActionFunction, ComponentFunction, CriticalOperation, DomainType, EnumDef, FormSchema, LayoutFunction, Model, PageFunction,
-    Integration, Permission, ProductionPolicy, QueryFunction, ResourceUse, Route, SecurityEvent, Webhook,
+    ActionFunction, ComponentFunction, CriticalOperation, DomainType, EnumDef, FormSchema,
+    Integration, LayoutFunction, Model, PageFunction, Permission, ProductionPolicy, QueryFunction,
+    ResourceUse, Route, SecurityEvent, Webhook,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -66,9 +67,10 @@ impl Program {
     }
 
     pub fn critical_operation(&self, name: &str) -> Option<&CriticalOperation> {
-        self.critical_operations.iter().find(|value| value.name == name)
+        self.critical_operations
+            .iter()
+            .find(|value| value.name == name)
     }
-
 
     pub fn model(&self, name: &str) -> Option<&Model> {
         self.models.iter().find(|v| v.name == name)

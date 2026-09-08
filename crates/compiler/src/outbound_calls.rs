@@ -14,8 +14,12 @@ pub(super) fn parse(
     allow_post: bool,
 ) -> Result<Option<(OutboundCall, StaticType)>, CompileError> {
     let rhs = rhs.trim().strip_suffix('?').unwrap_or(rhs.trim()).trim();
-    let Some(open) = rhs.find('(') else { return Ok(None); };
-    if !rhs.ends_with(')') { return Ok(None); }
+    let Some(open) = rhs.find('(') else {
+        return Ok(None);
+    };
+    if !rhs.ends_with(')') {
+        return Ok(None);
+    }
     let receiver_and_method = rhs[..open].trim();
     let Some((source_integration, method_name)) = receiver_and_method.rsplit_once('.') else {
         return Ok(None);
@@ -109,7 +113,10 @@ fn validate_public_json_body(
         ));
     };
     if scalar.sensitivity >= DataSensitivity::Sensitive
-        || matches!(scalar.value_type, ValueType::Credential(_) | ValueType::Upload)
+        || matches!(
+            scalar.value_type,
+            ValueType::Credential(_) | ValueType::Upload
+        )
     {
         return Err(CompileError::security(
             "SEC-DATA-011",

@@ -22,7 +22,9 @@ pub(super) fn parse_permissions(
         validate_permission_name(&name)?;
         let symbol_name = qualify(namespace, &name);
         if program.permission(&symbol_name).is_some() {
-            return Err(CompileError::Syntax(format!("duplicate permission `{name}`")));
+            return Err(CompileError::Syntax(format!(
+                "duplicate permission `{name}`"
+            )));
         }
         let after_name = start + name.len();
         let open = skip_whitespace_to_brace(source, after_name, &name)?;
@@ -75,16 +77,18 @@ fn skip_whitespace_to_brace(
 fn parse_roles(permission: &str, body: &str) -> Result<Vec<String>, CompileError> {
     let mut roles = Vec::new();
     for line in body.lines() {
-        let clean = line.split_once("//").map_or(line, |(before, _)| before).trim();
+        let clean = line
+            .split_once("//")
+            .map_or(line, |(before, _)| before)
+            .trim();
         if clean.is_empty() {
             continue;
         }
-        let role = clean
-            .strip_prefix("role ")
-            .map(str::trim)
-            .ok_or_else(|| CompileError::Syntax(format!(
+        let role = clean.strip_prefix("role ").map(str::trim).ok_or_else(|| {
+            CompileError::Syntax(format!(
                 "permission `{permission}` entries must use `role <RoleName>`"
-            )))?;
+            ))
+        })?;
         let role = role.trim_end_matches(';').trim();
         if !is_identifier(role) {
             return Err(CompileError::Syntax(format!(

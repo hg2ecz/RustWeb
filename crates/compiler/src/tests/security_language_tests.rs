@@ -37,8 +37,7 @@ route search GET "/search" query q<String> public => search;
     let program = compile_source(src).expect("bounded request String should compile");
     let route = &program.routes[0];
     assert!(route.validations.iter().any(|rule| {
-        rule.field == "q"
-            && matches!(&rule.kind, ValidationKind::Length { min: 0, max: 4096 })
+        rule.field == "q" && matches!(&rule.kind, ValidationKind::Length { min: 0, max: 4096 })
     }));
 }
 
@@ -252,7 +251,8 @@ page fn profile(ctx: PageContext, db: Db, id: Int) -> Result<Html, PageError> {
 }
 route profile GET "/profiles/:id<Int>" auth user => profile;
 "#;
-    let err = compile_source(src).expect_err("Sensitive<T> HTML disclosure needs authorization proof");
+    let err =
+        compile_source(src).expect_err("Sensitive<T> HTML disclosure needs authorization proof");
     let msg = err.to_string();
     assert!(msg.contains("SEC-A01-004"), "{msg}");
 }
@@ -404,7 +404,8 @@ action fn edit(ctx: ActionContext, db: Db, id: Int, title: String) -> Result<Jso
 }
 route edit POST "/articles/:id<Int>" form title<String> auth user => edit;
 "#;
-    let err = compile_source(src).expect_err("proof from another model must not authorize mutation");
+    let err =
+        compile_source(src).expect_err("proof from another model must not authorize mutation");
     assert!(err.to_string().contains("SEC-A01-005"));
 }
 
@@ -418,8 +419,7 @@ route profile GET "/profiles/:slug<String>" public => profile;
 "#;
     let program = compile_source(src).expect("path String should receive a safe default bound");
     assert!(program.routes[0].validations.iter().any(|rule| {
-        rule.field == "slug"
-            && matches!(&rule.kind, ValidationKind::Length { min: 0, max: 4096 })
+        rule.field == "slug" && matches!(&rule.kind, ValidationKind::Length { min: 0, max: 4096 })
     }));
 }
 
@@ -482,8 +482,7 @@ route profile GET "/profiles/:username<Username>" public => profile;
     let program = compile_source(src).expect("domain input type should compile");
     let route = &program.routes[0];
     assert!(route.validations.iter().any(|rule| {
-        rule.field == "username"
-            && matches!(&rule.kind, ValidationKind::Length { min: 3, max: 32 })
+        rule.field == "username" && matches!(&rule.kind, ValidationKind::Length { min: 3, max: 32 })
     }));
     assert!(route.validations.iter().any(|rule| {
         rule.field == "username"
@@ -504,8 +503,7 @@ route list GET "/items" query size<PageSize> public => list;
 "#;
     let program = compile_source(src).expect("bounded domain integer should compile");
     assert!(program.routes[0].validations.iter().any(|rule| {
-        rule.field == "size"
-            && matches!(&rule.kind, ValidationKind::Range { min: 1, max: 100 })
+        rule.field == "size" && matches!(&rule.kind, ValidationKind::Range { min: 1, max: 100 })
     }));
 }
 
@@ -562,7 +560,8 @@ page fn show(ctx: PageContext, db: Db, articleId: ArticleId) -> Result<Json, Pag
 }
 route show GET "/articles/:articleId<ArticleId>" auth user => show;
 "#;
-    let err = compile_source(src).expect_err("ArticleId must not be accepted where UserId is required");
+    let err =
+        compile_source(src).expect_err("ArticleId must not be accepted where UserId is required");
     let msg = err.to_string();
     assert!(msg.contains("SEC-TYPE-001"), "{msg}");
     assert!(msg.contains("UserId"), "{msg}");
@@ -602,7 +601,8 @@ page fn profile(ctx: PageContext, username: Username) -> Result<Html, PageError>
 }
 route profile GET "/profiles/:username<Username>" public => profile;
 "#;
-    compile_source(src).expect("nominal String domains should work with safe representation-consuming builtins");
+    compile_source(src)
+        .expect("nominal String domains should work with safe representation-consuming builtins");
 }
 
 #[test]
@@ -663,7 +663,8 @@ page fn show(ctx: PageContext, articleId: ArticleId) -> Result<Json, PageError> 
 }
 route show GET "/articles/:articleId<ArticleId>" public => show;
 "#;
-    let err = compile_source(src).expect_err("nominal domains must not be re-labelled by validation");
+    let err =
+        compile_source(src).expect_err("nominal domains must not be re-labelled by validation");
     let msg = err.to_string();
     assert!(msg.contains("SEC-TYPE-002"), "{msg}");
     assert!(msg.contains("ArticleId"), "{msg}");
@@ -854,7 +855,8 @@ page fn check(ctx: PageContext, db: Db, token: String) -> Result<Json, PageError
 }
 route check GET "/credentials" query token<String> auth user => check;
 "#;
-    let err = compile_source(src).expect_err("public request data must not masquerade as Secret<T>");
+    let err =
+        compile_source(src).expect_err("public request data must not masquerade as Secret<T>");
     assert!(err.to_string().contains("SEC-DATA-007"), "{err}");
 }
 
@@ -925,7 +927,9 @@ page fn home(ctx: PageContext) -> Result<Html, PageError> { return Ok(html { <p>
 route home GET "/" auth user => home;
 route change POST "/accounts/:id<Int>/password" form password<Password> auth user => change;
 "#;
-    compile_source(src).expect("passwordHash should produce Secret<PasswordHash> accepted by a purpose-typed secret sink");
+    compile_source(src).expect(
+        "passwordHash should produce Secret<PasswordHash> accepted by a purpose-typed secret sink",
+    );
 }
 
 #[test]
@@ -956,10 +960,10 @@ page fn check(ctx: PageContext, hash: String, password: Password) -> Result<Json
 }
 route check POST "/check" form hash<String> password<Password> auth user => check;
 "#;
-    let err = compile_source(src).expect_err("passwordVerify must require a Secret<PasswordHash> hash");
+    let err =
+        compile_source(src).expect_err("passwordVerify must require a Secret<PasswordHash> hash");
     assert!(err.to_string().contains("SEC-A04-001"), "{err}");
 }
-
 
 #[test]
 fn password_hash_rejects_plain_string_even_when_validated() {
@@ -970,7 +974,8 @@ page fn hash(ctx: PageContext, password: String) -> Result<Json, PageError> {
 }
 route hash POST "/hash" form password<String> public => hash;
 "#;
-    let err = compile_source(src).expect_err("credential primitives require purpose-typed Password");
+    let err =
+        compile_source(src).expect_err("credential primitives require purpose-typed Password");
     assert!(err.to_string().contains("SEC-A04-003"), "{err}");
 }
 
@@ -1065,10 +1070,10 @@ page fn check(ctx: PageContext, db: Db, id: Int, token: SessionToken) -> Result<
 }
 route check POST "/reset/:id<Int>/check" form token<SessionToken> auth user => check;
 "#;
-    let err = compile_source(src).expect_err("reset and session tokens must never be interchangeable");
+    let err =
+        compile_source(src).expect_err("reset and session tokens must never be interchangeable");
     assert!(err.to_string().contains("SEC-A07-001"), "{err}");
 }
-
 
 #[test]
 fn token_hash_rejects_presented_request_token() {
@@ -1079,7 +1084,8 @@ page fn check(ctx: PageContext, token: SessionToken) -> Result<Json, PageError> 
 }
 route check POST "/check" form token<SessionToken> auth user => check;
 "#;
-    let err = compile_source(src).expect_err("request-presented tokens must not be promoted into stored token hashes");
+    let err = compile_source(src)
+        .expect_err("request-presented tokens must not be promoted into stored token hashes");
     assert!(err.to_string().contains("SEC-A07-003"), "{err}");
 }
 
@@ -1114,13 +1120,13 @@ page fn show(ctx: PageContext) -> Result<Json, PageError> {
 }
 route show GET "/show" auth user => show;
 "#;
-    let err = compile_source(src).expect_err("issued credentials require a dedicated delivery boundary");
+    let err =
+        compile_source(src).expect_err("issued credentials require a dedicated delivery boundary");
     assert!(
         err.to_string().contains("SEC-A04-004") || err.to_string().contains("SEC-DATA-001"),
         "{err}"
     );
 }
-
 
 #[test]
 fn session_token_cannot_use_expiry_free_token_matches() {
@@ -1160,7 +1166,8 @@ action fn check(ctx: ActionContext, db: Db, id: Int, token: CsrfToken) -> Result
 }
 route check POST "/csrf/:id<Int>/check" form token<CsrfToken> auth user => check;
 "#;
-    compile_source(src).expect("CSRF tokens may use purpose-safe equality without independent expiry");
+    compile_source(src)
+        .expect("CSRF tokens may use purpose-safe equality without independent expiry");
 }
 
 #[test]
@@ -1183,7 +1190,8 @@ action fn reset(ctx: ActionContext, db: Db, token: PasswordResetToken) -> Result
 }
 route reset POST "/reset" form token<PasswordResetToken> public => reset;
 "#;
-    compile_source(src).expect("password-reset token consumption should be atomic and proof-carrying");
+    compile_source(src)
+        .expect("password-reset token consumption should be atomic and proof-carrying");
 }
 
 #[test]
@@ -1213,7 +1221,9 @@ action fn reset(ctx: ActionContext, db: Db, id: Int) -> Result<Json, PageError> 
 }
 route reset POST "/reset/:id<Int>" public => reset;
 "#;
-    let err = compile_source(src).expect_err("same-purpose hashes without presented-token evidence must not authorize reset consumption");
+    let err = compile_source(src).expect_err(
+        "same-purpose hashes without presented-token evidence must not authorize reset consumption",
+    );
     assert!(err.to_string().contains("SEC-A07-015"), "{err}");
 }
 
@@ -1237,7 +1247,8 @@ action fn reset(ctx: ActionContext, db: Db, token: PasswordResetToken) -> Result
 }
 route reset POST "/reset" form token<PasswordResetToken> public => reset;
 "#;
-    let err = compile_source(src).expect_err("reset consumption must use Changed and an expiry predicate");
+    let err = compile_source(src)
+        .expect_err("reset consumption must use Changed and an expiry predicate");
     assert!(
         err.to_string().contains("SEC-A07-008") || err.to_string().contains("SEC-A07-013"),
         "{err}"
@@ -1263,7 +1274,8 @@ action fn logout(ctx: ActionContext, db: Db, token: SessionToken) -> Result<Json
 }
 route logout POST "/logout" form token<SessionToken> auth user => logout;
 "#;
-    compile_source(src).expect("current-session revocation should be a one-row atomic lifecycle mutation");
+    compile_source(src)
+        .expect("current-session revocation should be a one-row atomic lifecycle mutation");
 }
 
 #[test]
@@ -1295,7 +1307,8 @@ action fn rotate(ctx: ActionContext, db: Db, token: SessionToken, expiresAt: Dat
 }
 route rotate POST "/session/rotate" form token<SessionToken> expiresAt<DateTime> auth user => rotate;
 "#;
-    compile_source(src).expect("session rotation should require old presented proof and fresh replacement proof");
+    compile_source(src)
+        .expect("session rotation should require old presented proof and fresh replacement proof");
 }
 
 #[test]
@@ -1329,7 +1342,8 @@ action fn rotate(ctx: ActionContext, db: Db, id: Int, token: SessionToken, expir
 }
 route rotate POST "/session/:id<Int>/rotate" form token<SessionToken> expiresAt<DateTime> auth user => rotate;
 "#;
-    let err = compile_source(src).expect_err("rotation replacement must come from a freshly issued token");
+    let err = compile_source(src)
+        .expect_err("rotation replacement must come from a freshly issued token");
     assert!(err.to_string().contains("SEC-A07-018"), "{err}");
 }
 
@@ -1363,7 +1377,8 @@ action fn rotate(ctx: ActionContext, db: Db, token: SessionToken, expiresAt: Dat
 }
 route rotate POST "/session/rotate" form token<SessionToken> expiresAt<DateTime> auth user => rotate;
 "#;
-    let err = compile_source(src).expect_err("rotation must replace hash, set expiry, and guard current expiry atomically");
+    let err = compile_source(src)
+        .expect_err("rotation must replace hash, set expiry, and guard current expiry atomically");
     assert!(err.to_string().contains("SEC-A07-013"), "{err}");
 }
 
@@ -1390,7 +1405,8 @@ action fn persist(ctx: ActionContext, db: Db, id: Int) -> Result<Json, PageError
 }
 route persist POST "/session/:id<Int>/persist" auth user => persist;
 "#;
-    let err = compile_source(src).expect_err("tokenHash must accept only freshly issued bearer tokens");
+    let err =
+        compile_source(src).expect_err("tokenHash must accept only freshly issued bearer tokens");
     assert!(err.to_string().contains("SEC-A07-003"), "{err}");
 }
 
@@ -1406,11 +1422,15 @@ action fn removeUser(ctx: ActionContext, id: Int) -> Result<Json, PageError> req
 }
 route removeUser POST "/users/:id<Int>/remove" auth permission UserAdmin => removeUser;
 "#;
-    let program = compile_source(src).expect("named permission should secure the handler and route");
+    let program =
+        compile_source(src).expect("named permission should secure the handler and route");
     match &program.routes[0].auth {
         RouteAuth::Permission { name, roles } => {
             assert!(name.ends_with("UserAdmin"));
-            assert_eq!(roles, &vec!["Admin".to_string(), "SecurityAdmin".to_string()]);
+            assert_eq!(
+                roles,
+                &vec!["Admin".to_string(), "SecurityAdmin".to_string()]
+            );
         }
         other => panic!("expected permission auth, got {other:?}"),
     }
@@ -1443,7 +1463,9 @@ action fn removeUser(ctx: ActionContext, id: Int) -> Result<Json, PageError> req
 }
 route removeUser POST "/users/:id<Int>/remove" auth role Admin => removeUser;
 "#;
-    compile_source(src).expect("a role explicitly granting the required permission should satisfy the handler contract");
+    compile_source(src).expect(
+        "a role explicitly granting the required permission should satisfy the handler contract",
+    );
 }
 
 #[test]
@@ -1457,7 +1479,8 @@ action fn removeUser(ctx: ActionContext, id: Int) -> Result<Json, PageError> req
 }
 route removeUser POST "/users/:id<Int>/remove" auth role Viewer => removeUser;
 "#;
-    let err = compile_source(src).expect_err("unrelated role must not satisfy the handler permission");
+    let err =
+        compile_source(src).expect_err("unrelated role must not satisfy the handler permission");
     assert!(err.to_string().contains("SEC-A01-022"), "{err}");
 }
 
@@ -1486,7 +1509,10 @@ action fn refund(ctx: ActionContext, id: Int) -> Result<Json, PageError> require
 route refund POST "/billing/:id<Int>/refund" auth permission BillingWrite mfa => refund;
 "#;
     let program = compile_source(src).expect("permission + MFA should secure a privileged handler");
-    assert!(matches!(program.routes[0].auth, RouteAuth::PermissionMfa { .. }));
+    assert!(matches!(
+        program.routes[0].auth,
+        RouteAuth::PermissionMfa { .. }
+    ));
 }
 
 #[test]
@@ -1500,7 +1526,8 @@ action fn refund(ctx: ActionContext, id: Int) -> Result<Json, PageError> require
 }
 route refund POST "/billing/:id<Int>/refund" auth permission BillingWrite => refund;
 "#;
-    let err = compile_source(src).expect_err("permission alone must not satisfy MFA-elevated handler");
+    let err =
+        compile_source(src).expect_err("permission alone must not satisfy MFA-elevated handler");
     assert!(err.to_string().contains("SEC-A07-020"), "{err}");
 }
 
@@ -1551,12 +1578,28 @@ action fn refund(ctx: ActionContext, db: Db, id: Int) -> Result<Json, PageError>
 }
 route refund POST "/billing/:id<Int>/refund" auth critical Payment => refund;
 "#;
-    let program = compile_source(src).expect("critical contract should compose permission, MFA, transaction and audit");
-    assert!(matches!(program.routes[0].auth, RouteAuth::PermissionMfa { .. }));
+    let program = compile_source(src)
+        .expect("critical contract should compose permission, MFA, transaction and audit");
+    assert!(matches!(
+        program.routes[0].auth,
+        RouteAuth::PermissionMfa { .. }
+    ));
     let action = program.action("refund").expect("action");
     assert!(action.security.mfa_required);
-    assert!(action.security.required_permission.as_deref().is_some_and(|value| value.ends_with("BillingWrite")));
-    assert!(action.security.critical_operation.as_deref().is_some_and(|value| value.ends_with("Payment")));
+    assert!(
+        action
+            .security
+            .required_permission
+            .as_deref()
+            .is_some_and(|value| value.ends_with("BillingWrite"))
+    );
+    assert!(
+        action
+            .security
+            .critical_operation
+            .as_deref()
+            .is_some_and(|value| value.ends_with("Payment"))
+    );
 }
 
 #[test]
@@ -1604,7 +1647,8 @@ action fn refund(ctx: ActionContext) -> Result<Json, PageError> critical Payment
 }
 route refund POST "/refund" auth permission BillingWrite => refund;
 "#;
-    let err = compile_source(src).expect_err("critical operation MFA requirement must still be enforced with explicit auth");
+    let err = compile_source(src)
+        .expect_err("critical operation MFA requirement must still be enforced with explicit auth");
     assert!(err.to_string().contains("SEC-A07-020"), "{err}");
 }
 
@@ -1619,8 +1663,7 @@ route tags GET "/tags" query tags<List<String>> public => tags;
     let program = compile_source(src).expect("bounded external string list should compile");
     let route = &program.routes[0];
     assert!(route.validations.iter().any(|rule| {
-        rule.field == "tags"
-            && matches!(&rule.kind, ValidationKind::Items { min: 1, max: 64 })
+        rule.field == "tags" && matches!(&rule.kind, ValidationKind::Items { min: 1, max: 64 })
     }));
 }
 
@@ -1639,7 +1682,10 @@ route tags GET "/tags" query tags<List<String>> validate tags items 1 8 public =
         .filter(|rule| rule.field == "tags" && matches!(&rule.kind, ValidationKind::Items { .. }))
         .collect();
     assert_eq!(rules.len(), 1);
-    assert!(matches!(rules[0].kind, ValidationKind::Items { min: 1, max: 8 }));
+    assert!(matches!(
+        rules[0].kind,
+        ValidationKind::Items { min: 1, max: 8 }
+    ));
 }
 
 #[test]
@@ -1651,7 +1697,10 @@ page fn search(ctx: PageContext, q: String) -> Result<Json, PageError> {
 route search GET "/search" query q<String> validate q items 1 8 public => search;
 "#;
     let err = compile_source(src).expect_err("items validation must be collection-only");
-    assert!(err.to_string().contains("validation kind does not match field"));
+    assert!(
+        err.to_string()
+            .contains("validation kind does not match field")
+    );
 }
 
 #[test]
@@ -1706,7 +1755,8 @@ action fn grant(ctx: ActionContext, db: Db, id: Int) -> Result<Json, PageError> 
 }
 route grant POST "/grant/:id<Int>" auth critical RoleChange => grant;
 "#;
-    let err = compile_source(src).expect_err("wrong security event must not satisfy critical audit contract");
+    let err = compile_source(src)
+        .expect_err("wrong security event must not satisfy critical audit contract");
     assert!(err.to_string().contains("SEC-A09-006"), "{err}");
 }
 
@@ -1749,7 +1799,8 @@ action fn sign(ctx: ActionContext, db: Db, id: Int, payload: String) -> Result<J
 }
 route sign POST "/sign/:id<Int>" json payload<String> auth user => sign;
 "#;
-    let err = compile_source(src).expect_err("retiring signing keys must not create new signatures");
+    let err =
+        compile_source(src).expect_err("retiring signing keys must not create new signatures");
     assert!(err.to_string().contains("SEC-A04-020"), "{err}");
 }
 
@@ -1769,7 +1820,8 @@ action fn verify(ctx: ActionContext, db: Db, id: Int, payload: String, signature
 }
 route verify POST "/verify/:id<Int>" json payload<String> signature<String> auth user => verify;
 "#;
-    compile_source(accepted).expect("retiring verification key should remain valid during rotation");
+    compile_source(accepted)
+        .expect("retiring verification key should remain valid during rotation");
 
     let rejected = accepted.replace("RetiringVerificationKey", "RetiredVerificationKey");
     let err = compile_source(&rejected).expect_err("retired verification key must be rejected");
@@ -1784,7 +1836,8 @@ action fn bad(ctx: ActionContext, key: SigningKey<Webhook>) -> Result<Json, Page
 }
 route bad POST "/bad" json key<SigningKey<Webhook>> auth user => bad;
 "#;
-    let err = compile_source(src).expect_err("crypto key material must never be accepted from request input");
+    let err = compile_source(src)
+        .expect_err("crypto key material must never be accepted from request input");
     assert!(err.to_string().contains("SEC-A04-023"), "{err}");
 }
 
@@ -1828,7 +1881,8 @@ action fn protect(ctx: ActionContext, db: Db, id: Int) -> Result<Json, PageError
 }
 route protect POST "/protect/:id<Int>" auth user => protect;
 "#;
-    let err = compile_source(encrypt).expect_err("retiring encryption keys must not create new ciphertext");
+    let err = compile_source(encrypt)
+        .expect_err("retiring encryption keys must not create new ciphertext");
     assert!(err.to_string().contains("SEC-A04-020"), "{err}");
 
     let decrypt = r#"
@@ -1847,7 +1901,8 @@ action fn read(ctx: ActionContext, db: Db, id: Int) -> Result<Json, PageError> {
 }
 route read POST "/read/:id<Int>" auth user => read;
 "#;
-    compile_source(decrypt).expect("retiring encryption keys should remain usable for decryption during rotation");
+    compile_source(decrypt)
+        .expect("retiring encryption keys should remain usable for decryption during rotation");
 }
 
 #[test]

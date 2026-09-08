@@ -15,7 +15,9 @@ pub(crate) fn evaluate_public_projection(
             _ => project_record(source, projection, budget),
         },
         ProjectionSourceKind::ModelList => {
-            let Value::List(items) = source else { return Err(AppError::Internal); };
+            let Value::List(items) = source else {
+                return Err(AppError::Internal);
+            };
             budget.charge_alloc((items.len() as u64).saturating_mul(16))?;
             let mut projected = Vec::with_capacity(items.len());
             for item in items {
@@ -31,7 +33,9 @@ fn project_record(
     projection: &PublicProjection,
     budget: &mut Budget,
 ) -> Result<Value, AppError> {
-    let Value::Record(source) = source else { return Err(AppError::Internal); };
+    let Value::Record(source) = source else {
+        return Err(AppError::Internal);
+    };
     budget.charge_alloc((projection.fields.len() as u64).saturating_mul(64))?;
     let mut fields = HashMap::with_capacity(projection.fields.len());
     for name in &projection.fields {

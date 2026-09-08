@@ -10,7 +10,10 @@ pub(super) fn validate_program(program: &Program) -> Result<(), CompileError> {
         let operation = program.critical_operation(name).ok_or_else(|| {
             CompileError::security(
                 "SEC-A06-002",
-                format!("handler `{}` references unknown critical operation `{name}`", action.name),
+                format!(
+                    "handler `{}` references unknown critical operation `{name}`",
+                    action.name
+                ),
                 None,
             )
         })?;
@@ -24,11 +27,17 @@ pub(super) fn validate_program(program: &Program) -> Result<(), CompileError> {
         let operation = program.critical_operation(name).ok_or_else(|| {
             CompileError::security(
                 "SEC-A06-002",
-                format!("handler `{}` references unknown critical operation `{name}`", page.name),
+                format!(
+                    "handler `{}` references unknown critical operation `{name}`",
+                    page.name
+                ),
                 None,
             )
         })?;
-        if operation.transaction_required || operation.audit_required || operation.idempotency_required {
+        if operation.transaction_required
+            || operation.audit_required
+            || operation.idempotency_required
+        {
             return Err(CompileError::security(
                 "SEC-A06-003",
                 format!(
@@ -68,8 +77,12 @@ fn validate_action_requirements(
         if !matches_transaction_outcome(statements, outcome) {
             return Err(CompileError::security(
                 "SEC-A10-025",
-                format!("idempotent critical handler `{handler}` must exhaustively handle transaction outcome `{outcome}`"),
-                Some(format!("add `match {outcome} {{ Committed => {{ ... }} RolledBack => {{ ... }} CommitUnknown => {{ ... }} }}`")),
+                format!(
+                    "idempotent critical handler `{handler}` must exhaustively handle transaction outcome `{outcome}`"
+                ),
+                Some(format!(
+                    "add `match {outcome} {{ Committed => {{ ... }} RolledBack => {{ ... }} CommitUnknown => {{ ... }} }}`"
+                )),
             ));
         }
     }
@@ -77,8 +90,15 @@ fn validate_action_requirements(
         if !has_security_event(statements, required_event) {
             return Err(CompileError::security(
                 "SEC-A09-006",
-                format!("critical handler `{handler}` must emit security event `{}` for `{}`", short_name(required_event), operation.name),
-                Some(format!("add `security {} <object-id>;` inside the transaction", short_name(required_event))),
+                format!(
+                    "critical handler `{handler}` must emit security event `{}` for `{}`",
+                    short_name(required_event),
+                    operation.name
+                ),
+                Some(format!(
+                    "add `security {} <object-id>;` inside the transaction",
+                    short_name(required_event)
+                )),
             ));
         }
     } else if operation.audit_required && !action_has_business_audit(statements) {
@@ -98,7 +118,9 @@ fn has_transaction(statements: &[ActionStatement]) -> bool {
     statements.iter().any(|statement| match statement {
         ActionStatement::Transaction { .. } => true,
         ActionStatement::Resource { statements, .. } => has_transaction(statements),
-        ActionStatement::Match { arms, .. } => arms.iter().any(|arm| has_transaction(&arm.statements)),
+        ActionStatement::Match { arms, .. } => {
+            arms.iter().any(|arm| has_transaction(&arm.statements))
+        }
         _ => false,
     })
 }
@@ -114,25 +136,40 @@ fn has_security_event(statements: &[ActionStatement], required_event: &str) -> b
             language_core::TxStatement::BusinessAudit(audit) => audit.action == required,
             _ => false,
         }),
-        ActionStatement::Resource { statements, .. } => has_security_event(statements, required_event),
-        ActionStatement::Match { arms, .. } => arms.iter().any(|arm| has_security_event(&arm.statements, required_event)),
+        ActionStatement::Resource { statements, .. } => {
+            has_security_event(statements, required_event)
+        }
+        ActionStatement::Match { arms, .. } => arms
+            .iter()
+            .any(|arm| has_security_event(&arm.statements, required_event)),
         _ => false,
     })
 }
 
 fn transaction_outcome_name(statements: &[ActionStatement]) -> Option<&str> {
     statements.iter().find_map(|statement| match statement {
-        ActionStatement::Transaction { outcome: Some(name), .. } => Some(name.as_str()),
+        ActionStatement::Transaction {
+            outcome: Some(name),
+            ..
+        } => Some(name.as_str()),
         ActionStatement::Resource { statements, .. } => transaction_outcome_name(statements),
-        ActionStatement::Match { arms, .. } => arms.iter().find_map(|arm| transaction_outcome_name(&arm.statements)),
+        ActionStatement::Match { arms, .. } => arms
+            .iter()
+            .find_map(|arm| transaction_outcome_name(&arm.statements)),
         _ => None,
     })
 }
 
 fn matches_transaction_outcome(statements: &[ActionStatement], name: &str) -> bool {
     statements.iter().any(|statement| match statement {
-        ActionStatement::Match { expr: language_core::Expr::Variable(value), enum_id, .. } => value == name && *enum_id == language_core::TRANSACTION_OUTCOME_ENUM_ID,
-        ActionStatement::Resource { statements, .. } => matches_transaction_outcome(statements, name),
+        ActionStatement::Match {
+            expr: language_core::Expr::Variable(value),
+            enum_id,
+            ..
+        } => value == name && *enum_id == language_core::TRANSACTION_OUTCOME_ENUM_ID,
+        ActionStatement::Resource { statements, .. } => {
+            matches_transaction_outcome(statements, name)
+        }
         _ => false,
     })
 }

@@ -42,11 +42,17 @@ fn sql_tokens(sql: &str) -> Vec<String> {
         match bytes[cursor] {
             b'-' if bytes.get(cursor + 1) == Some(&b'-') => {
                 cursor += 2;
-                while cursor < bytes.len() && bytes[cursor] != b'\n' { cursor += 1; }
+                while cursor < bytes.len() && bytes[cursor] != b'\n' {
+                    cursor += 1;
+                }
             }
             b'/' if bytes.get(cursor + 1) == Some(&b'*') => {
                 cursor += 2;
-                while cursor + 1 < bytes.len() && !(bytes[cursor] == b'*' && bytes[cursor + 1] == b'/') { cursor += 1; }
+                while cursor + 1 < bytes.len()
+                    && !(bytes[cursor] == b'*' && bytes[cursor + 1] == b'/')
+                {
+                    cursor += 1;
+                }
                 cursor = (cursor + 2).min(bytes.len());
             }
             b'\'' | b'"' | b'`' => {
@@ -54,7 +60,10 @@ fn sql_tokens(sql: &str) -> Vec<String> {
                 cursor += 1;
                 while cursor < bytes.len() {
                     if bytes[cursor] == quote {
-                        if bytes.get(cursor + 1) == Some(&quote) { cursor += 2; continue; }
+                        if bytes.get(cursor + 1) == Some(&quote) {
+                            cursor += 2;
+                            continue;
+                        }
                         cursor += 1;
                         break;
                     }
@@ -64,13 +73,19 @@ fn sql_tokens(sql: &str) -> Vec<String> {
             b if b.is_ascii_alphabetic() || b == b'_' => {
                 let start = cursor;
                 cursor += 1;
-                while cursor < bytes.len() && (bytes[cursor].is_ascii_alphanumeric() || bytes[cursor] == b'_') { cursor += 1; }
+                while cursor < bytes.len()
+                    && (bytes[cursor].is_ascii_alphanumeric() || bytes[cursor] == b'_')
+                {
+                    cursor += 1;
+                }
                 tokens.push(sql[start..cursor].to_string());
             }
             b if b.is_ascii_digit() => {
                 let start = cursor;
                 cursor += 1;
-                while cursor < bytes.len() && bytes[cursor].is_ascii_digit() { cursor += 1; }
+                while cursor < bytes.len() && bytes[cursor].is_ascii_digit() {
+                    cursor += 1;
+                }
                 tokens.push(sql[start..cursor].to_string());
             }
             b':' | b'?' | b'$' => {
@@ -90,7 +105,13 @@ mod tests {
     #[test]
     fn accepts_literal_limit_and_ignores_comments_and_strings() {
         assert!(require_bounded_list_query("items", "SELECT id FROM items LIMIT 100").is_ok());
-        assert!(require_bounded_list_query("items", "SELECT 'LIMIT 9999' FROM items /* LIMIT 9999 */ LIMIT 10").is_ok());
+        assert!(
+            require_bounded_list_query(
+                "items",
+                "SELECT 'LIMIT 9999' FROM items /* LIMIT 9999 */ LIMIT 10"
+            )
+            .is_ok()
+        );
     }
 
     #[test]

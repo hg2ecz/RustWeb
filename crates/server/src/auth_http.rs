@@ -1,16 +1,19 @@
 use crate::response_headers::HeaderName;
 use auth::{
-    AuthAbuseStage, AuthError, SessionBackend, SessionSnapshot, authenticate_ldap, verify_totp_redis,
+    AuthAbuseStage, AuthError, SessionBackend, SessionSnapshot, authenticate_ldap,
+    verify_totp_redis,
 };
 use language_core::ServerConfig;
 use runtime::decode_urlencoded_limited;
 use std::collections::HashMap;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use super::{AuthRuntime, WebSecurityCliConfig};
-use super::auth_observability::{audit_auth_activity, audit_auth_activity_action, observe_auth_security};
+use super::auth_observability::{
+    audit_auth_activity, audit_auth_activity_action, observe_auth_security,
+};
 use super::auth_setup::canonical_username;
 use super::http_io::{HttpRequest, Response};
+use super::{AuthRuntime, WebSecurityCliConfig};
 
 async fn record_auth_failure(
     auth: &AuthRuntime,
@@ -105,68 +108,82 @@ pub(super) async fn auth_login(
         Err(AuthError::RateLimited) => {
             audit_auth_activity(request_id, &username, "rate_limited", peer_key);
             observe_auth_security("auth", "rate_limited", request_id, peer_key, &username);
-            return Response::text(429, "Too Many Requests", b"too many authentication attempts\n");
+            return Response::text(
+                429,
+                "Too Many Requests",
+                b"too many authentication attempts\n",
+            );
         }
         Err(_) => {
             return Response::text(503, "Service Unavailable", b"authentication unavailable\n");
         }
     }
-    let (canonical_principal, roles, memberships, secret, auth_generation, local_backend) = if let Some(local) =
-        auth.local.as_ref()
-    {
-        match local.authenticate(&username, password).await {
-            Ok(user) => (
-                user.username,
-                user.roles,
-                user.memberships,
-                user.totp_secret,
-                user.auth_generation,
-                true,
-            ),
-            Err(AuthError::StoreUnavailable) => {
-                return Response::text(503, "Service Unavailable", b"authentication unavailable\n");
+    let (canonical_principal, roles, memberships, secret, auth_generation, local_backend) =
+        if let Some(local) = auth.local.as_ref() {
+            match local.authenticate(&username, password).await {
+                Ok(user) => (
+                    user.username,
+                    user.roles,
+                    user.memberships,
+                    user.totp_secret,
+                    user.auth_generation,
+                    true,
+                ),
+                Err(AuthError::StoreUnavailable) => {
+                    return Response::text(
+                        503,
+                        "Service Unavailable",
+                        b"authentication unavailable\n",
+                    );
+                }
+                Err(_) => {
+                    audit_auth_activity(request_id, &username, "invalid_credentials", peer_key);
+                    observe_auth_security(
+                        "auth",
+                        "invalid_credentials",
+                        request_id,
+                        peer_key,
+                        &username,
+                    );
+                    return record_auth_failure(
+                        auth,
+                        AuthAbuseStage::Password,
+                        peer_key,
+                        &username,
+                    )
+                    .await;
+                }
             }
-            Err(_) => {
+        } else {
+            let ldap = auth.ldap.as_ref().expect("checked above");
+            if authenticate_ldap(ldap, &username, password).await.is_err() {
                 audit_auth_activity(request_id, &username, "invalid_credentials", peer_key);
-                observe_auth_security("auth", "invalid_credentials", request_id, peer_key, &username);
-                return record_auth_failure(
-                    auth,
-                    AuthAbuseStage::Password,
+                observe_auth_security(
+                    "auth",
+                    "invalid_credentials",
+                    request_id,
                     peer_key,
                     &username,
-                )
-                .await;
+                );
+                return record_auth_failure(auth, AuthAbuseStage::Password, peer_key, &username)
+                    .await;
             }
-        }
-    } else {
-        let ldap = auth.ldap.as_ref().expect("checked above");
-        if authenticate_ldap(ldap, &username, password).await.is_err() {
-            audit_auth_activity(request_id, &username, "invalid_credentials", peer_key);
-            observe_auth_security("auth", "invalid_credentials", request_id, peer_key, &username);
-            return record_auth_failure(
-                auth,
-                AuthAbuseStage::Password,
-                peer_key,
-                &username,
+            let roles = auth
+                .roles
+                .get(&username)
+                .cloned()
+                .unwrap_or_else(|| vec!["User".into()]);
+            let memberships = auth.memberships.get(&username).cloned().unwrap_or_default();
+            let auth_generation = auth.mapped_claims_generation(&username);
+            (
+                username.clone(),
+                roles,
+                memberships,
+                auth.totp_secrets.get(&username).cloned(),
+                auth_generation,
+                false,
             )
-            .await;
-        }
-        let roles = auth
-            .roles
-            .get(&username)
-            .cloned()
-            .unwrap_or_else(|| vec!["User".into()]);
-        let memberships = auth.memberships.get(&username).cloned().unwrap_or_default();
-        let auth_generation = auth.mapped_claims_generation(&username);
-        (
-            username.clone(),
-            roles,
-            memberships,
-            auth.totp_secrets.get(&username).cloned(),
-            auth_generation,
-            false,
-        )
-    };
+        };
     let mfa = if let Some(secret) = secret.as_deref() {
         match auth
             .limiter
@@ -175,9 +192,24 @@ pub(super) async fn auth_login(
         {
             Ok(()) => {}
             Err(AuthError::RateLimited) => {
-                audit_auth_activity(request_id, &canonical_principal, "mfa_rate_limited", peer_key);
-                observe_auth_security("mfa", "rate_limited", request_id, peer_key, &canonical_principal);
-                return Response::text(429, "Too Many Requests", b"too many authentication attempts\n");
+                audit_auth_activity(
+                    request_id,
+                    &canonical_principal,
+                    "mfa_rate_limited",
+                    peer_key,
+                );
+                observe_auth_security(
+                    "mfa",
+                    "rate_limited",
+                    request_id,
+                    peer_key,
+                    &canonical_principal,
+                );
+                return Response::text(
+                    429,
+                    "Too Many Requests",
+                    b"too many authentication attempts\n",
+                );
             }
             Err(_) => {
                 return Response::text(503, "Service Unavailable", b"authentication unavailable\n");
@@ -232,13 +264,8 @@ pub(super) async fn auth_login(
                 peer_key,
                 &canonical_principal,
             );
-            return record_auth_failure(
-                auth,
-                AuthAbuseStage::Mfa,
-                peer_key,
-                &canonical_principal,
-            )
-            .await;
+            return record_auth_failure(auth, AuthAbuseStage::Mfa, peer_key, &canonical_principal)
+                .await;
         }
         let _ = auth
             .limiter

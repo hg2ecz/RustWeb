@@ -10,11 +10,15 @@ const MAX_SECRET_BYTES: usize = 64 * 1024;
 pub struct SecretString(Vec<u8>);
 
 impl SecretString {
-    pub(crate) fn bytes(&self) -> &[u8] { &self.0 }
+    pub(crate) fn bytes(&self) -> &[u8] {
+        &self.0
+    }
 }
 
 impl Drop for SecretString {
-    fn drop(&mut self) { self.0.fill(0); }
+    fn drop(&mut self) {
+        self.0.fill(0);
+    }
 }
 
 impl fmt::Debug for SecretString {
@@ -36,7 +40,9 @@ impl SecretsStore {
         if !meta.file_type().is_dir() || meta.file_type().is_symlink() {
             return Err(IntegrationError::Secret("invalid secret root".into()));
         }
-        Ok(Self { root: Arc::new(root) })
+        Ok(Self {
+            root: Arc::new(root),
+        })
     }
 
     pub fn get(&self, name: &str) -> Result<SecretString, IntegrationError> {
@@ -62,7 +68,9 @@ impl SecretsStore {
         {
             use std::os::unix::fs::MetadataExt;
             if meta.mode() & 0o007 != 0 {
-                return Err(IntegrationError::Secret("secret is accessible by others".into()));
+                return Err(IntegrationError::Secret(
+                    "secret is accessible by others".into(),
+                ));
             }
         }
         let mut value = Vec::with_capacity(meta.len() as usize);
@@ -89,7 +97,9 @@ fn validate_secret_name(v: &str) -> Result<(), IntegrationError> {
         || v == ".."
         || v.contains('/')
         || v.contains('\\')
-        || !v.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.'))
+        || !v
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.'))
     {
         return Err(IntegrationError::Secret("invalid secret name".into()));
     }

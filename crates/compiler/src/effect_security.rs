@@ -2,7 +2,6 @@ use crate::diagnostics::CompileError;
 use language_core::{ActionStatement, Effect, Statement, TxStatement};
 use std::collections::BTreeSet;
 
-
 pub(super) fn merge(declared: Vec<Effect>, inferred: Vec<Effect>) -> Vec<Effect> {
     let mut effects = BTreeSet::new();
     effects.extend(declared);
@@ -48,7 +47,9 @@ pub(super) fn validate_network_capabilities(
     inferred: &[Effect],
 ) -> Result<(), CompileError> {
     for effect in inferred {
-        let Effect::Network(target) = effect else { continue; };
+        let Effect::Network(target) = effect else {
+            continue;
+        };
         if !declared.iter().any(|candidate| candidate == effect) {
             return Err(CompileError::security(
                 "SEC-EFFECT-002",
@@ -70,7 +71,11 @@ fn collect_page_into(statements: &[Statement], effects: &mut BTreeSet<Effect>) {
                 effects.insert(Effect::Network(call.egress_target.clone()));
             }
             Statement::Resource { statements, .. } => collect_page_into(statements, effects),
-            Statement::Match { arms, .. } => { for arm in arms { collect_page_into(&arm.statements, effects); } },
+            Statement::Match { arms, .. } => {
+                for arm in arms {
+                    collect_page_into(&arm.statements, effects);
+                }
+            }
             _ => {}
         }
     }
@@ -94,8 +99,14 @@ fn collect_action_into(statements: &[ActionStatement], effects: &mut BTreeSet<Ef
                     effects.insert(Effect::SecurityAudit);
                 }
             }
-            ActionStatement::Resource { statements, .. } => collect_action_into(statements, effects),
-            ActionStatement::Match { arms, .. } => { for arm in arms { collect_action_into(&arm.statements, effects); } },
+            ActionStatement::Resource { statements, .. } => {
+                collect_action_into(statements, effects)
+            }
+            ActionStatement::Match { arms, .. } => {
+                for arm in arms {
+                    collect_action_into(&arm.statements, effects);
+                }
+            }
             _ => {}
         }
     }

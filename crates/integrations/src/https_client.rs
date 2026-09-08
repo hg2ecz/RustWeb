@@ -1,14 +1,14 @@
-use crate::egress::{ip_allowed, EgressPolicy, Target};
+use crate::egress::{EgressPolicy, Target, ip_allowed};
 use crate::egress_capability::{EgressCapability, EgressEndpoint, HttpsPath};
 use crate::error::IntegrationError;
-use crate::http_response::{read_http_response, HttpsResponse, StatusResponse};
+use crate::http_response::{HttpsResponse, StatusResponse, read_http_response};
 use crate::secrets::SecretString;
 use rustls::pki_types::ServerName;
 use rustls::{ClientConfig, RootCertStore};
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::io::AsyncWriteExt;
-use tokio::net::{lookup_host, TcpStream};
+use tokio::net::{TcpStream, lookup_host};
 use tokio_rustls::TlsConnector;
 
 const MAX_RWLANG_STATUS_BODY_BYTES: usize = 256 * 1024;
@@ -25,7 +25,10 @@ impl OutboundHttpsClient {
         let cfg = ClientConfig::builder()
             .with_root_certificates(roots)
             .with_no_client_auth();
-        Self { policy, tls: TlsConnector::from(Arc::new(cfg)) }
+        Self {
+            policy,
+            tls: TlsConnector::from(Arc::new(cfg)),
+        }
     }
 
     pub fn capability(&self, name: &str) -> Result<EgressCapability, IntegrationError> {
@@ -104,10 +107,12 @@ impl OutboundHttpsClient {
         let target = self.policy.target(target_name)?;
         if target.hosts.len() != 1 || target.ports.len() != 1 {
             return Err(IntegrationError::Policy(
-                "RWLang outbound call target must resolve to exactly one configured host and port".into(),
+                "RWLang outbound call target must resolve to exactly one configured host and port"
+                    .into(),
             ));
         }
-        self.capability(target_name)?.endpoint(&target.hosts[0], target.ports[0])
+        self.capability(target_name)?
+            .endpoint(&target.hosts[0], target.ports[0])
     }
 
     pub async fn get(
@@ -115,7 +120,8 @@ impl OutboundHttpsClient {
         endpoint: &EgressEndpoint,
         path_and_query: &HttpsPath,
     ) -> Result<HttpsResponse, IntegrationError> {
-        self.request(endpoint, "GET", path_and_query, &[], &[]).await
+        self.request(endpoint, "GET", path_and_query, &[], &[])
+            .await
     }
 
     pub async fn post_json(
@@ -182,7 +188,14 @@ impl OutboundHttpsClient {
         headers: &[(&str, &str)],
     ) -> Result<HttpsResponse, IntegrationError> {
         self.request_inner_with_body_cap(
-            target, host, port, method, path, body, headers, target.max_received_bytes,
+            target,
+            host,
+            port,
+            method,
+            path,
+            body,
+            headers,
+            target.max_received_bytes,
         )
         .await
     }
@@ -208,7 +221,9 @@ impl OutboundHttpsClient {
         let mut approved = Vec::new();
         for addr in answers {
             if !ip_allowed(&target.cidrs, addr.ip()) {
-                return Err(IntegrationError::Policy("DNS answer outside target CIDR".into()));
+                return Err(IntegrationError::Policy(
+                    "DNS answer outside target CIDR".into(),
+                ));
             }
             if !approved.contains(&addr) {
                 approved.push(addr);
@@ -222,7 +237,19 @@ impl OutboundHttpsClient {
                     if peer.ip() != addr.ip() || !ip_allowed(&target.cidrs, peer.ip()) {
                         return Err(IntegrationError::Policy("connected peer IP denied".into()));
                     }
-                    return self.tls_http(target, host, port, stream, method, path, body, headers, response_body_cap).await;
+                    return self
+                        .tls_http(
+                            target,
+                            host,
+                            port,
+                            stream,
+                            method,
+                            path,
+                            body,
+                            headers,
+                            response_body_cap,
+                        )
+                        .await;
                 }
                 _ => last_connect_err = Some(IntegrationError::Connect),
             }
@@ -242,8 +269,13 @@ impl OutboundHttpsClient {
         headers: &[(&str, &str)],
         response_body_cap: usize,
     ) -> Result<HttpsResponse, IntegrationError> {
-        let server_name = ServerName::try_from(host.to_owned()).map_err(|_| IntegrationError::Tls)?;
-        let mut stream = self.tls.connect(server_name, stream).await.map_err(|_| IntegrationError::Tls)?;
+        let server_name =
+            ServerName::try_from(host.to_owned()).map_err(|_| IntegrationError::Tls)?;
+        let mut stream = self
+            .tls
+            .connect(server_name, stream)
+            .await
+            .map_err(|_| IntegrationError::Tls)?;
         let mut request = Vec::new();
         request.extend_from_slice(
             format!(
@@ -263,14 +295,24 @@ impl OutboundHttpsClient {
         if request.len() > target.max_sent_bytes {
             return Err(IntegrationError::SendTooLarge);
         }
-        stream.write_all(&request).await.map_err(|_| IntegrationError::Connect)?;
-        stream.flush().await.map_err(|_| IntegrationError::Connect)?;
+        stream
+            .write_all(&request)
+            .await
+            .map_err(|_| IntegrationError::Connect)?;
+        stream
+            .flush()
+            .await
+            .map_err(|_| IntegrationError::Connect)?;
         read_http_response(&mut stream, response_body_cap).await
     }
 }
 
 fn host_header(host: &str, port: u16) -> String {
-    if port == 443 { host.to_string() } else { format!("{host}:{port}") }
+    if port == 443 {
+        host.to_string()
+    } else {
+        format!("{host}:{port}")
+    }
 }
 
 fn validate_header(k: &str, v: &str) -> Result<(), IntegrationError> {

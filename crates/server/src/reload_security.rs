@@ -10,7 +10,12 @@ pub(super) fn validate_outbound(
         .pages
         .iter()
         .flat_map(|page| page.effects.iter())
-        .chain(program.actions.iter().flat_map(|action| action.effects.iter()))
+        .chain(
+            program
+                .actions
+                .iter()
+                .flat_map(|action| action.effects.iter()),
+        )
     {
         if let Effect::Network(target) = effect {
             let Some(client) = outbound else {

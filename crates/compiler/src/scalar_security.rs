@@ -44,15 +44,30 @@ pub(super) struct ScalarType {
 
 impl ScalarType {
     pub(super) fn trusted(value_type: ValueType) -> Self {
-        Self::new(value_type, TrustLevel::Trusted, DataSensitivity::Public, DisclosureEvidence::None)
+        Self::new(
+            value_type,
+            TrustLevel::Trusted,
+            DataSensitivity::Public,
+            DisclosureEvidence::None,
+        )
     }
 
     pub(super) fn validated(value_type: ValueType) -> Self {
-        Self::new(value_type, TrustLevel::Validated, DataSensitivity::Public, DisclosureEvidence::None)
+        Self::new(
+            value_type,
+            TrustLevel::Validated,
+            DataSensitivity::Public,
+            DisclosureEvidence::None,
+        )
     }
 
     pub(super) fn untrusted(value_type: ValueType) -> Self {
-        Self::new(value_type, TrustLevel::Untrusted, DataSensitivity::Public, DisclosureEvidence::None)
+        Self::new(
+            value_type,
+            TrustLevel::Untrusted,
+            DataSensitivity::Public,
+            DisclosureEvidence::None,
+        )
     }
 
     pub(super) fn presented_token_hash(value_type: ValueType, purpose: CredentialPurpose) -> Self {
@@ -86,7 +101,12 @@ impl ScalarType {
     }
 
     pub(super) fn classified(value_type: ValueType, sensitivity: DataSensitivity) -> Self {
-        Self::new(value_type, TrustLevel::Trusted, sensitivity, DisclosureEvidence::None)
+        Self::new(
+            value_type,
+            TrustLevel::Trusted,
+            sensitivity,
+            DisclosureEvidence::None,
+        )
     }
 
     pub(super) fn authorized_field(

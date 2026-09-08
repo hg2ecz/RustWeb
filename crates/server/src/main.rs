@@ -3,8 +3,8 @@ use data::RedisStore;
 use ipnet::IpNet;
 use language_core::Route;
 use observability::{
-    AuditEvent, Metrics, RequestLog, RequestTimer, access_log, audit_log,
-    init_logging, json_line, server_event, utc_timestamp,
+    AuditEvent, Metrics, RequestLog, RequestTimer, access_log, audit_log, init_logging, json_line,
+    server_event, utc_timestamp,
 };
 use resource_limits::apply as apply_resource_limits;
 use sha2::{Digest, Sha256};
@@ -171,42 +171,42 @@ impl Default for CacheCliConfig {
     }
 }
 
-mod resource_limits;
-mod server_errors;
-mod server_config_file;
-mod tls_support;
+mod app_execution;
+mod auth_claims;
+mod auth_http;
+mod auth_observability;
+mod auth_setup;
 mod backend_support;
-mod source_reload;
-mod request_pipeline;
+mod bootstrap_config;
 mod connection;
 mod connection_dispatch;
 mod connection_finalize;
 mod http_io;
-mod response_headers;
-mod security_headers;
-mod security_alerts;
-mod presentation;
-mod runtime_error_logging;
-mod bootstrap_config;
-mod auth_setup;
-mod auth_claims;
-mod membership_setup;
-mod auth_http;
-mod auth_observability;
-mod session_cookie;
-mod static_delivery;
 mod idempotency;
-mod webhook_verification;
-mod rate_limit;
-mod web_security;
+mod membership_setup;
 mod operations;
+mod presentation;
+mod rate_limit;
 mod request_input;
-mod app_execution;
-use server_errors::{ClockError, ReservedPathError};
+mod request_pipeline;
+mod resource_limits;
+mod response_headers;
+mod runtime_error_logging;
+mod security_alerts;
+mod security_headers;
+mod server_config_file;
+mod server_errors;
+mod session_cookie;
+mod source_reload;
+mod static_delivery;
+mod tls_support;
+mod web_security;
+mod webhook_verification;
 use http_io::Response;
-use rate_limit::RouteRateLimiter;
 use operations::install_panic_logging_hook;
 use presentation::endpoint_error;
+use rate_limit::RouteRateLimiter;
+use server_errors::{ClockError, ReservedPathError};
 
 fn unix_secs() -> Result<u64, ClockError> {
     SystemTime::now()
@@ -298,25 +298,21 @@ fn main() {
     }
 }
 
-
-
-mod startup_args;
-mod startup_services;
-mod startup_security;
-mod production_security;
+mod cli;
+mod cli_config_apply;
+mod cli_finalize;
+mod cli_overrides;
+mod cli_scan;
+mod http_dispatch;
 mod outbound_runtime;
 mod outbound_startup;
+mod production_security;
 mod reload_security;
-mod startup_transport;
-mod cli;
-mod cli_scan;
-mod cli_overrides;
-mod cli_finalize;
-mod cli_config_apply;
-mod http_dispatch;
 mod startup;
-
-
+mod startup_args;
+mod startup_security;
+mod startup_services;
+mod startup_transport;
 
 fn validate_reserved_path(raw: &str) -> Result<String, ReservedPathError> {
     if !raw.starts_with('/')
@@ -350,7 +346,6 @@ fn route_matches_exact_path(route: &language_core::Route, path: &str) -> bool {
             language_core::RouteSegment::Param { .. } => !value.is_empty(),
         })
 }
-
 
 async fn check_route_rate_limit(
     limiter: &RouteRateLimiter,
@@ -404,7 +399,9 @@ fn security_audit_classification(status: u16, body: &[u8]) -> Option<(&'static s
         403 => Some(("policy", "forbidden")),
         421 => Some(("host", "mismatch")),
         426 => Some(("transport", "https_required")),
-        409 if contains(b"idempotency") || contains(b"idempotent") => Some(("idempotency", "conflict")),
+        409 if contains(b"idempotency") || contains(b"idempotent") => {
+            Some(("idempotency", "conflict"))
+        }
         429 => Some(("rate_limit", "denied")),
         503 if contains(b"resource_limit") => Some(("resource", "exhausted")),
         _ => None,
@@ -423,10 +420,7 @@ fn observe_response(
     access_enabled: bool,
 ) {
     if !response.has_header(crate::response_headers::HeaderName::XRequestId) {
-        response.push_header(
-            crate::response_headers::HeaderName::XRequestId,
-            request_id,
-        );
+        response.push_header(crate::response_headers::HeaderName::XRequestId, request_id);
     }
     let duration = timer.elapsed();
     let bytes_out = if response.suppress_body {
@@ -508,14 +502,7 @@ fn observe_response(
         }) {
             audit_log(&line);
         }
-        crate::security_alerts::observe(
-            category,
-            "request",
-            outcome,
-            client_ip,
-            request_id,
-            route,
-        );
+        crate::security_alerts::observe(category, "request", outcome, client_ip, request_id, route);
     }
 }
 

@@ -26,10 +26,8 @@ fn redact_turns_classified_scalar_into_redacted_string() {
 #[test]
 fn redacted_cannot_be_forged_with_a_type_annotation() {
     let program = Program::default();
-    assert!(crate::type_resolution::resolve_annotated_value_type(
-        "Redacted<String>",
-        "app",
-        &program,
-    )
-    .is_none());
+    assert!(
+        crate::type_resolution::resolve_annotated_value_type("Redacted<String>", "app", &program,)
+            .is_none()
+    );
 }

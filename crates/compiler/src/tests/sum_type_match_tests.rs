@@ -10,7 +10,8 @@ enum CommitState {
 
 #[test]
 fn exhaustive_sum_match_compiles_and_is_first_class() {
-    let src = format!(r#"
+    let src = format!(
+        r#"
 {SUM_TYPE}
 page fn outcome(ctx: PageContext, state: CommitState) -> Result<Json, PageError> {{
     match state {{
@@ -20,15 +21,20 @@ page fn outcome(ctx: PageContext, state: CommitState) -> Result<Json, PageError>
     }}
 }}
 route outcome GET "/:state<CommitState>" public => outcome;
-"#);
+"#
+    );
     let program = compile_source(&src).expect("exhaustive sum match should compile");
     let (_, definition) = program.enum_by_name("CommitState").unwrap();
-    assert_eq!(definition.variants, vec!["Committed", "RolledBack", "CommitUnknown"]);
+    assert_eq!(
+        definition.variants,
+        vec!["Committed", "RolledBack", "CommitUnknown"]
+    );
 }
 
 #[test]
 fn non_exhaustive_sum_match_is_rejected() {
-    let src = format!(r#"
+    let src = format!(
+        r#"
 {SUM_TYPE}
 page fn outcome(ctx: PageContext, state: CommitState) -> Result<Json, PageError> {{
     match state {{
@@ -37,7 +43,8 @@ page fn outcome(ctx: PageContext, state: CommitState) -> Result<Json, PageError>
     }}
 }}
 route outcome GET "/:state<CommitState>" public => outcome;
-"#);
+"#
+    );
     let error = compile_source(&src).unwrap_err().to_string();
     assert!(error.contains("SEC-A10-023"), "{error}");
     assert!(error.contains("CommitUnknown"), "{error}");
@@ -45,7 +52,8 @@ route outcome GET "/:state<CommitState>" public => outcome;
 
 #[test]
 fn duplicate_and_unknown_sum_arms_are_rejected() {
-    let duplicate = format!(r#"
+    let duplicate = format!(
+        r#"
 {SUM_TYPE}
 page fn outcome(ctx: PageContext, state: CommitState) -> Result<Json, PageError> {{
     match state {{
@@ -56,10 +64,17 @@ page fn outcome(ctx: PageContext, state: CommitState) -> Result<Json, PageError>
     }}
 }}
 route outcome GET "/:state<CommitState>" public => outcome;
-"#);
-    assert!(compile_source(&duplicate).unwrap_err().to_string().contains("SEC-A10-022"));
+"#
+    );
+    assert!(
+        compile_source(&duplicate)
+            .unwrap_err()
+            .to_string()
+            .contains("SEC-A10-022")
+    );
 
-    let unknown = format!(r#"
+    let unknown = format!(
+        r#"
 {SUM_TYPE}
 page fn outcome(ctx: PageContext, state: CommitState) -> Result<Json, PageError> {{
     match state {{
@@ -70,8 +85,14 @@ page fn outcome(ctx: PageContext, state: CommitState) -> Result<Json, PageError>
     }}
 }}
 route outcome GET "/:state<CommitState>" public => outcome;
-"#);
-    assert!(compile_source(&unknown).unwrap_err().to_string().contains("SEC-A10-021"));
+"#
+    );
+    assert!(
+        compile_source(&unknown)
+            .unwrap_err()
+            .to_string()
+            .contains("SEC-A10-021")
+    );
 }
 
 #[test]
@@ -84,9 +105,15 @@ page fn outcome(ctx: PageContext, state: Int) -> Result<Json, PageError> {
 }
 route outcome GET "/:state<Int>" public => outcome;
 "#;
-    assert!(compile_source(scalar).unwrap_err().to_string().contains("SEC-A10-020"));
+    assert!(
+        compile_source(scalar)
+            .unwrap_err()
+            .to_string()
+            .contains("SEC-A10-020")
+    );
 
-    let mismatch = format!(r#"
+    let mismatch = format!(
+        r#"
 {SUM_TYPE}
 page fn outcome(ctx: PageContext, state: CommitState) -> Result<Json, PageError> {{
     match state {{
@@ -96,6 +123,7 @@ page fn outcome(ctx: PageContext, state: CommitState) -> Result<Json, PageError>
     }}
 }}
 route outcome GET "/:state<CommitState>" public => outcome;
-"#);
+"#
+    );
     assert!(compile_source(&mismatch).is_err());
 }

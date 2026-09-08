@@ -5,7 +5,11 @@ pub(crate) struct AnnotatedValueType {
     pub value_type: ValueType,
     pub sensitivity: DataSensitivity,
 }
-pub(crate) fn resolve_value_type(raw: &str, namespace: &str, program: &Program) -> Option<ValueType> {
+pub(crate) fn resolve_value_type(
+    raw: &str,
+    namespace: &str,
+    program: &Program,
+) -> Option<ValueType> {
     resolve_annotated_value_type(raw, namespace, program).map(|resolved| resolved.value_type)
 }
 pub(crate) fn resolve_annotated_value_type(
@@ -19,7 +23,11 @@ pub(crate) fn resolve_annotated_value_type(
         program
             .domain_type_by_name(&symbol)
             .map(|(id, _)| ValueType::Domain(id))
-            .or_else(|| program.enum_by_name(&symbol).map(|(id, _)| ValueType::Enum(id)))
+            .or_else(|| {
+                program
+                    .enum_by_name(&symbol)
+                    .map(|(id, _)| ValueType::Enum(id))
+            })
     })?;
     Some(AnnotatedValueType {
         value_type,

@@ -37,7 +37,9 @@ pub(crate) fn eval(function: BuiltinFunction, stack: &mut Vec<Value>) -> Result<
         BuiltinFunction::NewSessionToken
         | BuiltinFunction::NewPasswordResetToken
         | BuiltinFunction::NewCsrfToken => Ok(Value::String(generate_token())),
-        BuiltinFunction::TokenHash | BuiltinFunction::PresentedTokenHash => Ok(Value::String(hash_token(&pop_string(stack)?))),
+        BuiltinFunction::TokenHash | BuiltinFunction::PresentedTokenHash => {
+            Ok(Value::String(hash_token(&pop_string(stack)?)))
+        }
         BuiltinFunction::TokenMatches => token_matches_from_stack(stack),
         BuiltinFunction::TokenActive => token_active_from_stack(stack),
         BuiltinFunction::SignWebhook => sign_webhook_from_stack(stack),
@@ -79,12 +81,24 @@ pub(crate) fn estimated_result_alloc(
         }
         BuiltinFunction::EncryptUserData => {
             require_stack_len(stack, 2)?;
-            let plaintext = stack.last().and_then(|v| match v { Value::String(s) => Some(s.len()), _ => None }).ok_or(AppError::Internal)?;
+            let plaintext = stack
+                .last()
+                .and_then(|v| match v {
+                    Value::String(s) => Some(s.len()),
+                    _ => None,
+                })
+                .ok_or(AppError::Internal)?;
             Ok((plaintext.saturating_add(16) * 2 + 40) as u64)
         }
         BuiltinFunction::DecryptUserData => {
             require_stack_len(stack, 2)?;
-            Ok(stack.last().and_then(|v| match v { Value::String(s) => Some(s.len()), _ => None }).unwrap_or(0) as u64)
+            Ok(stack
+                .last()
+                .and_then(|v| match v {
+                    Value::String(s) => Some(s.len()),
+                    _ => None,
+                })
+                .unwrap_or(0) as u64)
         }
         _ => Err(AppError::Internal),
     }
@@ -138,7 +152,10 @@ fn token_matches_from_stack(stack: &mut Vec<Value>) -> Result<Value, AppError> {
     let presented = pop_string(stack)?;
     let stored_hash = pop_string(stack)?;
     let presented_hash = hash_token(&presented);
-    Ok(Value::Bool(constant_time_token_eq(&stored_hash, &presented_hash)))
+    Ok(Value::Bool(constant_time_token_eq(
+        &stored_hash,
+        &presented_hash,
+    )))
 }
 
 fn token_active_from_stack(stack: &mut Vec<Value>) -> Result<Value, AppError> {
@@ -152,7 +169,10 @@ fn token_active_from_stack(stack: &mut Vec<Value>) -> Result<Value, AppError> {
         return Ok(Value::Bool(false));
     }
     let presented_hash = hash_token(&presented);
-    Ok(Value::Bool(constant_time_token_eq(&stored_hash, &presented_hash)))
+    Ok(Value::Bool(constant_time_token_eq(
+        &stored_hash,
+        &presented_hash,
+    )))
 }
 
 fn sign_webhook_from_stack(stack: &mut Vec<Value>) -> Result<Value, AppError> {
@@ -161,7 +181,10 @@ fn sign_webhook_from_stack(stack: &mut Vec<Value>) -> Result<Value, AppError> {
     if !(32..=4096).contains(&key.len()) {
         return Err(AppError::Internal);
     }
-    Ok(Value::String(hmac_sha256_hex(key.as_bytes(), payload.as_bytes())))
+    Ok(Value::String(hmac_sha256_hex(
+        key.as_bytes(),
+        payload.as_bytes(),
+    )))
 }
 
 fn verify_webhook_from_stack(stack: &mut Vec<Value>) -> Result<Value, AppError> {
@@ -200,7 +223,6 @@ fn hmac_sha256_hex(key: &[u8], message: &[u8]) -> String {
     encode_hex(&outer.finalize())
 }
 
-
 const USER_DATA_PLAINTEXT_MAX_BYTES: usize = 1024 * 1024;
 const USER_DATA_ENVELOPE_PREFIX: &str = "rwenc1";
 const USER_DATA_KEY_HEX_BYTES: usize = 64;
@@ -213,14 +235,19 @@ fn encrypt_user_data_from_stack(stack: &mut Vec<Value>) -> Result<Value, AppErro
         return Err(AppError::BadRequest);
     }
     let key_bytes = decode_fixed_hex::<32>(&key).ok_or(AppError::Internal)?;
-    let unbound = UnboundKey::new(&aead::AES_256_GCM, &key_bytes).map_err(|_| AppError::Internal)?;
+    let unbound =
+        UnboundKey::new(&aead::AES_256_GCM, &key_bytes).map_err(|_| AppError::Internal)?;
     let key = LessSafeKey::new(unbound);
     let mut nonce_bytes = [0u8; USER_DATA_NONCE_BYTES];
     rand::fill(&mut nonce_bytes[..]);
     let nonce = Nonce::assume_unique_for_key(nonce_bytes);
     let mut in_out = plaintext.into_bytes();
-    key.seal_in_place_append_tag(nonce, Aad::from(USER_DATA_ENVELOPE_PREFIX.as_bytes()), &mut in_out)
-        .map_err(|_| AppError::Internal)?;
+    key.seal_in_place_append_tag(
+        nonce,
+        Aad::from(USER_DATA_ENVELOPE_PREFIX.as_bytes()),
+        &mut in_out,
+    )
+    .map_err(|_| AppError::Internal)?;
     Ok(Value::String(format!(
         "{}:{}:{}",
         USER_DATA_ENVELOPE_PREFIX,
@@ -242,14 +269,16 @@ fn decrypt_user_data_from_stack(stack: &mut Vec<Value>) -> Result<Value, AppErro
     if parts.next().is_some() || nonce_hex.len() != USER_DATA_NONCE_BYTES * 2 {
         return Err(AppError::Internal);
     }
-    let nonce_bytes = decode_fixed_hex::<USER_DATA_NONCE_BYTES>(nonce_hex).ok_or(AppError::Internal)?;
+    let nonce_bytes =
+        decode_fixed_hex::<USER_DATA_NONCE_BYTES>(nonce_hex).ok_or(AppError::Internal)?;
     let mut ciphertext = decode_hex(ciphertext_hex).ok_or(AppError::Internal)?;
     if ciphertext.len() < aead::AES_256_GCM.tag_len()
         || ciphertext.len() > USER_DATA_PLAINTEXT_MAX_BYTES + aead::AES_256_GCM.tag_len()
     {
         return Err(AppError::Internal);
     }
-    let unbound = UnboundKey::new(&aead::AES_256_GCM, &key_bytes).map_err(|_| AppError::Internal)?;
+    let unbound =
+        UnboundKey::new(&aead::AES_256_GCM, &key_bytes).map_err(|_| AppError::Internal)?;
     let key = LessSafeKey::new(unbound);
     let plaintext = key
         .open_in_place(
@@ -299,8 +328,7 @@ fn hash_token(token: &str) -> String {
 }
 
 fn constant_time_token_eq(stored: &str, presented: &str) -> bool {
-    stored.len() == presented.len()
-        && stored.as_bytes().ct_eq(presented.as_bytes()).into()
+    stored.len() == presented.len() && stored.as_bytes().ct_eq(presented.as_bytes()).into()
 }
 
 fn argon2_instance() -> Argon2<'static> {
@@ -319,7 +347,9 @@ fn pop_string(stack: &mut Vec<Value>) -> Result<String, AppError> {
 }
 
 fn require_stack_len(stack: &[Value], needed: usize) -> Result<(), AppError> {
-    (stack.len() >= needed).then_some(()).ok_or(AppError::Internal)
+    (stack.len() >= needed)
+        .then_some(())
+        .ok_or(AppError::Internal)
 }
 
 #[cfg(test)]
@@ -345,10 +375,12 @@ mod tests {
     #[test]
     fn issued_tokens_are_256_bit_hex_values() {
         let mut stack = Vec::new();
-        let Value::String(first) = eval(BuiltinFunction::NewSessionToken, &mut stack).unwrap() else {
+        let Value::String(first) = eval(BuiltinFunction::NewSessionToken, &mut stack).unwrap()
+        else {
             panic!()
         };
-        let Value::String(second) = eval(BuiltinFunction::NewSessionToken, &mut stack).unwrap() else {
+        let Value::String(second) = eval(BuiltinFunction::NewSessionToken, &mut stack).unwrap()
+        else {
             panic!()
         };
         assert_eq!(first.len(), TOKEN_HEX_BYTES);
@@ -361,15 +393,22 @@ mod tests {
         let key = "11".repeat(32);
         let plaintext = "classified user profile".to_string();
         let mut first_stack = vec![Value::String(key.clone()), Value::String(plaintext.clone())];
-        let Value::String(first) = eval(BuiltinFunction::EncryptUserData, &mut first_stack).unwrap() else {
+        let Value::String(first) =
+            eval(BuiltinFunction::EncryptUserData, &mut first_stack).unwrap()
+        else {
             panic!()
         };
         let mut second_stack = vec![Value::String(key.clone()), Value::String(plaintext.clone())];
-        let Value::String(second) = eval(BuiltinFunction::EncryptUserData, &mut second_stack).unwrap() else {
+        let Value::String(second) =
+            eval(BuiltinFunction::EncryptUserData, &mut second_stack).unwrap()
+        else {
             panic!()
         };
         assert!(first.starts_with("rwenc1:"));
-        assert_ne!(first, second, "platform-generated nonces must make envelopes unique");
+        assert_ne!(
+            first, second,
+            "platform-generated nonces must make envelopes unique"
+        );
         let mut decrypt_stack = vec![Value::String(key), Value::String(first)];
         assert_eq!(
             eval(BuiltinFunction::DecryptUserData, &mut decrypt_stack).unwrap(),
@@ -381,7 +420,9 @@ mod tests {
     fn user_data_aead_rejects_tampering_and_wrong_key() {
         let key = "22".repeat(32);
         let mut encrypt_stack = vec![Value::String(key.clone()), Value::String("secret".into())];
-        let Value::String(envelope) = eval(BuiltinFunction::EncryptUserData, &mut encrypt_stack).unwrap() else {
+        let Value::String(envelope) =
+            eval(BuiltinFunction::EncryptUserData, &mut encrypt_stack).unwrap()
+        else {
             panic!()
         };
         let mut tampered = envelope.clone().into_bytes();
@@ -442,11 +483,27 @@ mod tests {
         let key = "k".repeat(32);
         let payload = "event=paid".to_string();
         let mut sign = vec![Value::String(key.clone()), Value::String(payload.clone())];
-        let Value::String(signature) = eval(BuiltinFunction::SignWebhook, &mut sign).unwrap() else { panic!() };
-        let mut verify = vec![Value::String(key.clone()), Value::String(payload), Value::String(signature.clone())];
-        assert_eq!(eval(BuiltinFunction::VerifyWebhookSignature, &mut verify).unwrap(), Value::Bool(true));
-        let mut changed = vec![Value::String(key), Value::String("event=refunded".into()), Value::String(signature)];
-        assert_eq!(eval(BuiltinFunction::VerifyWebhookSignature, &mut changed).unwrap(), Value::Bool(false));
+        let Value::String(signature) = eval(BuiltinFunction::SignWebhook, &mut sign).unwrap()
+        else {
+            panic!()
+        };
+        let mut verify = vec![
+            Value::String(key.clone()),
+            Value::String(payload),
+            Value::String(signature.clone()),
+        ];
+        assert_eq!(
+            eval(BuiltinFunction::VerifyWebhookSignature, &mut verify).unwrap(),
+            Value::Bool(true)
+        );
+        let mut changed = vec![
+            Value::String(key),
+            Value::String("event=refunded".into()),
+            Value::String(signature),
+        ];
+        assert_eq!(
+            eval(BuiltinFunction::VerifyWebhookSignature, &mut changed).unwrap(),
+            Value::Bool(false)
+        );
     }
-
 }

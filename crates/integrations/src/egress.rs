@@ -37,13 +37,27 @@ pub struct TargetConfig {
     pub total_timeout_ms: u64,
 }
 
-fn default_ports() -> Vec<u16> { vec![443] }
-fn default_true() -> bool { true }
-fn default_dns_answers() -> usize { 16 }
-fn default_send() -> usize { 256 * 1024 }
-fn default_recv() -> usize { 2 * 1024 * 1024 }
-fn default_connect_ms() -> u64 { 5_000 }
-fn default_total_ms() -> u64 { 15_000 }
+fn default_ports() -> Vec<u16> {
+    vec![443]
+}
+fn default_true() -> bool {
+    true
+}
+fn default_dns_answers() -> usize {
+    16
+}
+fn default_send() -> usize {
+    256 * 1024
+}
+fn default_recv() -> usize {
+    2 * 1024 * 1024
+}
+fn default_connect_ms() -> u64 {
+    5_000
+}
+fn default_total_ms() -> u64 {
+    15_000
+}
 
 #[derive(Clone)]
 pub struct EgressPolicy {
@@ -65,7 +79,8 @@ pub(crate) struct Target {
 
 impl EgressPolicy {
     pub fn from_toml_file(path: impl AsRef<Path>) -> Result<Self, IntegrationError> {
-        let bytes = fs::read(path).map_err(|_| IntegrationError::Policy("cannot read policy".into()))?;
+        let bytes =
+            fs::read(path).map_err(|_| IntegrationError::Policy("cannot read policy".into()))?;
         if bytes.len() > 1024 * 1024 {
             return Err(IntegrationError::Policy("policy too large".into()));
         }
@@ -81,10 +96,16 @@ impl EgressPolicy {
         for c in cfg.target {
             validate_name(&c.name)?;
             if c.hosts.is_empty() || c.cidrs.is_empty() || c.ports.is_empty() {
-                return Err(IntegrationError::Policy(format!("target {} is incomplete", c.name)));
+                return Err(IntegrationError::Policy(format!(
+                    "target {} is incomplete",
+                    c.name
+                )));
             }
             if !c.tls_required {
-                return Err(IntegrationError::Policy(format!("target {} must require TLS in M14", c.name)));
+                return Err(IntegrationError::Policy(format!(
+                    "target {} must require TLS in M14",
+                    c.name
+                )));
             }
             if c.max_dns_answers == 0 || c.max_dns_answers > MAX_DNS_ANSWERS_HARD {
                 return Err(IntegrationError::Policy("invalid DNS answer limit".into()));
@@ -95,7 +116,10 @@ impl EgressPolicy {
             }
             let mut cidrs = Vec::new();
             for n in c.cidrs {
-                cidrs.push(n.parse().map_err(|_| IntegrationError::Policy("invalid CIDR".into()))?);
+                cidrs.push(
+                    n.parse()
+                        .map_err(|_| IntegrationError::Policy("invalid CIDR".into()))?,
+                );
             }
             if targets.contains_key(&c.name) {
                 return Err(IntegrationError::Policy("duplicate target name".into()));
@@ -115,7 +139,9 @@ impl EgressPolicy {
                 },
             );
         }
-        Ok(Self { targets: Arc::new(targets) })
+        Ok(Self {
+            targets: Arc::new(targets),
+        })
     }
 
     pub(crate) fn target(&self, name: &str) -> Result<&Target, IntegrationError> {
@@ -137,7 +163,9 @@ impl EgressPolicy {
 fn validate_name(v: &str) -> Result<(), IntegrationError> {
     if v.is_empty()
         || v.len() > 64
-        || !v.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_'))
+        || !v
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_'))
     {
         return Err(IntegrationError::Policy("invalid target name".into()));
     }
@@ -146,7 +174,10 @@ fn validate_name(v: &str) -> Result<(), IntegrationError> {
 
 pub(crate) fn policy_ip(ip: IpAddr) -> IpAddr {
     match ip {
-        IpAddr::V6(v6) => v6.to_ipv4_mapped().map(IpAddr::V4).unwrap_or(IpAddr::V6(v6)),
+        IpAddr::V6(v6) => v6
+            .to_ipv4_mapped()
+            .map(IpAddr::V4)
+            .unwrap_or(IpAddr::V6(v6)),
         v4 => v4,
     }
 }
@@ -165,11 +196,15 @@ pub(crate) fn canonical_host(v: &str) -> Result<String, IntegrationError> {
     if h.is_empty()
         || h.len() > 253
         || h.parse::<IpAddr>().is_ok()
-        || !h.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'.')
+        || !h
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'.')
     {
         return Err(IntegrationError::Policy("invalid hostname".into()));
     }
-    if h.split('.').any(|p| p.is_empty() || p.len() > 63 || p.starts_with('-') || p.ends_with('-')) {
+    if h.split('.')
+        .any(|p| p.is_empty() || p.len() > 63 || p.starts_with('-') || p.ends_with('-'))
+    {
         return Err(IntegrationError::Policy("invalid hostname".into()));
     }
     Ok(h)
@@ -177,7 +212,7 @@ pub(crate) fn canonical_host(v: &str) -> Result<String, IntegrationError> {
 
 #[cfg(test)]
 mod tests {
-    use super::{canonical_host, ip_allowed, policy_ip, EgressConfig, EgressPolicy, TargetConfig};
+    use super::{EgressConfig, EgressPolicy, TargetConfig, canonical_host, ip_allowed, policy_ip};
     use ipnet::IpNet;
     use std::net::IpAddr;
 
@@ -228,7 +263,10 @@ mod tests {
     fn ipv4_mapped_ipv6_uses_ipv4_policy() {
         let v4 = vec!["203.0.113.0/24".parse::<IpNet>().unwrap()];
         let mapped: IpAddr = "::ffff:203.0.113.9".parse().unwrap();
-        assert_eq!(policy_ip(mapped), IpAddr::V4(std::net::Ipv4Addr::new(203, 0, 113, 9)));
+        assert_eq!(
+            policy_ip(mapped),
+            IpAddr::V4(std::net::Ipv4Addr::new(203, 0, 113, 9))
+        );
         assert!(ip_allowed(&v4, mapped));
         let mapped_v6_only = vec!["::ffff:0:0/96".parse::<IpNet>().unwrap()];
         assert!(!ip_allowed(&mapped_v6_only, mapped));
@@ -240,7 +278,10 @@ mod tests {
         for ip in ["::1", "fe80::1", "fc00::1", "ff02::1", "::"] {
             assert!(!ip_allowed(&global, ip.parse().unwrap()), "{ip}");
         }
-        assert!(ip_allowed(&["fe80::/10".parse::<IpNet>().unwrap()], "fe80::1".parse().unwrap()));
+        assert!(ip_allowed(
+            &["fe80::/10".parse::<IpNet>().unwrap()],
+            "fe80::1".parse().unwrap()
+        ));
     }
 
     #[test]

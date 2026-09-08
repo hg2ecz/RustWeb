@@ -63,7 +63,9 @@ pub(super) fn host_matches_public(raw: Option<&str>, expected: &str) -> bool {
     request_public_host(raw).as_deref() == Some(expected)
 }
 
-fn read_certificate_chain(cert_path: &Path) -> Result<Vec<rustls::pki_types::CertificateDer<'static>>, TlsConfigError> {
+fn read_certificate_chain(
+    cert_path: &Path,
+) -> Result<Vec<rustls::pki_types::CertificateDer<'static>>, TlsConfigError> {
     let file = fs::File::open(cert_path)
         .map_err(|e| TlsConfigError::io("open TLS certificate file", cert_path, e))?;
     let mut reader = BufReader::new(file);
@@ -79,7 +81,9 @@ fn read_certificate_chain(cert_path: &Path) -> Result<Vec<rustls::pki_types::Cer
     Ok(cert_chain)
 }
 
-fn read_private_key(key_path: &Path) -> Result<rustls::pki_types::PrivateKeyDer<'static>, TlsConfigError> {
+fn read_private_key(
+    key_path: &Path,
+) -> Result<rustls::pki_types::PrivateKeyDer<'static>, TlsConfigError> {
     let file = fs::File::open(key_path)
         .map_err(|e| TlsConfigError::io("open TLS private key file", key_path, e))?;
     let mut reader = BufReader::new(file);

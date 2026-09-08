@@ -1,20 +1,27 @@
-use crate::{AuthRuntime, CacheCliConfig, LifecycleCliConfig, StaticAssets, StaticAssetsCliConfig, StorageCliConfig, cli, route_matches_exact_path, source_reload};
-use crate::bootstrap_config::{audit_resource_profiles, load_resource_profiles, validate_route_rate_policies};
+use crate::bootstrap_config::{
+    audit_resource_profiles, load_resource_profiles, validate_route_rate_policies,
+};
 use crate::rate_limit::RouteRateLimiter;
-use crate::server_config_file::{DomainCliConfig, DomainRuntime, HostingRuntime, SourceReloadCliConfig};
+use crate::server_config_file::{
+    DomainCliConfig, DomainRuntime, HostingRuntime, SourceReloadCliConfig,
+};
 use crate::server_errors::BackendSupportError;
 use crate::static_delivery::{route_conflicts_static, validate_static_prefix};
+use crate::{
+    AuthRuntime, CacheCliConfig, LifecycleCliConfig, StaticAssets, StaticAssetsCliConfig,
+    StorageCliConfig, cli, route_matches_exact_path, source_reload,
+};
 use compiler::compile_file_with_dependencies;
 use language_core::{RouteAuth, ServerConfig};
 use observability::{server_event, server_log};
 use runtime::ExecutionLimits;
-use storage::{AppFs, FsLimits, FsMode};
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::io;
 use std::net::IpAddr;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
+use storage::{AppFs, FsLimits, FsMode};
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::TcpListener;
 #[cfg(unix)]
@@ -42,7 +49,11 @@ impl BoundListener {
             #[cfg(unix)]
             BoundListener::Unix(listener) => {
                 let (stream, _) = listener.accept().await?;
-                Ok((Box::new(stream), IpAddr::from([127, 0, 0, 1]), "unix".into()))
+                Ok((
+                    Box::new(stream),
+                    IpAddr::from([127, 0, 0, 1]),
+                    "unix".into(),
+                ))
             }
         }
     }
@@ -58,12 +69,32 @@ pub(super) async fn bind_application_listener(
             use std::os::unix::fs::{FileTypeExt, PermissionsExt};
             if let Ok(meta) = fs::symlink_metadata(path) {
                 if meta.file_type().is_symlink() || !meta.file_type().is_socket() {
-                    return Err(BackendSupportError::UnsafeUnixSocketPath(path.to_path_buf()));
+                    return Err(BackendSupportError::UnsafeUnixSocketPath(
+                        path.to_path_buf(),
+                    ));
                 }
-                fs::remove_file(path).map_err(|source| BackendSupportError::io("remove Unix listener", format!("`{}`", path.display()), source))?;
+                fs::remove_file(path).map_err(|source| {
+                    BackendSupportError::io(
+                        "remove Unix listener",
+                        format!("`{}`", path.display()),
+                        source,
+                    )
+                })?;
             }
-            let listener = UnixListener::bind(path).map_err(|source| BackendSupportError::io("bind Unix listener", format!("`{}`", path.display()), source))?;
-            fs::set_permissions(path, fs::Permissions::from_mode(0o660)).map_err(|source| BackendSupportError::io("set Unix listener permissions on", format!("`{}`", path.display()), source))?;
+            let listener = UnixListener::bind(path).map_err(|source| {
+                BackendSupportError::io(
+                    "bind Unix listener",
+                    format!("`{}`", path.display()),
+                    source,
+                )
+            })?;
+            fs::set_permissions(path, fs::Permissions::from_mode(0o660)).map_err(|source| {
+                BackendSupportError::io(
+                    "set Unix listener permissions on",
+                    format!("`{}`", path.display()),
+                    source,
+                )
+            })?;
             return Ok(BoundListener::Unix(listener));
         }
         #[cfg(not(unix))]
@@ -72,7 +103,11 @@ pub(super) async fn bind_application_listener(
             return Err(BackendSupportError::UnixSocketsUnsupported);
         }
     }
-    Ok(BoundListener::Tcp(TcpListener::bind(tcp_addr).await.map_err(|source| BackendSupportError::io("bind TCP listener", tcp_addr.to_string(), source))?))
+    Ok(BoundListener::Tcp(
+        TcpListener::bind(tcp_addr).await.map_err(|source| {
+            BackendSupportError::io("bind TCP listener", tcp_addr.to_string(), source)
+        })?,
+    ))
 }
 
 pub(super) fn prepare_domain_runtime(
@@ -113,8 +148,15 @@ pub(super) fn prepare_domain_runtime(
     let static_assets = if let Some(root) = static_cli.root.as_deref() {
         let fs = AppFs::open_root(
             root,
-            FsMode { read: true, write: false, create: false },
-            FsLimits { max_file_bytes: static_cli.max_asset_bytes, ..FsLimits::default() },
+            FsMode {
+                read: true,
+                write: false,
+                create: false,
+            },
+            FsLimits {
+                max_file_bytes: static_cli.max_asset_bytes,
+                ..FsLimits::default()
+            },
         )?;
         Some(Arc::new(StaticAssets {
             fs,
@@ -123,36 +165,75 @@ pub(super) fn prepare_domain_runtime(
             immutable_max_age_secs: static_cli.immutable_max_age_secs,
             precompressed: static_cli.precompressed,
         }))
-    } else { None };
+    } else {
+        None
+    };
     if let Some(static_assets) = static_assets.as_deref() {
-        if let Some(route) = program.routes.iter().find(|r| route_conflicts_static(r, &static_assets.url_prefix)) {
-            return Err(BackendSupportError::StaticRouteConflict { route: route.path.clone(), prefix: static_assets.url_prefix.clone() });
+        if let Some(route) = program
+            .routes
+            .iter()
+            .find(|r| route_conflicts_static(r, &static_assets.url_prefix))
+        {
+            return Err(BackendSupportError::StaticRouteConflict {
+                route: route.path.clone(),
+                prefix: static_assets.url_prefix.clone(),
+            });
         }
     }
-    if program.routes.iter().any(|r| r.path.starts_with("/__rw/media/")) {
+    if program
+        .routes
+        .iter()
+        .any(|r| r.path.starts_with("/__rw/media/"))
+    {
         return Err(BackendSupportError::ReservedMediaRoute);
     }
     for health_path in [&lifecycle.live_path, &lifecycle.ready_path] {
-        if program.routes.iter().any(|r| route_matches_exact_path(r, health_path)) {
-            return Err(BackendSupportError::ReservedHealthRoute { path: health_path.to_string() });
+        if program
+            .routes
+            .iter()
+            .any(|r| route_matches_exact_path(r, health_path))
+        {
+            return Err(BackendSupportError::ReservedHealthRoute {
+                path: health_path.to_string(),
+            });
         }
         if let Some(static_assets) = static_assets.as_deref() {
             if health_path.starts_with(&static_assets.url_prefix) {
-                return Err(BackendSupportError::HealthStaticConflict { path: health_path.to_string(), prefix: static_assets.url_prefix.clone() });
+                return Err(BackendSupportError::HealthStaticConflict {
+                    path: health_path.to_string(),
+                    prefix: static_assets.url_prefix.clone(),
+                });
             }
         }
     }
     let appfs = if program.routes.iter().any(|r| r.upload.is_some()) {
-        let root = storage_cli.data_root.as_deref().ok_or(BackendSupportError::MissingUploadDataRoot)?;
+        let root = storage_cli
+            .data_root
+            .as_deref()
+            .ok_or(BackendSupportError::MissingUploadDataRoot)?;
         let mode = FsMode::parse(&storage_cli.fs_mode)?;
         if !mode.create || !mode.write {
             return Err(BackendSupportError::UploadPermissions);
         }
-        if program.routes.iter().any(|r| r.upload.as_ref().map(|u| u.image).unwrap_or(false)) && !mode.read {
+        if program
+            .routes
+            .iter()
+            .any(|r| r.upload.as_ref().map(|u| u.image).unwrap_or(false))
+            && !mode.read
+        {
             return Err(BackendSupportError::ImageUploadPermissions);
         }
-        Some(Arc::new(AppFs::open_root(root, mode, FsLimits { max_file_bytes: storage_cli.max_upload_bytes, ..FsLimits::default() })?))
-    } else { None };
+        Some(Arc::new(AppFs::open_root(
+            root,
+            mode,
+            FsLimits {
+                max_file_bytes: storage_cli.max_upload_bytes,
+                ..FsLimits::default()
+            },
+        )?))
+    } else {
+        None
+    };
     Ok(Arc::new(DomainRuntime {
         host,
         workdir,
@@ -190,10 +271,19 @@ pub(super) fn build_hosting_runtime(
     if domain_cli.is_empty() {
         return Ok(HostingRuntime {
             default: Some(prepare_domain_runtime(
-                None, None, app, config.clone(), storage_cli.clone(), static_cli.clone(),
-                resource_profiles_file, config.max_connections,
-                config.max_connections.saturating_mul(2), config.request_timeout_ms.min(5_000), lifecycle,
-                global_reload.clone(), 1,
+                None,
+                None,
+                app,
+                config.clone(),
+                storage_cli.clone(),
+                static_cli.clone(),
+                resource_profiles_file,
+                config.max_connections,
+                config.max_connections.saturating_mul(2),
+                config.request_timeout_ms.min(5_000),
+                lifecycle,
+                global_reload.clone(),
+                1,
             )?),
             domains: Arc::new(HashMap::new()),
         });
@@ -201,17 +291,29 @@ pub(super) fn build_hosting_runtime(
     let mut domains = HashMap::new();
     for d in domain_cli {
         let runtime = prepare_domain_runtime(
-            Some(d.host.clone()), Some(d.workdir.clone()), &d.app, d.config.clone(),
-            d.storage.clone(), d.static_assets.clone(), d.resource_profiles_file.as_deref(),
-            d.max_concurrent_requests, d.max_queued_requests, d.queue_timeout_ms, lifecycle,
-            d.reload.clone(), 1,
+            Some(d.host.clone()),
+            Some(d.workdir.clone()),
+            &d.app,
+            d.config.clone(),
+            d.storage.clone(),
+            d.static_assets.clone(),
+            d.resource_profiles_file.as_deref(),
+            d.max_concurrent_requests,
+            d.max_queued_requests,
+            d.queue_timeout_ms,
+            lifecycle,
+            d.reload.clone(),
+            1,
         )?;
         domains.insert(d.host.clone(), Arc::clone(&runtime));
         for alias in &d.aliases {
             domains.insert(alias.clone(), Arc::clone(&runtime));
         }
     }
-    Ok(HostingRuntime { default: None, domains: Arc::new(domains) })
+    Ok(HostingRuntime {
+        default: None,
+        domains: Arc::new(domains),
+    })
 }
 
 pub(super) fn try_reload_hosting(
@@ -224,7 +326,12 @@ pub(super) fn try_reload_hosting(
     let reloaded = match cli::parse_args() {
         Ok(v) => v,
         Err(err) => {
-            server_event("error", "domain_reload_rejected", "reload", &err.to_string());
+            server_event(
+                "error",
+                "domain_reload_rejected",
+                "reload",
+                &err.to_string(),
+            );
             return;
         }
     };
@@ -240,7 +347,12 @@ pub(super) fn try_reload_hosting(
     ) {
         Ok(v) => v,
         Err(err) => {
-            server_event("error", "domain_reload_rejected", "reload", &err.to_string());
+            server_event(
+                "error",
+                "domain_reload_rejected",
+                "reload",
+                &err.to_string(),
+            );
             return;
         }
     };
@@ -267,7 +379,12 @@ pub(super) fn try_reload_hosting(
             validation_error = Some(err.to_string());
             break;
         }
-        for route in domain.program.routes.iter().filter(|r| r.public_cache.is_some()) {
+        for route in domain
+            .program
+            .routes
+            .iter()
+            .filter(|r| r.public_cache.is_some())
+        {
             if route.public_cache.as_ref().unwrap().ttl_secs > cache_cli.max_ttl_secs {
                 validation_error = Some(format!(
                     "domain {:?} route `{}` cache ttl exceeds configured operator maximum",

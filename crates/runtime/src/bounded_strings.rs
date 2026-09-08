@@ -81,7 +81,12 @@ fn pop_non_negative_usize(stack: &mut Vec<Value>) -> Result<usize, AppError> {
 }
 
 fn string_arg(stack: &[Value], index_from_end: usize) -> Result<&str, AppError> {
-    match stack.get(stack.len().checked_sub(index_from_end + 1).ok_or(AppError::Internal)?) {
+    match stack.get(
+        stack
+            .len()
+            .checked_sub(index_from_end + 1)
+            .ok_or(AppError::Internal)?,
+    ) {
         Some(Value::String(value)) => Ok(value),
         _ => Err(AppError::Internal),
     }

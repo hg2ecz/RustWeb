@@ -50,7 +50,12 @@ route edit POST "/articles/:id<Int>" form title<String> {route_auth} => edit;
             })
             .unwrap();
         assert_eq!(rule.object, "article");
-        assert_eq!(&rule.mode, &AuthorizationMode::Owner { field: "authorUsername".into() });
+        assert_eq!(
+            &rule.mode,
+            &AuthorizationMode::Owner {
+                field: "authorUsername".into()
+            }
+        );
         assert_eq!(rule.allow_roles, vec!["Publisher", "Admin"]);
     }
 

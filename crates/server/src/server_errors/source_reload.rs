@@ -7,7 +7,10 @@ pub(crate) enum SourceReloadError {
     RatePolicy(super::RatePolicyConfigError),
     Cache(super::PublicCacheError),
     HostingLockPoisoned,
-    CacheTtlExceeded { domain: Option<String>, route: String },
+    CacheTtlExceeded {
+        domain: Option<String>,
+        route: String,
+    },
     CacheUnavailable,
     DatabaseUnavailable,
     AuthenticationUnavailable,
@@ -77,11 +80,17 @@ impl Error for SourceReloadError {
 }
 
 impl From<super::BackendSupportError> for SourceReloadError {
-    fn from(value: super::BackendSupportError) -> Self { Self::Backend(value) }
+    fn from(value: super::BackendSupportError) -> Self {
+        Self::Backend(value)
+    }
 }
 impl From<super::RatePolicyConfigError> for SourceReloadError {
-    fn from(value: super::RatePolicyConfigError) -> Self { Self::RatePolicy(value) }
+    fn from(value: super::RatePolicyConfigError) -> Self {
+        Self::RatePolicy(value)
+    }
 }
 impl From<super::PublicCacheError> for SourceReloadError {
-    fn from(value: super::PublicCacheError) -> Self { Self::Cache(value) }
+    fn from(value: super::PublicCacheError) -> Self {
+        Self::Cache(value)
+    }
 }

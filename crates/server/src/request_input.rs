@@ -108,9 +108,11 @@ impl<'de> Visitor<'de> for StrictJsonObjectVisitor {
                         out.push((key.clone(), value));
                     }
                 }
-                _ => return Err(de::Error::custom(
-                    "JSON field must be String, Int, Bool, or string array",
-                )),
+                _ => {
+                    return Err(de::Error::custom(
+                        "JSON field must be String, Int, Bool, or string array",
+                    ));
+                }
             }
         }
         Ok(out)

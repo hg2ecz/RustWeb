@@ -74,7 +74,12 @@ fn parse_mode<'a>(
                 )));
             }
             validate_owner_field(program, model_name, owner_field, handler)?;
-            Ok((AuthorizationMode::Owner { field: (*owner_field).into() }, rest))
+            Ok((
+                AuthorizationMode::Owner {
+                    field: (*owner_field).into(),
+                },
+                rest,
+            ))
         }
         _ => Err(CompileError::Syntax(format!(
             "{handler} authorization expects `owner <field>` or `authenticated`"

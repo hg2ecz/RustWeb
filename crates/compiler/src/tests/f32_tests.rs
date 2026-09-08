@@ -4,7 +4,10 @@ use super::*;
 fn parses_f32_literals_and_arithmetic() {
     let program = Program::default();
     let expr = parse_expr("1.5f32 + 2.25f32", &program).expect("F32 expression");
-    assert_eq!(infer_expr_type(&expr, &HashMap::new(), &program).unwrap(), ValueType::F32);
+    assert_eq!(
+        infer_expr_type(&expr, &HashMap::new(), &program).unwrap(),
+        ValueType::F32
+    );
     assert!(matches!(expr, Expr::Binary { .. }));
 }
 

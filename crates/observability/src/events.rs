@@ -41,7 +41,6 @@ pub struct AuditEvent<'a> {
     pub detail: &'a str,
 }
 
-
 #[derive(Debug, Clone, Serialize)]
 pub struct SecurityEvent<'a> {
     pub schema_version: u8,
@@ -88,10 +87,11 @@ pub fn new_request_id() -> String {
     format!("rw-{nanos:032x}-{counter:016x}")
 }
 
-
 #[cfg(test)]
 mod tests {
-    use super::{ActivityEvent, RequestLog, SecurityEvent, json_line, new_request_id, utc_timestamp};
+    use super::{
+        ActivityEvent, RequestLog, SecurityEvent, json_line, new_request_id, utc_timestamp,
+    };
 
     #[test]
     fn request_id_is_server_generated_and_unique() {
@@ -160,5 +160,4 @@ mod tests {
         assert!(!line.contains("alice@example.com"));
         assert!(!line.contains("127.0.0.1"));
     }
-
 }

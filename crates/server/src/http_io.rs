@@ -66,7 +66,12 @@ impl Response {
     pub(super) fn stored_headers(&self) -> Vec<(String, String)> {
         self.headers
             .iter()
-            .map(|header| (header.name().as_str().to_string(), header.value().to_string()))
+            .map(|header| {
+                (
+                    header.name().as_str().to_string(),
+                    header.value().to_string(),
+                )
+            })
             .collect()
     }
 
@@ -254,7 +259,10 @@ pub(super) struct ParsedHead {
     pub(super) keep_alive: bool,
 }
 
-pub(super) fn parse_request_head(head: &str, max_header_count: usize) -> Result<ParsedHead, HttpReadError> {
+pub(super) fn parse_request_head(
+    head: &str,
+    max_header_count: usize,
+) -> Result<ParsedHead, HttpReadError> {
     let mut lines = head.split("\r\n");
     let request_line = lines.next().ok_or(HttpReadError::BadRequest)?;
     let mut parts = request_line.split(' ');
@@ -487,7 +495,8 @@ where
         head.push_str("Strict-Transport-Security: max-age=31536000\r\n");
     }
     head.push_str("Referrer-Policy: no-referrer\r\n");
-    let csp = crate::security_headers::content_security_policy(response.content_type(), &response.body);
+    let csp =
+        crate::security_headers::content_security_policy(response.content_type(), &response.body);
     head.push_str("Content-Security-Policy: ");
     head.push_str(&csp);
     head.push_str("\r\n");
@@ -499,8 +508,7 @@ where
         "Cross-Origin-Resource-Policy: same-origin\r\n"
     });
     head.push_str("X-Frame-Options: DENY\r\n");
-    if !response.has_header(HeaderName::CacheControl)
-    {
+    if !response.has_header(HeaderName::CacheControl) {
         head.push_str("Cache-Control: no-store\r\n");
     }
     head.push_str("Permissions-Policy: camera=(), microphone=(), geolocation=()\r\n");
@@ -532,10 +540,7 @@ mod response_metadata_tests {
     #[test]
     fn invalid_dynamic_header_marks_response_fail_closed() {
         let mut response = Response::text(200, "OK", b"ok");
-        response.push_header(
-            HeaderName::Location,
-            "/safe\r\nSet-Cookie: injected=1",
-        );
+        response.push_header(HeaderName::Location, "/safe\r\nSet-Cookie: injected=1");
         assert!(!response.metadata_valid());
     }
 

@@ -37,13 +37,17 @@ pub(super) fn parse(
 
     let symbol = resolve(namespace, type_name);
     let (domain, definition) = program.domain_type_by_name(&symbol).ok_or_else(|| {
-        CompileError::Syntax(format!("validate target `{type_name}` must be a domain type"))
+        CompileError::Syntax(format!(
+            "validate target `{type_name}` must be a domain type"
+        ))
     })?;
     let expr = parse_expr_in_namespace(expression_text.trim(), namespace, program)?;
     validate_expr(&expr, known, program)?;
     let source = infer_static_expr_type(&expr, known, program)?
         .scalar()
-        .ok_or_else(|| CompileError::Syntax("domain validation requires a scalar expression".into()))?;
+        .ok_or_else(|| {
+            CompileError::Syntax("domain validation requires a scalar expression".into())
+        })?;
 
     if let ValueType::Domain(source_domain) = source.value_type {
         if source_domain != domain {
@@ -53,7 +57,10 @@ pub(super) fn parse(
                     "cannot refine `{}` into `{type_name}`: nominal domain types are not interchangeable",
                     type_semantics::display(program, source.value_type),
                 ),
-                Some("refine the original primitive/boundary value into the intended domain instead".into()),
+                Some(
+                    "refine the original primitive/boundary value into the intended domain instead"
+                        .into(),
+                ),
             ));
         }
     } else if !type_semantics::represented_as(program, source.value_type, definition.base) {
@@ -64,7 +71,10 @@ pub(super) fn parse(
                 type_semantics::display(program, source.value_type),
                 type_semantics::display(program, definition.base),
             ),
-            Some(format!("provide a {}-backed value and validate it explicitly", type_semantics::display(program, definition.base))),
+            Some(format!(
+                "provide a {}-backed value and validate it explicitly",
+                type_semantics::display(program, definition.base)
+            )),
         ));
     }
 

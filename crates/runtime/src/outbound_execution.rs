@@ -17,7 +17,7 @@ pub(crate) async fn execute(
                 .get_status(&call.egress_target, &call.path)
                 .await
                 .map_err(|_| AppError::Internal)?
-        },
+        }
         OutboundMethod::PostJson => {
             let body = call.body.as_ref().ok_or(AppError::Internal)?;
             let value = crate::vm::eval_expr(body, env, budget)?;

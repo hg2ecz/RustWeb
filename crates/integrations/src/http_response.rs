@@ -25,7 +25,10 @@ pub(crate) async fn read_http_response<S: AsyncRead + Unpin>(
     let mut data = Vec::new();
     let mut buf = [0u8; 4096];
     let head_end = loop {
-        let n = stream.read(&mut buf).await.map_err(|_| IntegrationError::Protocol)?;
+        let n = stream
+            .read(&mut buf)
+            .await
+            .map_err(|_| IntegrationError::Protocol)?;
         if n == 0 {
             return Err(IntegrationError::Protocol);
         }
@@ -69,7 +72,11 @@ pub(crate) async fn read_http_response<S: AsyncRead + Unpin>(
             return Err(IntegrationError::Protocol);
         }
         if name == "content-length" {
-            content_length = Some(value.parse::<usize>().map_err(|_| IntegrationError::Protocol)?);
+            content_length = Some(
+                value
+                    .parse::<usize>()
+                    .map_err(|_| IntegrationError::Protocol)?,
+            );
         }
         headers.insert(name, value.to_string());
     }
@@ -83,7 +90,10 @@ pub(crate) async fn read_http_response<S: AsyncRead + Unpin>(
     }
     while body.len() < expected {
         let want = (expected - body.len()).min(buf.len());
-        let n = stream.read(&mut buf[..want]).await.map_err(|_| IntegrationError::Protocol)?;
+        let n = stream
+            .read(&mut buf[..want])
+            .await
+            .map_err(|_| IntegrationError::Protocol)?;
         if n == 0 {
             return Err(IntegrationError::Protocol);
         }
@@ -92,7 +102,11 @@ pub(crate) async fn read_http_response<S: AsyncRead + Unpin>(
             return Err(IntegrationError::ResponseTooLarge);
         }
     }
-    Ok(HttpsResponse { status, headers, body })
+    Ok(HttpsResponse {
+        status,
+        headers,
+        body,
+    })
 }
 
 fn validate_header(name: &str, value: &str) -> Result<(), IntegrationError> {
@@ -116,8 +130,12 @@ mod tests {
 
     #[tokio::test]
     async fn rejects_compressed_upstream_response() {
-        let mut response: &[u8] = b"HTTP/1.1 200 OK\r\nContent-Length: 4\r\nContent-Encoding: gzip\r\n\r\ntest";
-        assert_eq!(read_http_response(&mut response, 1024).await, Err(IntegrationError::Protocol));
+        let mut response: &[u8] =
+            b"HTTP/1.1 200 OK\r\nContent-Length: 4\r\nContent-Encoding: gzip\r\n\r\ntest";
+        assert_eq!(
+            read_http_response(&mut response, 1024).await,
+            Err(IntegrationError::Protocol)
+        );
     }
 
     #[tokio::test]

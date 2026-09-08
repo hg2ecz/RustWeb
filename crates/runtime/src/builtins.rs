@@ -75,9 +75,9 @@ fn eval_simple(function: BuiltinFunction, stack: &mut Vec<Value>) -> Result<Valu
             let _ = stack.pop().ok_or(AppError::Internal)?;
             Ok(Value::String("[redacted]".into()))
         }
-        BuiltinFunction::RegexMatch | BuiltinFunction::RegexReplace | BuiltinFunction::RegexCaptures => {
-            Err(AppError::Internal)
-        }
+        BuiltinFunction::RegexMatch
+        | BuiltinFunction::RegexReplace
+        | BuiltinFunction::RegexCaptures => Err(AppError::Internal),
         _ => Err(AppError::Internal),
     }
 }
@@ -99,13 +99,15 @@ fn estimated_simple_result_alloc(
     match function {
         BuiltinFunction::DictNew | BuiltinFunction::ContainsKey => Ok(0),
         BuiltinFunction::Redact => Ok("[redacted]".len() as u64),
-        BuiltinFunction::RemoveKey => match stack.get(stack.len().checked_sub(2).ok_or(AppError::Internal)?) {
+        BuiltinFunction::RemoveKey => match stack
+            .get(stack.len().checked_sub(2).ok_or(AppError::Internal)?)
+        {
             Some(Value::StringDict(dict)) => Ok(super::memory::estimate_string_dict_bytes(dict)),
             _ => Err(AppError::Internal),
         },
-        BuiltinFunction::RegexMatch | BuiltinFunction::RegexReplace | BuiltinFunction::RegexCaptures => {
-            Err(AppError::Internal)
-        }
+        BuiltinFunction::RegexMatch
+        | BuiltinFunction::RegexReplace
+        | BuiltinFunction::RegexCaptures => Err(AppError::Internal),
         _ => Err(AppError::Internal),
     }
 }

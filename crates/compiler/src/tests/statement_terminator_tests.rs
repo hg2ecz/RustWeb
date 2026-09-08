@@ -53,7 +53,6 @@ route home GET "/" public => home;
     assert!(compile_source(src).is_ok());
 }
 
-
 #[test]
 fn route_declarations_require_semicolons() {
     let missing = r#"
@@ -64,7 +63,8 @@ route home GET "/" public => home
 "#;
     let err = compile_source(missing).expect_err("route without semicolon must fail");
     assert!(
-        err.to_string().contains("route declaration must end with `;`"),
+        err.to_string()
+            .contains("route declaration must end with `;`"),
         "{err}"
     );
 }

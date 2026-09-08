@@ -47,7 +47,15 @@ pub(super) async fn verify(
     if !constant_time_eq(&expected, &supplied) {
         return Err(rejected(json_api, "invalid_webhook_signature"));
     }
-    claim_replay(redis, domain_namespace, webhook, timestamp_raw, signature_raw, json_api).await
+    claim_replay(
+        redis,
+        domain_namespace,
+        webhook,
+        timestamp_raw,
+        signature_raw,
+        json_api,
+    )
+    .await
 }
 
 async fn claim_replay(
@@ -86,7 +94,10 @@ fn validate_timestamp(timestamp: u64, window: u64, json_api: bool) -> Result<(),
         .map_err(|_| unavailable(json_api))?
         .as_secs();
     if now.abs_diff(timestamp) > window {
-        return Err(rejected(json_api, "webhook_timestamp_outside_replay_window"));
+        return Err(rejected(
+            json_api,
+            "webhook_timestamp_outside_replay_window",
+        ));
     }
     Ok(())
 }
@@ -193,7 +204,13 @@ fn constant_time_eq(left: &[u8; 32], right: &[u8; 32]) -> bool {
 }
 
 fn rejected(json_api: bool, code: &str) -> Response {
-    error(json_api, 401, "Unauthorized", code, b"webhook verification failed\n")
+    error(
+        json_api,
+        401,
+        "Unauthorized",
+        code,
+        b"webhook verification failed\n",
+    )
 }
 
 fn unavailable(json_api: bool) -> Response {

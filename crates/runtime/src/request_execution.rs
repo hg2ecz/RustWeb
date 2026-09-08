@@ -2,14 +2,16 @@ use crate::execution_context::{Budget, ExecutionLimits, ResourceProfiles};
 use crate::request_binding::{
     decode_fields_into, decode_named_form_into, match_route, validate_route_inputs,
 };
-use data::Database;
-use futures_util::FutureExt;
-use language_core::{ActionBody, ActionStatement, AppError, HttpMethod, PageBody, Program, Statement, Value};
-use std::panic::AssertUnwindSafe;
 use crate::response::AppResponse;
 use crate::statement_execution::{
     execute_action_plain, execute_action_statement, execute_page_plain, execute_page_statement,
 };
+use data::Database;
+use futures_util::FutureExt;
+use language_core::{
+    ActionBody, ActionStatement, AppError, HttpMethod, PageBody, Program, Statement, Value,
+};
+use std::panic::AssertUnwindSafe;
 
 pub async fn execute_request(
     program: &Program,
@@ -90,7 +92,16 @@ pub async fn execute_request_with_profiles(
     db: Option<&Database>,
 ) -> Result<AppResponse, AppError> {
     execute_request_with_profiles_and_outbound(
-        program, method, path, query_pairs, form_pairs, limits, profiles, system_values, db, None,
+        program,
+        method,
+        path,
+        query_pairs,
+        form_pairs,
+        limits,
+        profiles,
+        system_values,
+        db,
+        None,
     )
     .await
 }
@@ -124,7 +135,12 @@ pub async fn execute_request_with_profiles_and_outbound(
         .await
     };
     const REQUEST_HARD_DEADLINE: std::time::Duration = std::time::Duration::from_secs(5);
-    match tokio::time::timeout(REQUEST_HARD_DEADLINE, AssertUnwindSafe(future).catch_unwind()).await {
+    match tokio::time::timeout(
+        REQUEST_HARD_DEADLINE,
+        AssertUnwindSafe(future).catch_unwind(),
+    )
+    .await
+    {
         Ok(Ok(v)) => v,
         Ok(Err(_)) => Err(AppError::Internal),
         Err(_) => Err(AppError::DeadlineExceeded),
@@ -144,14 +160,15 @@ async fn execute_inner(
     outbound: Option<&dyn crate::OutboundRuntime>,
 ) -> Result<AppResponse, AppError> {
     budget.charge(1)?;
-    let inbound_bytes = query_pairs
-        .iter()
-        .chain(form_pairs.iter())
-        .try_fold(0u64, |total, (key, value)| {
-            total
-                .checked_add((key.len() + value.len()) as u64)
-                .ok_or(AppError::ExternalIoLimit)
-        })?;
+    let inbound_bytes =
+        query_pairs
+            .iter()
+            .chain(form_pairs.iter())
+            .try_fold(0u64, |total, (key, value)| {
+                total
+                    .checked_add((key.len() + value.len()) as u64)
+                    .ok_or(AppError::ExternalIoLimit)
+            })?;
     budget.charge_external_io(inbound_bytes)?;
     let (route, mut env) = match_route(program, method, path)?;
     decode_fields_into(program, &route.query_fields, query_pairs, &mut env)?;
@@ -170,7 +187,10 @@ async fn execute_inner(
         budget.pop_profile();
         return result;
     }
-    execute_route_body(program, method, route, form_pairs, &mut env, budget, profiles, db, outbound).await
+    execute_route_body(
+        program, method, route, form_pairs, &mut env, budget, profiles, db, outbound,
+    )
+    .await
 }
 
 async fn execute_route_body(
@@ -202,12 +222,14 @@ async fn execute_route_body(
                     let (profile_config, _permit) = profiles.acquire(profile).await?;
                     budget.push_profile(profile_config);
                     let result =
-                        execute_page_plain(program, route, inner, &mut *env, budget, db, outbound).await;
+                        execute_page_plain(program, route, inner, &mut *env, budget, db, outbound)
+                            .await;
                     budget.pop_profile();
                     return result;
                 }
                 if let Some(response) =
-                    execute_page_statement(program, route, s, &mut *env, budget, db, outbound).await?
+                    execute_page_statement(program, route, s, &mut *env, budget, db, outbound)
+                        .await?
                 {
                     return Ok(response);
                 }
@@ -239,7 +261,8 @@ async fn execute_route_body(
                 {
                     let (profile_config, _permit) = profiles.acquire(profile).await?;
                     budget.push_profile(profile_config);
-                    let result = execute_action_plain(program, inner, &mut *env, budget, db, outbound).await;
+                    let result =
+                        execute_action_plain(program, inner, &mut *env, budget, db, outbound).await;
                     budget.pop_profile();
                     return result;
                 }
@@ -253,4 +276,3 @@ async fn execute_route_body(
     }
     Err(AppError::Internal)
 }
-

@@ -65,7 +65,9 @@ pub(super) fn infer(
                 Err(type_error(function, "Int"))
             }
         }
-        _ => Err(CompileError::Syntax("internal: non-math builtin routed to math type checker".into())),
+        _ => Err(CompileError::Syntax(
+            "internal: non-math builtin routed to math type checker".into(),
+        )),
     }
 }
 
@@ -97,7 +99,11 @@ fn require_f32_args(
     }
 }
 
-fn require_arity(function: BuiltinFunction, args: &[Expr], count: usize) -> Result<(), CompileError> {
+fn require_arity(
+    function: BuiltinFunction,
+    args: &[Expr],
+    count: usize,
+) -> Result<(), CompileError> {
     if args.len() == count {
         Ok(())
     } else {
@@ -109,5 +115,8 @@ fn require_arity(function: BuiltinFunction, args: &[Expr], count: usize) -> Resu
 }
 
 fn type_error(function: BuiltinFunction, expected: &str) -> CompileError {
-    CompileError::Syntax(format!("{}(...) requires {expected}", function.source_name()))
+    CompileError::Syntax(format!(
+        "{}(...) requires {expected}",
+        function.source_name()
+    ))
 }

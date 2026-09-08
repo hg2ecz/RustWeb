@@ -101,7 +101,9 @@ fn estimate_replace_bytes(stack: &[Value], regex: &Regex) -> Result<u64, AppErro
     if replacement.len() > MAX_REPLACEMENT_BYTES {
         return Err(AppError::BadRequest);
     }
-    let Some(Value::String(text)) = stack.get(stack.len().checked_sub(3).ok_or(AppError::Internal)?) else {
+    let Some(Value::String(text)) =
+        stack.get(stack.len().checked_sub(3).ok_or(AppError::Internal)?)
+    else {
         return Err(AppError::Internal);
     };
     let mut total = 0_u64;
@@ -164,13 +166,23 @@ fn peek_text_pattern<'a>(
     };
     let text_offset = pattern_offset + 1;
     let Value::String(pattern) = stack
-        .get(stack.len().checked_sub(pattern_offset).ok_or(AppError::Internal)?)
+        .get(
+            stack
+                .len()
+                .checked_sub(pattern_offset)
+                .ok_or(AppError::Internal)?,
+        )
         .ok_or(AppError::Internal)?
     else {
         return Err(AppError::Internal);
     };
     let Value::String(text) = stack
-        .get(stack.len().checked_sub(text_offset).ok_or(AppError::Internal)?)
+        .get(
+            stack
+                .len()
+                .checked_sub(text_offset)
+                .ok_or(AppError::Internal)?,
+        )
         .ok_or(AppError::Internal)?
     else {
         return Err(AppError::Internal);

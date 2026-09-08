@@ -1,7 +1,7 @@
+use crate::WebSecurityCliConfig;
 use crate::outbound_runtime::ServerOutbound;
 use crate::server_config_file::DomainRuntime;
 use crate::server_errors::StartupError;
-use crate::WebSecurityCliConfig;
 use language_core::Effect;
 use observability::server_log;
 use std::sync::Arc;
@@ -17,7 +17,13 @@ pub(super) fn build(
             .pages
             .iter()
             .flat_map(|page| page.effects.iter())
-            .chain(domain.program.actions.iter().flat_map(|action| action.effects.iter()))
+            .chain(
+                domain
+                    .program
+                    .actions
+                    .iter()
+                    .flat_map(|action| action.effects.iter()),
+            )
         {
             if let Effect::Network(target) = effect {
                 targets.insert(target.clone());

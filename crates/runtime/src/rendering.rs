@@ -116,8 +116,13 @@ fn append_url_value(
         (Value::Enum { enum_id, variant }, ValueType::Enum(expected)) if *enum_id == expected => {
             variant.clone()
         }
-        (_, ValueType::Upload | ValueType::F32Array | ValueType::StringList | ValueType::StringDict) => return Err(AppError::Internal),
-        (_, ValueType::Domain(_)) => unreachable!("domain route arguments are represented by their base type"),
+        (
+            _,
+            ValueType::Upload | ValueType::F32Array | ValueType::StringList | ValueType::StringDict,
+        ) => return Err(AppError::Internal),
+        (_, ValueType::Domain(_)) => {
+            unreachable!("domain route arguments are represented by their base type")
+        }
         _ => return Err(AppError::Internal),
     };
     percent_encode_into(&raw, out, path);

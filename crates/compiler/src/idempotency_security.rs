@@ -13,8 +13,14 @@ pub(super) fn validate_route(route: &Route, program: &Program) -> Result<(), Com
         if matches!(route.auth, RouteAuth::Public) {
             return Err(CompileError::security(
                 "SEC-A06-011",
-                format!("route `{}` cannot be both public and idempotent", route.name),
-                Some("authenticate the caller so idempotency keys are scoped to a stable principal".into()),
+                format!(
+                    "route `{}` cannot be both public and idempotent",
+                    route.name
+                ),
+                Some(
+                    "authenticate the caller so idempotency keys are scoped to a stable principal"
+                        .into(),
+                ),
             ));
         }
     }

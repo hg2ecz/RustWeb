@@ -1,4 +1,6 @@
-use crate::database::{connect, ensure_state_table, exec_raw, exec_statement, load_applied, state_table_exists};
+use crate::database::{
+    connect, ensure_state_table, exec_raw, exec_statement, load_applied, state_table_exists,
+};
 use crate::error::MigrationError;
 use crate::history::validate_history;
 use crate::locking::{acquire_lock, release_lock};

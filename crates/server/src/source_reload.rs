@@ -1,11 +1,11 @@
 use crate::LifecycleCliConfig;
 use crate::backend_support::prepare_domain_runtime;
 use crate::bootstrap_config::{PublicPageCache, json_log_escape, validate_route_rate_policies};
+use crate::outbound_runtime::ServerOutbound;
 use crate::rate_limit::RouteRateLimiter;
 use crate::server_config_file::{DomainRuntime, HostingRuntime};
 use crate::server_errors::SourceReloadError;
 use language_core::RouteAuth;
-use crate::outbound_runtime::ServerOutbound;
 use observability::{server_event, server_log};
 use std::collections::{HashMap, HashSet};
 use std::fs;
@@ -86,12 +86,26 @@ fn validate_candidate(
     outbound: Option<&ServerOutbound>,
 ) -> Result<(), SourceReloadError> {
     validate_route_rate_policies(&domain.program, route_rate_limiter.policies.as_ref())?;
-    for route in domain.program.routes.iter().filter(|route| route.public_cache.is_some()) {
+    for route in domain
+        .program
+        .routes
+        .iter()
+        .filter(|route| route.public_cache.is_some())
+    {
         if route.public_cache.as_ref().unwrap().ttl_secs > cache_max_ttl_secs {
-            return Err(SourceReloadError::CacheTtlExceeded { domain: domain.host.clone(), route: route.name.clone() });
+            return Err(SourceReloadError::CacheTtlExceeded {
+                domain: domain.host.clone(),
+                route: route.name.clone(),
+            });
         }
     }
-    if domain.program.routes.iter().any(|route| route.public_cache.is_some()) && !cache_available {
+    if domain
+        .program
+        .routes
+        .iter()
+        .any(|route| route.public_cache.is_some())
+        && !cache_available
+    {
         return Err(SourceReloadError::CacheUnavailable);
     }
     if (domain.program.pages.iter().any(|page| page.needs_db)
@@ -195,7 +209,11 @@ fn commit_candidate(
         replaced = true;
     }
 
-    if guard.domains.values().any(|current| Arc::ptr_eq(current, old)) {
+    if guard
+        .domains
+        .values()
+        .any(|current| Arc::ptr_eq(current, old))
+    {
         let mut domains = (*guard.domains).clone();
         for current in domains.values_mut() {
             if Arc::ptr_eq(current, old) {
@@ -215,7 +233,12 @@ async fn invalidate_domain_cache(
 ) -> Result<(), SourceReloadError> {
     let namespace = candidate.host.as_deref().unwrap_or("__default__");
     let mut routes = HashSet::new();
-    for route in old.program.routes.iter().chain(candidate.program.routes.iter()) {
+    for route in old
+        .program
+        .routes
+        .iter()
+        .chain(candidate.program.routes.iter())
+    {
         if route.public_cache.is_some() {
             routes.insert(route.name.clone());
         }
@@ -258,7 +281,8 @@ pub(super) fn spawn_source_reload_supervisor(
                 }
             };
             let domains = unique_domains(&snapshot);
-            let live_keys: HashSet<String> = domains.iter().map(|domain| domain_key(domain)).collect();
+            let live_keys: HashSet<String> =
+                domains.iter().map(|domain| domain_key(domain)).collect();
             states.retain(|key, _| live_keys.contains(key));
 
             for domain in domains {
@@ -316,7 +340,10 @@ pub(super) fn spawn_source_reload_supervisor(
                 }
                 let failed_same = state.failed_observed.as_ref() == Some(&state.observed);
                 let retry_due = failed_same
-                    && state.retry_after.map(|retry_at| now >= retry_at).unwrap_or(false);
+                    && state
+                        .retry_after
+                        .map(|retry_at| now >= retry_at)
+                        .unwrap_or(false);
                 if failed_same && !retry_due {
                     continue;
                 }
@@ -360,7 +387,9 @@ pub(super) fn spawn_source_reload_supervisor(
 
                 match build {
                     Ok(Ok((old, candidate))) => {
-                        if let Err(err) = invalidate_domain_cache(&public_cache, &old, &candidate).await {
+                        if let Err(err) =
+                            invalidate_domain_cache(&public_cache, &old, &candidate).await
+                        {
                             server_event(
                                 "error",
                                 "source_reload_cache_invalidation_failed",
@@ -370,39 +399,52 @@ pub(super) fn spawn_source_reload_supervisor(
                             if let Some(state) = states.get_mut(&key) {
                                 state.failed_observed = Some(failed_snapshot.clone());
                                 state.pending_since = None;
-                                state.retry_after = Some(Instant::now() + Duration::from_millis(state.retry_delay_ms));
-                                state.retry_delay_ms = state.retry_delay_ms.saturating_mul(2).min(60_000);
+                                state.retry_after = Some(
+                                    Instant::now() + Duration::from_millis(state.retry_delay_ms),
+                                );
+                                state.retry_delay_ms =
+                                    state.retry_delay_ms.saturating_mul(2).min(60_000);
                             }
                             continue;
                         }
                         match commit_candidate(&hosting, &old, Arc::clone(&candidate)) {
-                        Ok(true) => {
-                            server_log(&format!(
-                                "{{\"event\":\"source_reload_committed\",\"domain\":\"{}\",\"old_generation\":{},\"new_generation\":{},\"source_files\":{}}}",
-                                json_log_escape(&key),
-                                old.generation,
-                                candidate.generation,
-                                candidate.source_files.len()
-                            ));
-                            states.remove(&key);
-                        }
-                        Ok(false) => {
-                            server_log(&format!(
-                                "{{\"event\":\"source_reload_stale\",\"domain\":\"{}\",\"generation\":{}}}",
-                                json_log_escape(&key), old.generation
-                            ));
-                            states.remove(&key);
-                        }
-                        Err(err) => {
-                            server_event("error", "source_reload_commit_failed", "reload", &format!("domain={key} error={err}"));
-                            if let Some(state) = states.get_mut(&key) {
-                                state.failed_observed = Some(failed_snapshot.clone());
-                                state.pending_since = None;
-                                state.retry_after = Some(Instant::now() + Duration::from_millis(state.retry_delay_ms));
-                                state.retry_delay_ms = state.retry_delay_ms.saturating_mul(2).min(60_000);
+                            Ok(true) => {
+                                server_log(&format!(
+                                    "{{\"event\":\"source_reload_committed\",\"domain\":\"{}\",\"old_generation\":{},\"new_generation\":{},\"source_files\":{}}}",
+                                    json_log_escape(&key),
+                                    old.generation,
+                                    candidate.generation,
+                                    candidate.source_files.len()
+                                ));
+                                states.remove(&key);
+                            }
+                            Ok(false) => {
+                                server_log(&format!(
+                                    "{{\"event\":\"source_reload_stale\",\"domain\":\"{}\",\"generation\":{}}}",
+                                    json_log_escape(&key),
+                                    old.generation
+                                ));
+                                states.remove(&key);
+                            }
+                            Err(err) => {
+                                server_event(
+                                    "error",
+                                    "source_reload_commit_failed",
+                                    "reload",
+                                    &format!("domain={key} error={err}"),
+                                );
+                                if let Some(state) = states.get_mut(&key) {
+                                    state.failed_observed = Some(failed_snapshot.clone());
+                                    state.pending_since = None;
+                                    state.retry_after = Some(
+                                        Instant::now()
+                                            + Duration::from_millis(state.retry_delay_ms),
+                                    );
+                                    state.retry_delay_ms =
+                                        state.retry_delay_ms.saturating_mul(2).min(60_000);
+                                }
                             }
                         }
-                    }
                     }
                     Ok(Err(err)) => {
                         server_event(
@@ -414,8 +456,10 @@ pub(super) fn spawn_source_reload_supervisor(
                         if let Some(state) = states.get_mut(&key) {
                             state.failed_observed = Some(failed_snapshot.clone());
                             state.pending_since = None;
-                            state.retry_after = Some(Instant::now() + Duration::from_millis(state.retry_delay_ms));
-                            state.retry_delay_ms = state.retry_delay_ms.saturating_mul(2).min(60_000);
+                            state.retry_after =
+                                Some(Instant::now() + Duration::from_millis(state.retry_delay_ms));
+                            state.retry_delay_ms =
+                                state.retry_delay_ms.saturating_mul(2).min(60_000);
                         }
                     }
                     Err(err) => {
@@ -428,8 +472,10 @@ pub(super) fn spawn_source_reload_supervisor(
                         if let Some(state) = states.get_mut(&key) {
                             state.failed_observed = Some(failed_snapshot.clone());
                             state.pending_since = None;
-                            state.retry_after = Some(Instant::now() + Duration::from_millis(state.retry_delay_ms));
-                            state.retry_delay_ms = state.retry_delay_ms.saturating_mul(2).min(60_000);
+                            state.retry_after =
+                                Some(Instant::now() + Duration::from_millis(state.retry_delay_ms));
+                            state.retry_delay_ms =
+                                state.retry_delay_ms.saturating_mul(2).min(60_000);
                         }
                     }
                 }

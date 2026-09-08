@@ -1,14 +1,20 @@
-use crate::module_namespace::{is_symbol_path, qualify};
-use crate::query_mutation_contract::{parse_query_contracts, validate_sql_mutation_contract};
 use crate::declarations;
 use crate::diagnostics::CompileError;
+use crate::module_namespace::{is_symbol_path, qualify};
+use crate::query_mutation_contract::{parse_query_contracts, validate_sql_mutation_contract};
 use crate::source_syntax::{matching_brace, matching_paren, read_ident, split_top_level};
 use crate::sql_syntax::{first_sql_keyword, scan_bind_names};
 use crate::type_resolution::resolve_annotated_value_type;
-use language_core::{FunctionParam, Model, Program, QueryCapability, QueryFunction, QueryReturn, ValueType};
+use language_core::{
+    FunctionParam, Model, Program, QueryCapability, QueryFunction, QueryReturn, ValueType,
+};
 use std::collections::HashSet;
 
-pub(super) fn parse_queries(source: &str, namespace: &str, p: &mut Program) -> Result<(), CompileError> {
+pub(super) fn parse_queries(
+    source: &str,
+    namespace: &str,
+    p: &mut Program,
+) -> Result<(), CompileError> {
     let mut off = 0;
     while let Some(rel) = source[off..].find("query fn ") {
         let keyword = off + rel;
@@ -53,7 +59,15 @@ pub(super) fn parse_queries(source: &str, namespace: &str, p: &mut Program) -> R
                 }
                 _ => {
                     let annotated = resolve_annotated_value_type(pt, namespace, p)
-                        .filter(|resolved| !matches!(resolved.value_type, ValueType::Upload | ValueType::F32Array | ValueType::StringList | ValueType::StringDict))
+                        .filter(|resolved| {
+                            !matches!(
+                                resolved.value_type,
+                                ValueType::Upload
+                                    | ValueType::F32Array
+                                    | ValueType::StringList
+                                    | ValueType::StringDict
+                            )
+                        })
                         .ok_or_else(|| {
                             CompileError::Syntax(format!(
                                 "query `{name}` unsupported parameter type `{pt}`"
@@ -81,13 +95,7 @@ pub(super) fn parse_queries(source: &str, namespace: &str, p: &mut Program) -> R
             .strip_prefix("->")
             .ok_or_else(|| CompileError::Syntax(format!("query `{name}` missing return type")))?
             .trim();
-        let contracts = parse_query_contracts(
-            declaration,
-            namespace,
-            p,
-            &params,
-            &name,
-        )?;
+        let contracts = parse_query_contracts(declaration, namespace, p, &params, &name)?;
         let return_type = resolve_query_return_models(
             parse_query_return(&contracts.return_type).ok_or_else(|| CompileError::Syntax(format!("query `{name}` requires `Result<Void, DbError>`, `Result<Changed, DbError>`, `Result<Model, DbError>`, `Result<Model?, DbError>`, or `Result<List<Model>, DbError>`")))?,
             namespace,
@@ -116,7 +124,14 @@ pub(super) fn parse_queries(source: &str, namespace: &str, p: &mut Program) -> R
         }
         validate_sql(&name, &sql, &params)?;
         let keyword = first_sql_keyword(&sql).unwrap_or_default();
-        validate_sql_mutation_contract(&name, &keyword, &contracts.mutation_target, &contracts.credential_lifecycle, &return_type, &sql)?;
+        validate_sql_mutation_contract(
+            &name,
+            &keyword,
+            &contracts.mutation_target,
+            &contracts.credential_lifecycle,
+            &return_type,
+            &sql,
+        )?;
         let tenant_scope = crate::tenant_security::infer_query_scope(
             &name,
             &return_type,
@@ -175,9 +190,15 @@ pub(super) fn parse_queries(source: &str, namespace: &str, p: &mut Program) -> R
 
 fn resolve_query_return_models(value: QueryReturn, namespace: &str) -> QueryReturn {
     match value {
-        QueryReturn::One(name) => QueryReturn::One(crate::module_namespace::resolve(namespace, &name)),
-        QueryReturn::Optional(name) => QueryReturn::Optional(crate::module_namespace::resolve(namespace, &name)),
-        QueryReturn::List(name) => QueryReturn::List(crate::module_namespace::resolve(namespace, &name)),
+        QueryReturn::One(name) => {
+            QueryReturn::One(crate::module_namespace::resolve(namespace, &name))
+        }
+        QueryReturn::Optional(name) => {
+            QueryReturn::Optional(crate::module_namespace::resolve(namespace, &name))
+        }
+        QueryReturn::List(name) => {
+            QueryReturn::List(crate::module_namespace::resolve(namespace, &name))
+        }
         QueryReturn::Void => QueryReturn::Void,
         QueryReturn::Changed => QueryReturn::Changed,
     }
@@ -267,4 +288,3 @@ fn projection_output_name(raw: &str) -> String {
     };
     output.trim_matches('"').trim_matches('`').to_string()
 }
-

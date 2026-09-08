@@ -314,4 +314,3 @@ fn scan_sql(sql: &str, mode: ScanMode) -> Result<ScanResult, DataError> {
         rewritten: out,
     })
 }
-

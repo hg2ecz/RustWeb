@@ -1,4 +1,4 @@
-use super::{random_hex, validate_memberships, AuthError, TenantId};
+use super::{AuthError, TenantId, random_hex, validate_memberships};
 use data::RedisStore;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -421,7 +421,10 @@ impl SessionBackend {
     ) -> Result<SessionSnapshot, AuthError> {
         match self {
             Self::Memory(s) => s.rotate_authenticated(old, p, m, r, memberships, auth_generation),
-            Self::Redis(s) => s.rotate_authenticated(old, p, m, r, memberships, auth_generation).await,
+            Self::Redis(s) => {
+                s.rotate_authenticated(old, p, m, r, memberships, auth_generation)
+                    .await
+            }
         }
     }
     pub async fn invalidate(&self, id: &str) -> Result<(), AuthError> {

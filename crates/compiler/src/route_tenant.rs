@@ -12,7 +12,9 @@ pub(super) fn parse_tenant_field(
         return Ok(None);
     }
     let field = tokens.get(*cursor + 1).ok_or_else(|| {
-        CompileError::Syntax(format!("route `{route}` tenant binding requires an input field name"))
+        CompileError::Syntax(format!(
+            "route `{route}` tenant binding requires an input field name"
+        ))
     })?;
     if !is_identifier(field) {
         return Err(CompileError::Syntax(format!(
@@ -49,7 +51,10 @@ pub(super) fn validate_tenant_field(
         return Err(CompileError::security(
             "SEC-A01-034",
             format!("route `{route}` tenant input `{field}` must have String representation"),
-            Some("use a nominal String domain type such as OrganizationId for tenant identifiers".into()),
+            Some(
+                "use a nominal String domain type such as OrganizationId for tenant identifiers"
+                    .into(),
+            ),
         ));
     }
     Ok(())

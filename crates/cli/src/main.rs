@@ -19,7 +19,11 @@ enum CliError {
     Migration(migrations::MigrationError),
     Auth(auth::AuthError),
 }
-impl CliError { fn usage(message: impl Into<String>) -> Self { Self::Usage(message.into()) } }
+impl CliError {
+    fn usage(message: impl Into<String>) -> Self {
+        Self::Usage(message.into())
+    }
+}
 impl fmt::Display for CliError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -37,17 +41,45 @@ impl Error for CliError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
             Self::Usage(_) => None,
-            Self::Io(source) => Some(source), Self::ParseInt(source) => Some(source), Self::Utf8(source) => Some(source),
-            Self::Compile(source) => Some(source), Self::Migration(source) => Some(source), Self::Auth(source) => Some(source),
+            Self::Io(source) => Some(source),
+            Self::ParseInt(source) => Some(source),
+            Self::Utf8(source) => Some(source),
+            Self::Compile(source) => Some(source),
+            Self::Migration(source) => Some(source),
+            Self::Auth(source) => Some(source),
         }
     }
 }
-impl From<io::Error> for CliError { fn from(v: io::Error)->Self{Self::Io(v)} }
-impl From<std::num::ParseIntError> for CliError { fn from(v: std::num::ParseIntError)->Self{Self::ParseInt(v)} }
-impl From<std::str::Utf8Error> for CliError { fn from(v: std::str::Utf8Error)->Self{Self::Utf8(v)} }
-impl From<compiler::CompileError> for CliError { fn from(v: compiler::CompileError)->Self{Self::Compile(v)} }
-impl From<migrations::MigrationError> for CliError { fn from(v: migrations::MigrationError)->Self{Self::Migration(v)} }
-impl From<auth::AuthError> for CliError { fn from(v: auth::AuthError)->Self{Self::Auth(v)} }
+impl From<io::Error> for CliError {
+    fn from(v: io::Error) -> Self {
+        Self::Io(v)
+    }
+}
+impl From<std::num::ParseIntError> for CliError {
+    fn from(v: std::num::ParseIntError) -> Self {
+        Self::ParseInt(v)
+    }
+}
+impl From<std::str::Utf8Error> for CliError {
+    fn from(v: std::str::Utf8Error) -> Self {
+        Self::Utf8(v)
+    }
+}
+impl From<compiler::CompileError> for CliError {
+    fn from(v: compiler::CompileError) -> Self {
+        Self::Compile(v)
+    }
+}
+impl From<migrations::MigrationError> for CliError {
+    fn from(v: migrations::MigrationError) -> Self {
+        Self::Migration(v)
+    }
+}
+impl From<auth::AuthError> for CliError {
+    fn from(v: auth::AuthError) -> Self {
+        Self::Auth(v)
+    }
+}
 
 #[tokio::main]
 async fn main() {
@@ -61,7 +93,9 @@ async fn run() -> Result<(), CliError> {
     let mut args = env::args().skip(1);
     match args.next().as_deref() {
         Some("check") => {
-            let path = args.next().ok_or_else(|| CliError::usage("Usage: rwlang-cli check <app.rw>"))?;
+            let path = args
+                .next()
+                .ok_or_else(|| CliError::usage("Usage: rwlang-cli check <app.rw>"))?;
             if args.next().is_some() {
                 return Err(CliError::usage("Usage: rwlang-cli check <app.rw>"));
             }
@@ -90,14 +124,14 @@ struct MigrationArgs {
     lock_timeout_secs: u64,
 }
 
-async fn migrate_command(
-    mut args: impl Iterator<Item = String>,
-) -> Result<(), CliError> {
+async fn migrate_command(mut args: impl Iterator<Item = String>) -> Result<(), CliError> {
     let action = args
         .next()
         .ok_or_else(|| CliError::usage("missing migration action: status | verify | apply"))?;
     if !matches!(action.as_str(), "status" | "verify" | "apply") {
-        return Err(CliError::usage(format!("unknown migration action `{action}`")));
+        return Err(CliError::usage(format!(
+            "unknown migration action `{action}`"
+        )));
     }
     let parsed = parse_migration_args(args)?;
     let db_url = read_secret_file(&parsed.db_url_file)?;
@@ -136,20 +170,24 @@ async fn migrate_command(
     Ok(())
 }
 
-fn parse_migration_args(
-    mut args: impl Iterator<Item = String>,
-) -> Result<MigrationArgs, CliError> {
+fn parse_migration_args(mut args: impl Iterator<Item = String>) -> Result<MigrationArgs, CliError> {
     let mut dir = None;
     let mut db_url_file = None;
     let mut allow_insecure_db = false;
     let mut lock_timeout_secs = 30u64;
     while let Some(arg) = args.next() {
         match arg.as_str() {
-            "--dir" => dir = Some(PathBuf::from(args.next().ok_or_else(|| CliError::usage("--dir requires a path"))?)),
-            "--db-url-file" => {
-                db_url_file = Some(PathBuf::from(
-                    args.next().ok_or_else(|| CliError::usage("--db-url-file requires a path"))?,
+            "--dir" => {
+                dir = Some(PathBuf::from(
+                    args.next()
+                        .ok_or_else(|| CliError::usage("--dir requires a path"))?,
                 ))
+            }
+            "--db-url-file" => {
+                db_url_file =
+                    Some(PathBuf::from(args.next().ok_or_else(|| {
+                        CliError::usage("--db-url-file requires a path")
+                    })?))
             }
             "--allow-insecure-db" => allow_insecure_db = true,
             "--lock-timeout-secs" => {
@@ -175,22 +213,27 @@ fn parse_migration_args(
 fn read_secret_file(path: &std::path::Path) -> Result<String, CliError> {
     let metadata = std::fs::symlink_metadata(path)?;
     if metadata.file_type().is_symlink() || !metadata.is_file() {
-        return Err(CliError::usage(format!("secret URL file `{}` must be a regular non-symlink file", path.display())));
+        return Err(CliError::usage(format!(
+            "secret URL file `{}` must be a regular non-symlink file",
+            path.display()
+        )));
     }
     if metadata.len() > 16 * 1024 {
         return Err(CliError::usage("secret URL file is too large"));
     }
     let value = std::fs::read_to_string(path)?.trim().to_string();
     if value.is_empty() || value.contains('\n') || value.contains('\r') {
-        return Err(CliError::usage("secret URL file must contain one non-empty line"));
+        return Err(CliError::usage(
+            "secret URL file must contain one non-empty line",
+        ));
     }
     Ok(value)
 }
 
-async fn auth_command(
-    mut args: impl Iterator<Item = String>,
-) -> Result<(), CliError> {
-    let action = args.next().ok_or_else(|| CliError::usage("missing auth action"))?;
+async fn auth_command(mut args: impl Iterator<Item = String>) -> Result<(), CliError> {
+    let action = args
+        .next()
+        .ok_or_else(|| CliError::usage("missing auth action"))?;
     let mut db_url_file = None;
     let mut username = None;
     let mut password_file = None;
@@ -200,19 +243,31 @@ async fn auth_command(
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--db-url-file" => {
-                db_url_file = Some(PathBuf::from(
-                    args.next().ok_or_else(|| CliError::usage("--db-url-file requires a path"))?,
-                ))
+                db_url_file =
+                    Some(PathBuf::from(args.next().ok_or_else(|| {
+                        CliError::usage("--db-url-file requires a path")
+                    })?))
             }
-            "--username" => username = Some(args.next().ok_or_else(|| CliError::usage("--username requires a value"))?),
+            "--username" => {
+                username = Some(
+                    args.next()
+                        .ok_or_else(|| CliError::usage("--username requires a value"))?,
+                )
+            }
             "--password-file" => {
-                password_file = Some(PathBuf::from(
-                    args.next().ok_or_else(|| CliError::usage("--password-file requires a path"))?,
-                ))
+                password_file =
+                    Some(PathBuf::from(args.next().ok_or_else(|| {
+                        CliError::usage("--password-file requires a path")
+                    })?))
             }
-            "--role" => roles.push(args.next().ok_or_else(|| CliError::usage("--role requires a value"))?),
+            "--role" => roles.push(
+                args.next()
+                    .ok_or_else(|| CliError::usage("--role requires a value"))?,
+            ),
             "--tenant" => {
-                let raw = args.next().ok_or_else(|| CliError::usage("--tenant requires a value"))?;
+                let raw = args
+                    .next()
+                    .ok_or_else(|| CliError::usage("--tenant requires a value"))?;
                 memberships.push(TenantId::parse(&raw)?);
             }
             "--recovery-count" => {
@@ -224,7 +279,9 @@ async fn auth_command(
             _ => return Err(CliError::usage(format!("unknown auth option `{arg}`"))),
         }
     }
-    let db_url = read_secret_file(&db_url_file.ok_or_else(|| CliError::usage("missing --db-url-file <path>"))?)?;
+    let db_url = read_secret_file(
+        &db_url_file.ok_or_else(|| CliError::usage("missing --db-url-file <path>"))?,
+    )?;
     let store = LocalUserStore::connect_sqlite(&db_url)
         .await
         .map_err(|_| CliError::usage("failed to open local auth DB"))?;
@@ -242,7 +299,9 @@ async fn auth_command(
                 .await
                 .map_err(|_| CliError::usage("local auth DB is not initialized"))?;
             let u = username.ok_or_else(|| CliError::usage("missing --username"))?;
-            let pw = read_password_file(&password_file.ok_or_else(|| CliError::usage("missing --password-file"))?)?;
+            let pw = read_password_file(
+                &password_file.ok_or_else(|| CliError::usage("missing --password-file"))?,
+            )?;
             if roles.is_empty() {
                 roles.push("User".into());
             }
@@ -264,7 +323,9 @@ async fn auth_command(
                 .await
                 .map_err(|_| CliError::usage("local auth DB is not initialized"))?;
             let u = username.ok_or_else(|| CliError::usage("missing --username"))?;
-            let pw = read_password_file(&password_file.ok_or_else(|| CliError::usage("missing --password-file"))?)?;
+            let pw = read_password_file(
+                &password_file.ok_or_else(|| CliError::usage("missing --password-file"))?,
+            )?;
             store
                 .set_password(&u, &pw)
                 .await
@@ -364,7 +425,9 @@ fn hex_to_base32(hex: &str) -> Result<String, CliError> {
 fn read_password_file(path: &std::path::Path) -> Result<String, CliError> {
     let meta = std::fs::symlink_metadata(path)?;
     if meta.file_type().is_symlink() || !meta.is_file() {
-        return Err(CliError::usage("password file must be a regular non-symlink file"));
+        return Err(CliError::usage(
+            "password file must be a regular non-symlink file",
+        ));
     }
     if meta.len() > 4096 {
         return Err(CliError::usage("password file is too large"));
@@ -381,5 +444,7 @@ fn read_password_file(path: &std::path::Path) -> Result<String, CliError> {
 }
 
 fn print_usage_and_fail<T>() -> Result<T, CliError> {
-    Err(CliError::usage("Usage:\n  rwlang-cli check <app.rw>\n  rwlang-cli migrate ...\n  rwlang-cli auth init --db-url-file <path>\n  rwlang-cli auth user-add --db-url-file <path> --username <name> --password-file <path> [--role Role] [--tenant Tenant]\n  rwlang-cli auth password-set|disable|enable|roles-set|memberships-set|totp-enroll|totp-disable ..."))
+    Err(CliError::usage(
+        "Usage:\n  rwlang-cli check <app.rw>\n  rwlang-cli migrate ...\n  rwlang-cli auth init --db-url-file <path>\n  rwlang-cli auth user-add --db-url-file <path> --username <name> --password-file <path> [--role Role] [--tenant Tenant]\n  rwlang-cli auth password-set|disable|enable|roles-set|memberships-set|totp-enroll|totp-disable ...",
+    ))
 }

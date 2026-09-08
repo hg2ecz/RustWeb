@@ -22,7 +22,6 @@ mod m44_conflict_ux_tests {
     }
 }
 
-
 #[cfg(test)]
 mod typed_server_boundary_error_tests {
     use super::*;
@@ -59,4 +58,3 @@ mod typed_server_boundary_error_tests {
         let _ = fs::remove_file(path);
     }
 }
-

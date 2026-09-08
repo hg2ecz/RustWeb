@@ -44,7 +44,10 @@ fn parse_body(name: &str, body: &str) -> Result<Webhook, CompileError> {
     let mut timestamp_header = None;
     let mut replay_window_secs = None;
     for line in body.lines() {
-        let clean = line.split_once("//").map_or(line, |(before, _)| before).trim();
+        let clean = line
+            .split_once("//")
+            .map_or(line, |(before, _)| before)
+            .trim();
         let clean = clean.trim_end_matches(';').trim();
         if clean.is_empty() {
             continue;
@@ -54,7 +57,9 @@ fn parse_body(name: &str, body: &str) -> Result<Webhook, CompileError> {
                 return Err(duplicate(name, "verified by"));
             }
             if !is_identifier(value) {
-                return Err(CompileError::Syntax(format!("webhook `{name}` has invalid secret name `{value}`")));
+                return Err(CompileError::Syntax(format!(
+                    "webhook `{name}` has invalid secret name `{value}`"
+                )));
             }
             secret_name = Some(value.to_string());
         } else if let Some(value) = clean.strip_prefix("signatureHeader ") {
@@ -72,12 +77,16 @@ fn parse_body(name: &str, body: &str) -> Result<Webhook, CompileError> {
                 return Err(duplicate(name, "replayWindow"));
             }
             let seconds = value.parse::<u64>().map_err(|_| {
-                CompileError::Syntax(format!("webhook `{name}` replayWindow must be whole seconds"))
+                CompileError::Syntax(format!(
+                    "webhook `{name}` replayWindow must be whole seconds"
+                ))
             })?;
             if !(MIN_REPLAY_WINDOW_SECS..=MAX_REPLAY_WINDOW_SECS).contains(&seconds) {
                 return Err(CompileError::security(
                     "SEC-A08-021",
-                    format!("webhook `{name}` replay window must be between {MIN_REPLAY_WINDOW_SECS} and {MAX_REPLAY_WINDOW_SECS} seconds"),
+                    format!(
+                        "webhook `{name}` replay window must be between {MIN_REPLAY_WINDOW_SECS} and {MAX_REPLAY_WINDOW_SECS} seconds"
+                    ),
                     Some("use a narrow replay window such as `replayWindow 300`".into()),
                 ));
             }
@@ -102,10 +111,20 @@ fn parse_body(name: &str, body: &str) -> Result<Webhook, CompileError> {
 }
 
 fn parse_header_literal(name: &str, field: &str, value: &str) -> Result<String, CompileError> {
-    let value = value.strip_prefix('"').and_then(|v| v.strip_suffix('"')).ok_or_else(|| {
-        CompileError::Syntax(format!("webhook `{name}` {field} must be a quoted HTTP header name"))
-    })?;
-    if value.is_empty() || value.len() > 64 || !value.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-') {
+    let value = value
+        .strip_prefix('"')
+        .and_then(|v| v.strip_suffix('"'))
+        .ok_or_else(|| {
+            CompileError::Syntax(format!(
+                "webhook `{name}` {field} must be a quoted HTTP header name"
+            ))
+        })?;
+    if value.is_empty()
+        || value.len() > 64
+        || !value
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'-')
+    {
         return Err(CompileError::security(
             "SEC-A05-060",
             format!("webhook `{name}` {field} is not a safe HTTP header name"),
@@ -116,22 +135,37 @@ fn parse_header_literal(name: &str, field: &str, value: &str) -> Result<String, 
 }
 
 fn validate_symbol_name(name: &str) -> Result<(), CompileError> {
-    if !is_identifier(name) || !name.chars().next().is_some_and(|ch| ch.is_ascii_uppercase()) {
-        return Err(CompileError::Syntax(format!("webhook `{name}` must start with an uppercase ASCII letter")));
+    if !is_identifier(name)
+        || !name
+            .chars()
+            .next()
+            .is_some_and(|ch| ch.is_ascii_uppercase())
+    {
+        return Err(CompileError::Syntax(format!(
+            "webhook `{name}` must start with an uppercase ASCII letter"
+        )));
     }
     Ok(())
 }
 
 fn skip_to_brace(source: &str, mut cursor: usize, name: &str) -> Result<usize, CompileError> {
-    while source.as_bytes().get(cursor).is_some_and(|byte| byte.is_ascii_whitespace()) {
+    while source
+        .as_bytes()
+        .get(cursor)
+        .is_some_and(|byte| byte.is_ascii_whitespace())
+    {
         cursor += 1;
     }
     if source.as_bytes().get(cursor) != Some(&b'{') {
-        return Err(CompileError::Syntax(format!("webhook `{name}` must use `webhook Name {{ ... }}`")));
+        return Err(CompileError::Syntax(format!(
+            "webhook `{name}` must use `webhook Name {{ ... }}`"
+        )));
     }
     Ok(cursor)
 }
 
 fn duplicate(name: &str, field: &str) -> CompileError {
-    CompileError::Syntax(format!("webhook `{name}` contains duplicate `{field}` entry"))
+    CompileError::Syntax(format!(
+        "webhook `{name}` contains duplicate `{field}` entry"
+    ))
 }

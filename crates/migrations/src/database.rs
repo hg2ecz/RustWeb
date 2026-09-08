@@ -8,7 +8,10 @@ use std::sync::Once;
 static INSTALL_DRIVERS: Once = Once::new();
 const STATE_TABLE: &str = "_rw_migrations";
 
-pub(crate) async fn connect(url: &str, allow_insecure_db: bool) -> Result<AnyConnection, MigrationError> {
+pub(crate) async fn connect(
+    url: &str,
+    allow_insecure_db: bool,
+) -> Result<AnyConnection, MigrationError> {
     INSTALL_DRIVERS.call_once(install_default_drivers);
     let backend = DbBackend::from_url(url).map_err(|_| MigrationError::UnsupportedUrl)?;
     validate_transport(backend, url, allow_insecure_db)?;
@@ -22,7 +25,11 @@ pub(crate) async fn connect(url: &str, allow_insecure_db: bool) -> Result<AnyCon
         .map_err(MigrationError::Sqlx)
 }
 
-pub(crate) fn validate_transport(backend: DbBackend, url: &str, allow: bool) -> Result<(), MigrationError> {
+pub(crate) fn validate_transport(
+    backend: DbBackend,
+    url: &str,
+    allow: bool,
+) -> Result<(), MigrationError> {
     if allow || backend == DbBackend::Sqlite {
         return Ok(());
     }
@@ -81,7 +88,9 @@ pub(crate) async fn ensure_state_table(conn: &mut AnyConnection) -> Result<(), M
     exec_raw(conn, &format!("CREATE TABLE IF NOT EXISTS {STATE_TABLE} (version BIGINT PRIMARY KEY, name TEXT NOT NULL, checksum TEXT NOT NULL, applied_at TEXT NOT NULL)")).await
 }
 
-pub(crate) async fn load_applied(conn: &mut AnyConnection) -> Result<Vec<AppliedMigration>, MigrationError> {
+pub(crate) async fn load_applied(
+    conn: &mut AnyConnection,
+) -> Result<Vec<AppliedMigration>, MigrationError> {
     let sql =
         format!("SELECT version,name,checksum,applied_at FROM {STATE_TABLE} ORDER BY version");
     let rows = sqlx::query(AssertSqlSafe(sql))

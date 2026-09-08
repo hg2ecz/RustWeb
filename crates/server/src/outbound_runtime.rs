@@ -8,10 +8,15 @@ pub(super) struct ServerOutbound {
 
 impl ServerOutbound {
     pub(super) fn from_policy_file(path: &Path) -> Result<Self, integrations::IntegrationError> {
-        Ok(Self { client: OutboundHttpsClient::new(EgressPolicy::from_toml_file(path)?) })
+        Ok(Self {
+            client: OutboundHttpsClient::new(EgressPolicy::from_toml_file(path)?),
+        })
     }
 
-    pub(super) fn validate_target(&self, target: &str) -> Result<(), integrations::IntegrationError> {
+    pub(super) fn validate_target(
+        &self,
+        target: &str,
+    ) -> Result<(), integrations::IntegrationError> {
         self.client.validate_rwlang_target(target)
     }
 }
@@ -22,7 +27,10 @@ impl OutboundRuntime for ServerOutbound {
             self.client
                 .get_status_with_usage(target, path)
                 .await
-                .map(|v| OutboundOutcome { status: v.status, transferred_bytes: v.transferred_bytes })
+                .map(|v| OutboundOutcome {
+                    status: v.status,
+                    transferred_bytes: v.transferred_bytes,
+                })
                 .map_err(|_| ())
         })
     }
@@ -37,7 +45,10 @@ impl OutboundRuntime for ServerOutbound {
             self.client
                 .post_json_status_with_usage(target, path, body)
                 .await
-                .map(|v| OutboundOutcome { status: v.status, transferred_bytes: v.transferred_bytes })
+                .map(|v| OutboundOutcome {
+                    status: v.status,
+                    transferred_bytes: v.transferred_bytes,
+                })
                 .map_err(|_| ())
         })
     }

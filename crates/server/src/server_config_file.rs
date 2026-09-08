@@ -1,16 +1,16 @@
-use crate::{StaticAssets, StaticAssetsCliConfig, StorageCliConfig};
-use crate::source_reload::SourceFileState;
 use crate::server_errors::ServerConfigError;
+use crate::source_reload::SourceFileState;
 use crate::static_delivery::validate_static_prefix;
 use crate::tls_support::validate_public_host;
+use crate::{StaticAssets, StaticAssetsCliConfig, StorageCliConfig};
 use language_core::ServerConfig;
 use observability::LogConfig;
 use runtime::ResourceProfiles;
-use storage::AppFs;
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use storage::AppFs;
 use tokio::sync::Semaphore;
 
 #[derive(Debug, Default, serde::Deserialize)]
@@ -243,7 +243,11 @@ pub(super) struct SourceReloadCliConfig {
 
 impl Default for SourceReloadCliConfig {
     fn default() -> Self {
-        Self { enabled: true, poll_interval_ms: 1000, debounce_ms: 250 }
+        Self {
+            enabled: true,
+            poll_interval_ms: 1000,
+            debounce_ms: 250,
+        }
     }
 }
 
@@ -269,7 +273,6 @@ pub(super) struct DomainCliConfig {
     pub(super) tls: Option<DomainTlsCliConfig>,
     pub(super) reload: SourceReloadCliConfig,
 }
-
 
 pub(super) struct DomainRuntime {
     pub(super) host: Option<String>,
@@ -363,7 +366,9 @@ pub(super) fn read_server_config(path: &Path) -> Result<ServerFileConfig, Server
         )));
     }
     if meta.len() > 1024 * 1024 {
-        return Err(ServerConfigError::invalid("server config file exceeds 1 MiB"));
+        return Err(ServerConfigError::invalid(
+            "server config file exceeds 1 MiB",
+        ));
     }
     let text = fs::read_to_string(path)
         .map_err(|e| ServerConfigError::io("read server config", path, e))?;
@@ -384,7 +389,9 @@ fn read_domain_config(path: &Path) -> Result<FileDomain, ServerConfigError> {
         )));
     }
     if meta.len() > 256 * 1024 {
-        return Err(ServerConfigError::invalid("domain config file exceeds 256 KiB"));
+        return Err(ServerConfigError::invalid(
+            "domain config file exceeds 256 KiB",
+        ));
     }
     let text = fs::read_to_string(path)
         .map_err(|e| ServerConfigError::io("read domain config", path, e))?;
@@ -402,8 +409,12 @@ fn merge_domain_limits(base: FileDomainLimits, over: FileDomainLimits) -> FileDo
         max_form_fields: over.max_form_fields.or(base.max_form_fields),
         max_form_field_bytes: over.max_form_field_bytes.or(base.max_form_field_bytes),
         max_instructions: over.max_instructions.or(base.max_instructions),
-        max_runtime_alloc_bytes: over.max_runtime_alloc_bytes.or(base.max_runtime_alloc_bytes),
-        max_concurrent_requests: over.max_concurrent_requests.or(base.max_concurrent_requests),
+        max_runtime_alloc_bytes: over
+            .max_runtime_alloc_bytes
+            .or(base.max_runtime_alloc_bytes),
+        max_concurrent_requests: over
+            .max_concurrent_requests
+            .or(base.max_concurrent_requests),
         max_queued_requests: over.max_queued_requests.or(base.max_queued_requests),
         queue_timeout_ms: over.queue_timeout_ms.or(base.queue_timeout_ms),
         resource_profiles_file: over.resource_profiles_file.or(base.resource_profiles_file),
@@ -446,7 +457,10 @@ fn merge_domain(base: FileDomain, over: FileDomain) -> FileDomain {
         },
         reload: FileReload {
             enabled: over.reload.enabled.or(base.reload.enabled),
-            poll_interval_ms: over.reload.poll_interval_ms.or(base.reload.poll_interval_ms),
+            poll_interval_ms: over
+                .reload
+                .poll_interval_ms
+                .or(base.reload.poll_interval_ms),
             debounce_ms: over.reload.debounce_ms.or(base.reload.debounce_ms),
         },
     }
@@ -455,8 +469,17 @@ fn merge_domain(base: FileDomain, over: FileDomain) -> FileDomain {
 fn domain_path(workdir: &Path, raw: &str, field: &str) -> Result<PathBuf, ServerConfigError> {
     use std::path::Component;
     let rel = Path::new(raw);
-    if rel.is_absolute() || rel.components().any(|c| matches!(c, Component::ParentDir | Component::RootDir | Component::Prefix(_))) {
-        return Err(ServerConfigError::invalid(format!("domain `{field}` must be a relative path inside workdir")));
+    if rel.is_absolute()
+        || rel.components().any(|c| {
+            matches!(
+                c,
+                Component::ParentDir | Component::RootDir | Component::Prefix(_)
+            )
+        })
+    {
+        return Err(ServerConfigError::invalid(format!(
+            "domain `{field}` must be a relative path inside workdir"
+        )));
     }
     Ok(workdir.join(rel))
 }
@@ -478,53 +501,103 @@ pub(super) fn build_domain_configs(
             None => FileDomain::default(),
         };
         if included.config_file.is_some() {
-            return Err(ServerConfigError::invalid("nested domain config includes are not allowed"));
+            return Err(ServerConfigError::invalid(
+                "nested domain config includes are not allowed",
+            ));
         }
         if let (Some(a), Some(b)) = (inline.host.as_deref(), included.host.as_deref()) {
             if validate_public_host(a)? != validate_public_host(b)? {
-                return Err(ServerConfigError::invalid("domain host in included config does not match server.toml"));
+                return Err(ServerConfigError::invalid(
+                    "domain host in included config does not match server.toml",
+                ));
             }
         }
         let merged = merge_domain(included, inline);
-        let host = validate_public_host(merged.host.as_deref().ok_or_else(|| ServerConfigError::invalid("each [[domains]] entry requires host"))?)?;
+        let host =
+            validate_public_host(merged.host.as_deref().ok_or_else(|| {
+                ServerConfigError::invalid("each [[domains]] entry requires host")
+            })?)?;
         let mut aliases = Vec::new();
         for raw in merged.aliases.as_deref().unwrap_or(&[]) {
             let alias = validate_public_host(raw)?;
             if alias == host || aliases.iter().any(|v| v == &alias) {
-                return Err(ServerConfigError::invalid(format!("domain `{host}` contains duplicate alias `{alias}`")));
+                return Err(ServerConfigError::invalid(format!(
+                    "domain `{host}` contains duplicate alias `{alias}`"
+                )));
             }
             aliases.push(alias);
         }
         for name in std::iter::once(&host).chain(aliases.iter()) {
             if !seen.insert(name.clone()) {
-                return Err(ServerConfigError::invalid(format!("duplicate domain host/alias `{name}`")));
+                return Err(ServerConfigError::invalid(format!(
+                    "duplicate domain host/alias `{name}`"
+                )));
             }
         }
         let workdir = config_abs_path(
-            merged.workdir.as_deref().ok_or_else(|| ServerConfigError::invalid(format!("domain `{host}` requires workdir")))?,
+            merged.workdir.as_deref().ok_or_else(|| {
+                ServerConfigError::invalid(format!("domain `{host}` requires workdir"))
+            })?,
             "domains.workdir",
         )?;
         if !workdir.is_dir() {
-            return Err(ServerConfigError::invalid(format!("domain `{host}` workdir `{}` is not a directory", workdir.display())));
+            return Err(ServerConfigError::invalid(format!(
+                "domain `{host}` workdir `{}` is not a directory",
+                workdir.display()
+            )));
         }
         let canonical_workdir = fs::canonicalize(&workdir)
             .map_err(|e| ServerConfigError::io("canonicalize domain workdir", &workdir, e))?;
         if !seen_workdirs.insert(canonical_workdir) {
-            return Err(ServerConfigError::invalid(format!("domain `{host}` reuses another domain's workdir `{}`", workdir.display())));
+            return Err(ServerConfigError::invalid(format!(
+                "domain `{host}` reuses another domain's workdir `{}`",
+                workdir.display()
+            )));
         }
         let app = domain_path(&workdir, merged.app.as_deref().unwrap_or("main.rw"), "app")?;
         let mut config = global.clone();
-        if let Some(v) = merged.limits.max_body_bytes { config.max_body_bytes = v; }
-        if let Some(v) = merged.limits.request_timeout_ms { config.request_timeout_ms = v; }
-        if let Some(v) = merged.limits.max_form_fields { config.max_form_fields = v; }
-        if let Some(v) = merged.limits.max_form_field_bytes { config.max_form_field_bytes = v; }
-        if let Some(v) = merged.limits.max_instructions { config.max_instructions = v; }
-        if let Some(v) = merged.limits.max_runtime_alloc_bytes { config.max_runtime_alloc_bytes = v; }
-        let max_concurrent_requests = merged.limits.max_concurrent_requests.unwrap_or(global.max_connections);
-        let max_queued_requests = merged.limits.max_queued_requests.unwrap_or(max_concurrent_requests.saturating_mul(2));
-        let queue_timeout_ms = merged.limits.queue_timeout_ms.unwrap_or(global.request_timeout_ms.min(5_000));
-        if config.max_body_bytes == 0 || config.request_timeout_ms == 0 || config.max_form_fields == 0 || config.max_form_field_bytes == 0 || config.max_instructions == 0 || config.max_runtime_alloc_bytes == 0 || max_concurrent_requests == 0 || queue_timeout_ms == 0 {
-            return Err(ServerConfigError::invalid(format!("domain `{host}` limits must be greater than zero")));
+        if let Some(v) = merged.limits.max_body_bytes {
+            config.max_body_bytes = v;
+        }
+        if let Some(v) = merged.limits.request_timeout_ms {
+            config.request_timeout_ms = v;
+        }
+        if let Some(v) = merged.limits.max_form_fields {
+            config.max_form_fields = v;
+        }
+        if let Some(v) = merged.limits.max_form_field_bytes {
+            config.max_form_field_bytes = v;
+        }
+        if let Some(v) = merged.limits.max_instructions {
+            config.max_instructions = v;
+        }
+        if let Some(v) = merged.limits.max_runtime_alloc_bytes {
+            config.max_runtime_alloc_bytes = v;
+        }
+        let max_concurrent_requests = merged
+            .limits
+            .max_concurrent_requests
+            .unwrap_or(global.max_connections);
+        let max_queued_requests = merged
+            .limits
+            .max_queued_requests
+            .unwrap_or(max_concurrent_requests.saturating_mul(2));
+        let queue_timeout_ms = merged
+            .limits
+            .queue_timeout_ms
+            .unwrap_or(global.request_timeout_ms.min(5_000));
+        if config.max_body_bytes == 0
+            || config.request_timeout_ms == 0
+            || config.max_form_fields == 0
+            || config.max_form_field_bytes == 0
+            || config.max_instructions == 0
+            || config.max_runtime_alloc_bytes == 0
+            || max_concurrent_requests == 0
+            || queue_timeout_ms == 0
+        {
+            return Err(ServerConfigError::invalid(format!(
+                "domain `{host}` limits must be greater than zero"
+            )));
         }
         if max_concurrent_requests > global.max_connections {
             return Err(ServerConfigError::invalid(format!(
@@ -537,28 +610,49 @@ pub(super) fn build_domain_configs(
             Some(v) => Some(domain_path(&workdir, v, "storage.data_root")?),
             None => None,
         };
-        if let Some(v) = merged.storage.fs_mode { storage.fs_mode = v; }
-        if let Some(v) = merged.storage.max_upload_bytes { storage.max_upload_bytes = v; }
-        if let Some(v) = merged.storage.max_image_pixels { storage.max_image_pixels = v; }
+        if let Some(v) = merged.storage.fs_mode {
+            storage.fs_mode = v;
+        }
+        if let Some(v) = merged.storage.max_upload_bytes {
+            storage.max_upload_bytes = v;
+        }
+        if let Some(v) = merged.storage.max_image_pixels {
+            storage.max_image_pixels = v;
+        }
         let mut static_assets = global_static.clone();
         static_assets.root = match merged.static_assets.root.as_deref() {
             Some(v) => Some(domain_path(&workdir, v, "static_assets.root")?),
             None => None,
         };
-        if let Some(v) = merged.static_assets.url_prefix { static_assets.url_prefix = v; }
-        if let Some(v) = merged.static_assets.max_asset_bytes { static_assets.max_asset_bytes = v; }
-        if let Some(v) = merged.static_assets.max_age_secs { static_assets.regular_max_age_secs = v; }
-        if let Some(v) = merged.static_assets.immutable_max_age_secs { static_assets.immutable_max_age_secs = v; }
-        if let Some(v) = merged.static_assets.precompressed { static_assets.precompressed = v; }
+        if let Some(v) = merged.static_assets.url_prefix {
+            static_assets.url_prefix = v;
+        }
+        if let Some(v) = merged.static_assets.max_asset_bytes {
+            static_assets.max_asset_bytes = v;
+        }
+        if let Some(v) = merged.static_assets.max_age_secs {
+            static_assets.regular_max_age_secs = v;
+        }
+        if let Some(v) = merged.static_assets.immutable_max_age_secs {
+            static_assets.immutable_max_age_secs = v;
+        }
+        if let Some(v) = merged.static_assets.precompressed {
+            static_assets.precompressed = v;
+        }
         static_assets.url_prefix = validate_static_prefix(&static_assets.url_prefix)?;
         let resource_profiles_file = match merged.limits.resource_profiles_file.as_deref() {
             Some(v) => Some(domain_path(&workdir, v, "limits.resource_profiles_file")?),
             None => global_profiles.map(Path::to_path_buf),
         };
         if merged.tls.cert_file.is_some() != merged.tls.key_file.is_some() {
-            return Err(ServerConfigError::invalid(format!("domain `{host}` tls.cert_file and tls.key_file must be supplied together")));
+            return Err(ServerConfigError::invalid(format!(
+                "domain `{host}` tls.cert_file and tls.key_file must be supplied together"
+            )));
         }
-        let tls = match (merged.tls.cert_file.as_deref(), merged.tls.key_file.as_deref()) {
+        let tls = match (
+            merged.tls.cert_file.as_deref(),
+            merged.tls.key_file.as_deref(),
+        ) {
             (Some(cert), Some(key)) => Some(DomainTlsCliConfig {
                 cert_file: config_abs_path(cert, "domains.tls.cert_file")?,
                 key_file: config_abs_path(key, "domains.tls.key_file")?,
@@ -567,14 +661,35 @@ pub(super) fn build_domain_configs(
         };
         let reload = SourceReloadCliConfig {
             enabled: merged.reload.enabled.unwrap_or(global_reload.enabled),
-            poll_interval_ms: merged.reload.poll_interval_ms.unwrap_or(global_reload.poll_interval_ms),
-            debounce_ms: merged.reload.debounce_ms.unwrap_or(global_reload.debounce_ms),
+            poll_interval_ms: merged
+                .reload
+                .poll_interval_ms
+                .unwrap_or(global_reload.poll_interval_ms),
+            debounce_ms: merged
+                .reload
+                .debounce_ms
+                .unwrap_or(global_reload.debounce_ms),
         };
         if reload.poll_interval_ms == 0 || reload.debounce_ms == 0 {
-            return Err(ServerConfigError::invalid(format!("domain `{host}` reload poll_interval_ms and debounce_ms must be greater than zero")));
+            return Err(ServerConfigError::invalid(format!(
+                "domain `{host}` reload poll_interval_ms and debounce_ms must be greater than zero"
+            )));
         }
-        out.push(DomainCliConfig { host, aliases, workdir, app, config, storage, static_assets, resource_profiles_file, max_concurrent_requests, max_queued_requests, queue_timeout_ms, tls, reload });
+        out.push(DomainCliConfig {
+            host,
+            aliases,
+            workdir,
+            app,
+            config,
+            storage,
+            static_assets,
+            resource_profiles_file,
+            max_concurrent_requests,
+            max_queued_requests,
+            queue_timeout_ms,
+            tls,
+            reload,
+        });
     }
     Ok(out)
 }
-

@@ -5,7 +5,10 @@ fn parses_f32_math_builtins() {
     let p = Program::default();
     for source in ["sin(0.5f32)", "cos(0.5f32)", "sqrt(4.0f32)", "abs(-1.5f32)"] {
         let expr = parse_expr(source, &p).unwrap();
-        assert_eq!(infer_expr_type(&expr, &HashMap::new(), &p).unwrap(), ValueType::F32);
+        assert_eq!(
+            infer_expr_type(&expr, &HashMap::new(), &p).unwrap(),
+            ValueType::F32
+        );
     }
 }
 
@@ -13,9 +16,15 @@ fn parses_f32_math_builtins() {
 fn abs_accepts_int_and_timer_returns_int() {
     let p = Program::default();
     let abs = parse_expr("abs(-42)", &p).unwrap();
-    assert_eq!(infer_expr_type(&abs, &HashMap::new(), &p).unwrap(), ValueType::Int);
+    assert_eq!(
+        infer_expr_type(&abs, &HashMap::new(), &p).unwrap(),
+        ValueType::Int
+    );
     let timer = parse_expr("monotonicNanos()", &p).unwrap();
-    assert_eq!(infer_expr_type(&timer, &HashMap::new(), &p).unwrap(), ValueType::Int);
+    assert_eq!(
+        infer_expr_type(&timer, &HashMap::new(), &p).unwrap(),
+        ValueType::Int
+    );
 }
 
 #[test]
@@ -87,13 +96,22 @@ fn regex_builtins_parse_and_infer_types() {
     let env = HashMap::new();
 
     let matched = parse_expr("regexMatch(\"abc-12\", \"^[a-z]+-[0-9]+$\")", &p).unwrap();
-    assert_eq!(infer_expr_type(&matched, &env, &p).unwrap(), ValueType::Bool);
+    assert_eq!(
+        infer_expr_type(&matched, &env, &p).unwrap(),
+        ValueType::Bool
+    );
 
     let replaced = parse_expr("regexReplace(\"a1\", \"[0-9]\", \"#\")", &p).unwrap();
-    assert_eq!(infer_expr_type(&replaced, &env, &p).unwrap(), ValueType::String);
+    assert_eq!(
+        infer_expr_type(&replaced, &env, &p).unwrap(),
+        ValueType::String
+    );
 
     let captures = parse_expr("regexCaptures(\"a1\", \"([a-z])([0-9])\")", &p).unwrap();
-    assert_eq!(infer_expr_type(&captures, &env, &p).unwrap(), ValueType::StringDict);
+    assert_eq!(
+        infer_expr_type(&captures, &env, &p).unwrap(),
+        ValueType::StringDict
+    );
 }
 
 #[test]

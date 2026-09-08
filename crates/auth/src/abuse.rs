@@ -125,7 +125,10 @@ impl AuthAbuseLimiter {
     ) -> Result<(), AuthError> {
         let key = self.pair_key(stage, source, principal);
         if let Some(redis) = &self.redis {
-            redis.delete(&key).await.map_err(|_| AuthError::StoreUnavailable)?;
+            redis
+                .delete(&key)
+                .await
+                .map_err(|_| AuthError::StoreUnavailable)?;
             return Ok(());
         }
         self.memory
@@ -135,11 +138,25 @@ impl AuthAbuseLimiter {
         Ok(())
     }
 
-    fn dimensions(&self, stage: AuthAbuseStage, source: &str, principal: &str) -> [(String, u32); 3] {
+    fn dimensions(
+        &self,
+        stage: AuthAbuseStage,
+        source: &str,
+        principal: &str,
+    ) -> [(String, u32); 3] {
         [
-            (self.pair_key(stage, source, principal), self.policy.pair_limit(stage)),
-            (self.principal_key(stage, principal), self.policy.principal_limit(stage)),
-            (self.source_key(stage, source), self.policy.source_max_attempts),
+            (
+                self.pair_key(stage, source, principal),
+                self.policy.pair_limit(stage),
+            ),
+            (
+                self.principal_key(stage, principal),
+                self.policy.principal_limit(stage),
+            ),
+            (
+                self.source_key(stage, source),
+                self.policy.source_max_attempts,
+            ),
         ]
     }
 
@@ -161,12 +178,19 @@ impl AuthAbuseLimiter {
     }
 
     fn source_key(&self, stage: AuthAbuseStage, source: &str) -> String {
-        format!("auth-abuse:{}:source:{}", stage.key(), safe_key_component(source))
+        format!(
+            "auth-abuse:{}:source:{}",
+            stage.key(),
+            safe_key_component(source)
+        )
     }
 
     async fn current(&self, key: &str) -> Result<u32, AuthError> {
         if let Some(redis) = &self.redis {
-            let raw = redis.get(key).await.map_err(|_| AuthError::StoreUnavailable)?;
+            let raw = redis
+                .get(key)
+                .await
+                .map_err(|_| AuthError::StoreUnavailable)?;
             let Some(raw) = raw else { return Ok(0) };
             let text = std::str::from_utf8(&raw).map_err(|_| AuthError::StoreUnavailable)?;
             return text.parse::<u32>().map_err(|_| AuthError::StoreUnavailable);
@@ -174,7 +198,11 @@ impl AuthAbuseLimiter {
         let mut memory = self.memory.lock().map_err(|_| AuthError::Internal)?;
         let now = Instant::now();
         match memory.get(key).copied() {
-            Some((started, count)) if now.duration_since(started) < Duration::from_secs(self.policy.window_secs) => Ok(count),
+            Some((started, count))
+                if now.duration_since(started) < Duration::from_secs(self.policy.window_secs) =>
+            {
+                Ok(count)
+            }
             Some(_) => {
                 memory.remove(key);
                 Ok(0)
@@ -228,29 +256,81 @@ mod tests {
     #[tokio::test]
     async fn distributed_guessing_hits_principal_limit() {
         let limiter = AuthAbuseLimiter::memory(policy()).unwrap();
-        assert!(limiter.record_failure(AuthAbuseStage::Password, "a", "alice").await.is_ok());
-        assert!(limiter.record_failure(AuthAbuseStage::Password, "b", "alice").await.is_ok());
-        assert!(limiter.record_failure(AuthAbuseStage::Password, "c", "alice").await.is_ok());
-        assert!(matches!(limiter.check(AuthAbuseStage::Password, "d", "alice").await, Err(AuthError::RateLimited)));
+        assert!(
+            limiter
+                .record_failure(AuthAbuseStage::Password, "a", "alice")
+                .await
+                .is_ok()
+        );
+        assert!(
+            limiter
+                .record_failure(AuthAbuseStage::Password, "b", "alice")
+                .await
+                .is_ok()
+        );
+        assert!(
+            limiter
+                .record_failure(AuthAbuseStage::Password, "c", "alice")
+                .await
+                .is_ok()
+        );
+        assert!(matches!(
+            limiter.check(AuthAbuseStage::Password, "d", "alice").await,
+            Err(AuthError::RateLimited)
+        ));
     }
 
     #[tokio::test]
     async fn credential_stuffing_hits_source_limit() {
         let limiter = AuthAbuseLimiter::memory(policy()).unwrap();
         for principal in ["a", "b", "c"] {
-            assert!(limiter.record_failure(AuthAbuseStage::Password, "source", principal).await.is_ok());
+            assert!(
+                limiter
+                    .record_failure(AuthAbuseStage::Password, "source", principal)
+                    .await
+                    .is_ok()
+            );
         }
-        assert!(limiter.record_failure(AuthAbuseStage::Password, "source", "d").await.is_ok());
-        assert!(matches!(limiter.check(AuthAbuseStage::Password, "source", "e").await, Err(AuthError::RateLimited)));
+        assert!(
+            limiter
+                .record_failure(AuthAbuseStage::Password, "source", "d")
+                .await
+                .is_ok()
+        );
+        assert!(matches!(
+            limiter.check(AuthAbuseStage::Password, "source", "e").await,
+            Err(AuthError::RateLimited)
+        ));
     }
 
     #[tokio::test]
     async fn successful_pair_clear_does_not_clear_source_or_principal_history() {
         let limiter = AuthAbuseLimiter::memory(policy()).unwrap();
-        limiter.record_failure(AuthAbuseStage::Password, "source", "alice").await.unwrap();
-        limiter.clear_pair(AuthAbuseStage::Password, "source", "alice").await.unwrap();
-        assert!(limiter.record_failure(AuthAbuseStage::Password, "other", "alice").await.is_ok());
-        assert!(limiter.record_failure(AuthAbuseStage::Password, "third", "alice").await.is_ok());
-        assert!(matches!(limiter.check(AuthAbuseStage::Password, "fourth", "alice").await, Err(AuthError::RateLimited)));
+        limiter
+            .record_failure(AuthAbuseStage::Password, "source", "alice")
+            .await
+            .unwrap();
+        limiter
+            .clear_pair(AuthAbuseStage::Password, "source", "alice")
+            .await
+            .unwrap();
+        assert!(
+            limiter
+                .record_failure(AuthAbuseStage::Password, "other", "alice")
+                .await
+                .is_ok()
+        );
+        assert!(
+            limiter
+                .record_failure(AuthAbuseStage::Password, "third", "alice")
+                .await
+                .is_ok()
+        );
+        assert!(matches!(
+            limiter
+                .check(AuthAbuseStage::Password, "fourth", "alice")
+                .await,
+            Err(AuthError::RateLimited)
+        ));
     }
 }

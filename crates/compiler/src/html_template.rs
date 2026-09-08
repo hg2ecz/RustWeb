@@ -1,12 +1,18 @@
 use crate::diagnostics::CompileError;
 use crate::domain_symbols::internal_domain_symbol;
-use crate::expression::{infer_expr_type, infer_static_expr_type, parse_expr_in_namespace, validate_expr};
-use crate::response_security::{validate_response_expression, ResponseBoundary};
-use crate::type_semantics::represented_as;
+use crate::expression::{
+    infer_expr_type, infer_static_expr_type, parse_expr_in_namespace, validate_expr,
+};
 use crate::handler_types::StaticType;
 use crate::module_namespace::resolve;
-use crate::source_syntax::{is_identifier, matching_brace, matching_paren, skip_ws_and_comments, split_top_level};
-use language_core::{HtmlAttrKind, HtmlPart, HtmlTemplate, HttpMethod, Program, RouteSegment, ValueType};
+use crate::response_security::{ResponseBoundary, validate_response_expression};
+use crate::source_syntax::{
+    is_identifier, matching_brace, matching_paren, skip_ws_and_comments, split_top_level,
+};
+use crate::type_semantics::represented_as;
+use language_core::{
+    HtmlAttrKind, HtmlPart, HtmlTemplate, HttpMethod, Program, RouteSegment, ValueType,
+};
 use std::collections::HashMap;
 
 pub(super) fn parse_html_template(
@@ -174,11 +180,13 @@ fn parse_html_parts_mode(
                 )));
             }
             let source_name = raw[0].trim();
-            let name = internal_domain_symbol(source_name).map(|name| resolve(namespace, &name)).ok_or_else(|| {
-                CompileError::Syntax(
-                    "template call requires a component/layout name as first argument".into(),
-                )
-            })?;
+            let name = internal_domain_symbol(source_name)
+                .map(|name| resolve(namespace, &name))
+                .ok_or_else(|| {
+                    CompileError::Syntax(
+                        "template call requires a component/layout name as first argument".into(),
+                    )
+                })?;
             let params = if is_layout {
                 p.layout(&name).map(|x| &x.params)
             } else {
@@ -223,7 +231,8 @@ fn parse_html_parts_mode(
                 let end = matching_brace(input, j).ok_or_else(|| {
                     CompileError::Syntax(format!("@layout `{source_name}` content block unclosed"))
                 })?;
-                let content = parse_html_parts_mode(&input[j + 1..end], namespace, known, p, false)?;
+                let content =
+                    parse_html_parts_mode(&input[j + 1..end], namespace, known, p, false)?;
                 parts.push(HtmlPart::LayoutCall {
                     layout: name.clone(),
                     args,
@@ -346,7 +355,8 @@ fn parse_html_parts_mode(
                 .ok_or_else(|| CompileError::Syntax("@for body unclosed".into()))?;
             let mut nested = known.clone();
             nested.insert(item.into(), StaticType::model(model));
-            let template = parse_html_parts_mode(&input[open + 1..close], namespace, &nested, p, false)?;
+            let template =
+                parse_html_parts_mode(&input[open + 1..close], namespace, &nested, p, false)?;
             parts.push(HtmlPart::For {
                 item: item.into(),
                 collection: collection.into(),
@@ -378,7 +388,8 @@ fn parse_html_parts_mode(
             .ok_or_else(|| CompileError::Syntax("@if body unclosed".into()))?;
         let mut nested = known.clone();
         nested.insert(value.into(), StaticType::model(model));
-        let template = parse_html_parts_mode(&input[open + 1..close], namespace, &nested, p, false)?;
+        let template =
+            parse_html_parts_mode(&input[open + 1..close], namespace, &nested, p, false)?;
         parts.push(HtmlPart::IfSome {
             value: value.into(),
             template,

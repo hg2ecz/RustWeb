@@ -1,6 +1,6 @@
-use crate::source_loader::SourceUnit;
 use crate::declarations;
 use crate::diagnostics::CompileError;
+use crate::source_loader::SourceUnit;
 use crate::source_loader::source_error;
 use crate::source_syntax::{is_identifier, matching_brace, read_ident};
 use std::collections::HashSet;
@@ -163,10 +163,7 @@ fn scan_domain_objects(source: &str) -> Result<Vec<DomainObjectSpec>, CompileErr
     Ok(out)
 }
 
-fn expand_domain_source(
-    source: &str,
-    specs: &[DomainObjectSpec],
-) -> Result<String, CompileError> {
+fn expand_domain_source(source: &str, specs: &[DomainObjectSpec]) -> Result<String, CompileError> {
     if specs.is_empty() {
         return Ok(source.to_string());
     }

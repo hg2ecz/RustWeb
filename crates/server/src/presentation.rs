@@ -1,7 +1,10 @@
-use crate::response_headers::HeaderName;
 use crate::http_io::{HttpReadError, Response};
+use crate::response_headers::HeaderName;
 use auth::SessionSnapshot;
-use language_core::{ActionBody, ActionStatement, AppError, FormFailure, HttpMethod, PageBody, Program, Route, RouteAuth, Statement, ValueType};
+use language_core::{
+    ActionBody, ActionStatement, AppError, FormFailure, HttpMethod, PageBody, Program, Route,
+    RouteAuth, Statement, ValueType,
+};
 use std::collections::HashMap;
 
 pub(super) fn app_error_response(error: AppError, json_api: bool) -> Response {
@@ -228,17 +231,24 @@ pub(super) fn authorize_route(
         RouteAuth::Mfa if session.is_authenticated() && session.mfa_verified => None,
         RouteAuth::Role(role) if session.is_authenticated() && session.has_role(role) => None,
         RouteAuth::Permission { roles, .. }
-            if session.is_authenticated() && roles.iter().any(|role| session.has_role(role)) => None,
+            if session.is_authenticated() && roles.iter().any(|role| session.has_role(role)) =>
+        {
+            None
+        }
         RouteAuth::PermissionMfa { roles, .. }
             if session.is_authenticated()
                 && session.mfa_verified
-                && roles.iter().any(|role| session.has_role(role)) => None,
+                && roles.iter().any(|role| session.has_role(role)) =>
+        {
+            None
+        }
         RouteAuth::User
         | RouteAuth::Mfa
         | RouteAuth::Role(_)
         | RouteAuth::Permission { .. }
         | RouteAuth::PermissionMfa { .. }
-            if !session.is_authenticated() => {
+            if !session.is_authenticated() =>
+        {
             if json_api {
                 Some(endpoint_error(
                     true,
@@ -271,7 +281,8 @@ pub(super) fn route_returns_json(program: &Program, route: &Route) -> bool {
     }
     fn action_json(statements: &[ActionStatement]) -> bool {
         match statements.last() {
-            Some(ActionStatement::ReturnJson(_)) | Some(ActionStatement::ReturnJsonProjection(_)) => true,
+            Some(ActionStatement::ReturnJson(_))
+            | Some(ActionStatement::ReturnJsonProjection(_)) => true,
             Some(ActionStatement::Resource { statements, .. }) => action_json(statements),
             _ => false,
         }
@@ -322,7 +333,6 @@ pub(super) fn endpoint_error(
         Response::text(status, reason, text)
     }
 }
-
 
 pub(super) fn accepts_media(header: Option<&str>, wanted: &str) -> bool {
     let Some(header) = header else { return true };
@@ -398,9 +408,12 @@ mod permission_auth_tests {
             name: "BillingWrite".into(),
             roles: vec!["BillingAdmin".into()],
         };
-        assert!(authorize_route(&policy, &session_with_mfa(&["BillingAdmin"], true), true).is_none());
-        assert!(authorize_route(&policy, &session_with_mfa(&["BillingAdmin"], false), true).is_some());
+        assert!(
+            authorize_route(&policy, &session_with_mfa(&["BillingAdmin"], true), true).is_none()
+        );
+        assert!(
+            authorize_route(&policy, &session_with_mfa(&["BillingAdmin"], false), true).is_some()
+        );
         assert!(authorize_route(&policy, &session_with_mfa(&["Viewer"], true), true).is_some());
     }
-
 }

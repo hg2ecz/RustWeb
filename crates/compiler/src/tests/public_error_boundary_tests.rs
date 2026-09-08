@@ -30,7 +30,8 @@ page fn show(ctx: PageContext) -> Result<Json, PageError> {
 }
 route show GET "/show" public => show;
 "#;
-    let error = compile_source(src).expect_err("internal errors must not be public response values");
+    let error =
+        compile_source(src).expect_err("internal errors must not be public response values");
     assert!(error.to_string().contains("SEC-A10-003"));
 }
 

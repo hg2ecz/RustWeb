@@ -12,7 +12,10 @@ impl OutboundRuntime for FakeOutbound {
         let calls = Arc::clone(&self.calls);
         Box::pin(async move {
             calls.lock().unwrap().push(format!("GET {target} {path}"));
-            Ok(OutboundOutcome { status: 204, transferred_bytes: 128 })
+            Ok(OutboundOutcome {
+                status: 204,
+                transferred_bytes: 128,
+            })
         })
     }
 
@@ -28,7 +31,10 @@ impl OutboundRuntime for FakeOutbound {
                 "POST {target} {path} {}",
                 std::str::from_utf8(body).unwrap()
             ));
-            Ok(OutboundOutcome { status: 202, transferred_bytes: 256 })
+            Ok(OutboundOutcome {
+                status: 202,
+                transferred_bytes: 256,
+            })
         })
     }
 }
@@ -45,7 +51,9 @@ route show GET "/items" public => show;
 "#;
     let program = compile_source(source).unwrap();
     let calls = Arc::new(Mutex::new(Vec::new()));
-    let outbound = FakeOutbound { calls: Arc::clone(&calls) };
+    let outbound = FakeOutbound {
+        calls: Arc::clone(&calls),
+    };
     let limits = ExecutionLimits::default();
     let profiles = ResourceProfiles::default_for_limits(&limits);
     let response = execute_request_with_profiles_and_outbound(
@@ -63,7 +71,10 @@ route show GET "/items" public => show;
     .await
     .unwrap();
     assert_eq!(response, AppResponse::Json("204".into()));
-    assert_eq!(calls.lock().unwrap().as_slice(), ["GET catalog_api /v1/items"]);
+    assert_eq!(
+        calls.lock().unwrap().as_slice(),
+        ["GET catalog_api /v1/items"]
+    );
 }
 
 #[tokio::test]
@@ -78,7 +89,9 @@ route charge POST "/charge" form amount<Int> public => charge;
 "#;
     let program = compile_source(source).unwrap();
     let calls = Arc::new(Mutex::new(Vec::new()));
-    let outbound = FakeOutbound { calls: Arc::clone(&calls) };
+    let outbound = FakeOutbound {
+        calls: Arc::clone(&calls),
+    };
     let limits = ExecutionLimits::default();
     let profiles = ResourceProfiles::default_for_limits(&limits);
     let response = execute_request_with_profiles_and_outbound(
@@ -124,7 +137,10 @@ async fn cumulative_outbound_io_budget_fails_closed() {
     impl OutboundRuntime for HugeOutbound {
         fn get_status<'a>(&'a self, _target: &'a str, _path: &'a str) -> OutboundFuture<'a> {
             Box::pin(async move {
-                Ok(OutboundOutcome { status: 204, transferred_bytes: 100 * 1024 * 1024 })
+                Ok(OutboundOutcome {
+                    status: 204,
+                    transferred_bytes: 100 * 1024 * 1024,
+                })
             })
         }
         fn post_json_status<'a>(
@@ -134,7 +150,10 @@ async fn cumulative_outbound_io_budget_fails_closed() {
             _body: &'a [u8],
         ) -> OutboundFuture<'a> {
             Box::pin(async move {
-                Ok(OutboundOutcome { status: 204, transferred_bytes: 100 * 1024 * 1024 })
+                Ok(OutboundOutcome {
+                    status: 204,
+                    transferred_bytes: 100 * 1024 * 1024,
+                })
             })
         }
     }
@@ -151,7 +170,16 @@ route show GET "/items" public => show;
     let limits = ExecutionLimits::default();
     let profiles = ResourceProfiles::default_for_limits(&limits);
     let result = execute_request_with_profiles_and_outbound(
-        &program, HttpMethod::Get, "/items", &[], &[], &limits, &profiles, &[], None, Some(&HugeOutbound),
+        &program,
+        HttpMethod::Get,
+        "/items",
+        &[],
+        &[],
+        &limits,
+        &profiles,
+        &[],
+        None,
+        Some(&HugeOutbound),
     )
     .await;
     assert_eq!(result, Err(AppError::ExternalIoLimit));

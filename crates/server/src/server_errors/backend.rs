@@ -17,10 +17,18 @@ pub(crate) enum BackendSupportError {
     UnsafeUnixSocketPath(PathBuf),
     #[cfg(not(unix))]
     UnixSocketsUnsupported,
-    StaticRouteConflict { route: String, prefix: String },
+    StaticRouteConflict {
+        route: String,
+        prefix: String,
+    },
     ReservedMediaRoute,
-    ReservedHealthRoute { path: String },
-    HealthStaticConflict { path: String, prefix: String },
+    ReservedHealthRoute {
+        path: String,
+    },
+    HealthStaticConflict {
+        path: String,
+        prefix: String,
+    },
     MissingUploadDataRoot,
     UploadPermissions,
     ImageUploadPermissions,
@@ -43,11 +51,17 @@ impl BackendSupportError {
 impl fmt::Display for BackendSupportError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Io { operation, subject, source } => {
+            Self::Io {
+                operation,
+                subject,
+                source,
+            } => {
                 write!(f, "failed to {operation} {subject}: {source}")
             }
             Self::Compiler(source) => write!(f, "application compilation failed: {source}"),
-            Self::ResourceProfile(source) => write!(f, "resource profile configuration failed: {source}"),
+            Self::ResourceProfile(source) => {
+                write!(f, "resource profile configuration failed: {source}")
+            }
             Self::StaticPrefix(source) => write!(f, "invalid static URL prefix: {source}"),
             Self::Storage(source) => write!(f, "application filesystem setup failed: {source}"),
             Self::UnsafeUnixSocketPath(path) => write!(
@@ -105,14 +119,22 @@ impl Error for BackendSupportError {
 }
 
 impl From<compiler::CompileError> for BackendSupportError {
-    fn from(value: compiler::CompileError) -> Self { Self::Compiler(value) }
+    fn from(value: compiler::CompileError) -> Self {
+        Self::Compiler(value)
+    }
 }
 impl From<super::ResourceProfileConfigError> for BackendSupportError {
-    fn from(value: super::ResourceProfileConfigError) -> Self { Self::ResourceProfile(value) }
+    fn from(value: super::ResourceProfileConfigError) -> Self {
+        Self::ResourceProfile(value)
+    }
 }
 impl From<super::StaticPrefixError> for BackendSupportError {
-    fn from(value: super::StaticPrefixError) -> Self { Self::StaticPrefix(value) }
+    fn from(value: super::StaticPrefixError) -> Self {
+        Self::StaticPrefix(value)
+    }
 }
 impl From<storage::FsError> for BackendSupportError {
-    fn from(value: storage::FsError) -> Self { Self::Storage(value) }
+    fn from(value: storage::FsError) -> Self {
+        Self::Storage(value)
+    }
 }

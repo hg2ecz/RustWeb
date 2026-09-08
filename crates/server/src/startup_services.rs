@@ -1,16 +1,19 @@
 use crate::AuthRuntime;
 use crate::auth_setup::{build_ldap_config, load_roles, load_totp_secrets};
-use crate::membership_setup::load_memberships;
 use crate::bootstrap_config::{PublicPageCache, load_rate_policies, validate_route_rate_policies};
+use crate::membership_setup::load_memberships;
+use crate::outbound_runtime::ServerOutbound;
 use crate::rate_limit::RouteRateLimiter;
 use crate::server_config_file::{DomainRuntime, HostingRuntime};
 use crate::server_errors::StartupError;
 use crate::source_reload::spawn_source_reload_supervisor;
 use crate::{AuthCliConfig, CacheCliConfig, LifecycleCliConfig, WebSecurityCliConfig};
-use auth::{AuthAbuseLimiter, AuthAbusePolicy, LocalUserStore, RedisSessionStore, SessionBackend, SessionStore, TotpReplayGuard};
+use auth::{
+    AuthAbuseLimiter, AuthAbusePolicy, LocalUserStore, RedisSessionStore, SessionBackend,
+    SessionStore, TotpReplayGuard,
+};
 use data::{Database, DbConfig, RedisConfig, RedisStore};
 use language_core::ServerConfig;
-use crate::outbound_runtime::ServerOutbound;
 use observability::server_log;
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
@@ -42,7 +45,9 @@ pub(super) struct PreparedServices {
     pub(super) source_reload_task: Option<JoinHandle<()>>,
 }
 
-pub(super) async fn prepare(input: ServicePreparation<'_>) -> Result<PreparedServices, StartupError> {
+pub(super) async fn prepare(
+    input: ServicePreparation<'_>,
+) -> Result<PreparedServices, StartupError> {
     let all_domains = unique_domains(input.hosting_snapshot);
     let database = connect_database(input.db_config, &all_domains).await?;
     let redis = connect_auth_redis(input.auth).await?;
@@ -52,8 +57,13 @@ pub(super) async fn prepare(input: ServicePreparation<'_>) -> Result<PreparedSer
         redis.clone(),
         input.allow_memory_rate_limit,
     )?;
-    let public_cache = build_public_cache(&all_domains, input.auth, redis.as_ref(), input.cache).await?;
-    crate::startup_security::validate_replay_guard_requirements(&all_domains, redis.is_some(), input.web)?;
+    let public_cache =
+        build_public_cache(&all_domains, input.auth, redis.as_ref(), input.cache).await?;
+    crate::startup_security::validate_replay_guard_requirements(
+        &all_domains,
+        redis.is_some(),
+        input.web,
+    )?;
     let sessions = build_sessions(redis.clone(), input.config);
     let idempotency_redis = redis.clone();
     let auth_runtime = build_auth_runtime(input.auth, redis).await?;
@@ -84,7 +94,6 @@ pub(super) async fn prepare(input: ServicePreparation<'_>) -> Result<PreparedSer
         source_reload_task,
     })
 }
-
 
 fn unique_domains(hosting: &HostingRuntime) -> Vec<Arc<DomainRuntime>> {
     let mut seen_domain_hosts = HashSet::new();
@@ -175,7 +184,12 @@ async fn build_public_cache(
 ) -> Result<Arc<PublicPageCache>, StartupError> {
     let mut cached_route_count = 0usize;
     for domain in all_domains {
-        for route in domain.program.routes.iter().filter(|route| route.public_cache.is_some()) {
+        for route in domain
+            .program
+            .routes
+            .iter()
+            .filter(|route| route.public_cache.is_some())
+        {
             cached_route_count += 1;
             if let Some(policy) = route.public_cache.as_ref() {
                 let ttl = policy.ttl_secs;
@@ -220,7 +234,9 @@ async fn build_public_cache(
 
 fn build_sessions(redis: Option<RedisStore>, config: &ServerConfig) -> SessionBackend {
     match redis {
-        Some(store) => SessionBackend::Redis(RedisSessionStore::new(store, config.session_ttl_secs)),
+        Some(store) => {
+            SessionBackend::Redis(RedisSessionStore::new(store, config.session_ttl_secs))
+        }
         None => SessionBackend::Memory(SessionStore::new(
             Duration::from_secs(config.session_ttl_secs),
             config.max_sessions,
@@ -251,10 +267,9 @@ async fn build_auth_runtime(
         let store = LocalUserStore::connect_sqlite(url)
             .await
             .map_err(|_| StartupError::invalid("failed to connect local auth store"))?;
-        store
-            .ensure_ready()
-            .await
-            .map_err(|_| StartupError::invalid("local auth store is not initialized; run `rwlang-cli auth init`"))?;
+        store.ensure_ready().await.map_err(|_| {
+            StartupError::invalid("local auth store is not initialized; run `rwlang-cli auth init`")
+        })?;
         Some(store)
     } else {
         None

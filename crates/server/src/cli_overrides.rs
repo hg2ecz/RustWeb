@@ -3,8 +3,8 @@ use crate::cli_config_apply::LoadedCliConfig;
 use crate::server_config_file::config_abs_path;
 use crate::server_errors::CliParseError;
 use crate::tls_support::validate_public_host;
-use crate::web_security::valid_cors_origin;
 use crate::validate_reserved_path;
+use crate::web_security::valid_cors_origin;
 use std::path::PathBuf;
 
 pub(super) struct AppliedCli {
@@ -53,7 +53,12 @@ pub(super) fn apply(
                 config.listen = args.next().ok_or("--listen requires an address")?.parse()?
             }
             "--unix-socket" => {
-                unix_socket = Some(config_abs_path(&args.next().ok_or("--unix-socket requires an absolute path")?, "--unix-socket")?);
+                unix_socket = Some(config_abs_path(
+                    &args
+                        .next()
+                        .ok_or("--unix-socket requires an absolute path")?,
+                    "--unix-socket",
+                )?);
             }
             "--behind-proxy" => behind_proxy = true,
             "--tls-cert-file" => {
@@ -176,8 +181,9 @@ pub(super) fn apply(
             }
             "--allow-memory-cache" => cache_cli.allow_memory = true,
             "--cache-singleflight-wait-timeout-ms" => {
-                cache_cli.singleflight_wait_timeout_ms = parse_u64(&mut args, "--cache-singleflight-wait-timeout-ms")?
-            },
+                cache_cli.singleflight_wait_timeout_ms =
+                    parse_u64(&mut args, "--cache-singleflight-wait-timeout-ms")?
+            }
             "--no-source-reload" => {
                 source_reload.enabled = false;
                 force_disable_source_reload = true;
@@ -273,7 +279,8 @@ pub(super) fn apply(
             }
             "--auth-memberships-file" => {
                 auth.memberships_file = Some(PathBuf::from(
-                    args.next().ok_or("--auth-memberships-file requires a path")?,
+                    args.next()
+                        .ok_or("--auth-memberships-file requires a path")?,
                 ))
             }
             "--local-auth-db-url-file" => {
@@ -297,8 +304,7 @@ pub(super) fn apply(
                     parse_u64(&mut args, "--login-source-max-attempts")?.try_into()?
             }
             "--mfa-max-attempts" => {
-                auth.mfa_max_attempts =
-                    parse_u64(&mut args, "--mfa-max-attempts")?.try_into()?
+                auth.mfa_max_attempts = parse_u64(&mut args, "--mfa-max-attempts")?.try_into()?
             }
             "--login-window-secs" => {
                 auth.login_window_secs = parse_u64(&mut args, "--login-window-secs")?
@@ -371,7 +377,9 @@ pub(super) fn apply(
                     "Config: --config <file> [--check-config | --print-effective-config]; precedence defaults < config < CLI"
                 );
                 println!("HTTPS: --http-redirect-listen 0.0.0.0:80 --public-host example.com");
-                println!("Reverse proxy backend: --behind-proxy [--unix-socket /run/rwlang/rwlang.sock | --listen 127.0.0.1:8080]");
+                println!(
+                    "Reverse proxy backend: --behind-proxy [--unix-socket /run/rwlang/rwlang.sock | --listen 127.0.0.1:8080]"
+                );
                 println!(
                     "Web security: --request-timeout-ms 15000 --trusted-proxy-cidr <CIDR> [--allow-missing-origin] [--cors-origin https://frontend.example] [--cors-allow-credentials]"
                 );

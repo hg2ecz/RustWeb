@@ -305,4 +305,3 @@ mod resource_profile_error_tests {
         );
     }
 }
-

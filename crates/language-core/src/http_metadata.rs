@@ -32,7 +32,10 @@ fn valid_media_token(raw: &str) -> bool {
     !raw.is_empty()
         && raw.bytes().all(|b| {
             b.is_ascii_alphanumeric()
-                || matches!(b, b'!' | b'#' | b'$' | b'&' | b'^' | b'_' | b'.' | b'+' | b'-')
+                || matches!(
+                    b,
+                    b'!' | b'#' | b'$' | b'&' | b'^' | b'_' | b'.' | b'+' | b'-'
+                )
         })
 }
 
@@ -47,9 +50,9 @@ impl FileName {
             || raw == "."
             || raw == ".."
             || raw.starts_with('.')
-            || raw.bytes().any(|b| {
-                !(b.is_ascii_alphanumeric() || matches!(b, b'.' | b'-' | b'_' | b' '))
-            })
+            || raw
+                .bytes()
+                .any(|b| !(b.is_ascii_alphanumeric() || matches!(b, b'.' | b'-' | b'_' | b' ')))
         {
             return None;
         }

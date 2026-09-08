@@ -1,5 +1,5 @@
-use crate::server_config_file::{HostingRuntime, SourceReloadCliConfig};
 use crate::WebSecurityCliConfig;
+use crate::server_config_file::{HostingRuntime, SourceReloadCliConfig};
 use data::DbConfig;
 use language_core::{ProductionPolicy, ServerConfig};
 use std::collections::HashSet;
@@ -114,9 +114,7 @@ fn validate_static_policy(
             return Err(ProductionPolicyError::MissingOriginAllowed(label.into()));
         }
     }
-    if policy.database_tls_required
-        && db.map_or(false, |value| !value.require_tls_for_remote)
-    {
+    if policy.database_tls_required && db.map_or(false, |value| !value.require_tls_for_remote) {
         return Err(ProductionPolicyError::InsecureDatabaseTls(label.into()));
     }
     if web
@@ -129,9 +127,7 @@ fn validate_static_policy(
     Ok(())
 }
 
-fn unique_domains(
-    hosting: &HostingRuntime,
-) -> Vec<Arc<crate::server_config_file::DomainRuntime>> {
+fn unique_domains(hosting: &HostingRuntime) -> Vec<Arc<crate::server_config_file::DomainRuntime>> {
     let mut seen = HashSet::new();
     hosting
         .default

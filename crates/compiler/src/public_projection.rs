@@ -9,7 +9,10 @@ pub(super) fn parse_public_projection(
     known: &HashMap<String, StaticType>,
     program: &Program,
 ) -> Result<Option<PublicProjection>, CompileError> {
-    let Some(inner) = raw.strip_prefix("expose(").and_then(|value| value.strip_suffix(')')) else {
+    let Some(inner) = raw
+        .strip_prefix("expose(")
+        .and_then(|value| value.strip_suffix(')'))
+    else {
         return Ok(None);
     };
     let parts = inner.split(',').map(str::trim).collect::<Vec<_>>();
@@ -37,9 +40,9 @@ pub(super) fn parse_public_projection(
             .fields
             .iter()
             .find(|candidate| candidate.name == *field_name)
-            .ok_or_else(|| CompileError::Syntax(format!(
-                "model `{model_name}` has no field `{field_name}`"
-            )))?;
+            .ok_or_else(|| {
+                CompileError::Syntax(format!("model `{model_name}` has no field `{field_name}`"))
+            })?;
         validate_disclosure(access, model_name, field_name, field.ty, field.sensitivity)?;
         fields.push((*field_name).to_string());
     }
@@ -57,12 +60,24 @@ fn projection_source<'a>(
     known: &'a HashMap<String, StaticType>,
 ) -> Result<(&'a str, ProjectionSourceKind, ModelAccess), CompileError> {
     match known.get(source) {
-        Some(StaticType::Model(model)) => Ok((&model.name, ProjectionSourceKind::Model, model.access)),
-        Some(StaticType::OptionalModel(model)) => Ok((model, ProjectionSourceKind::OptionalModel, ModelAccess::Unverified)),
-        Some(StaticType::ListModel(model)) => Ok((model, ProjectionSourceKind::ModelList, ModelAccess::Unverified)),
+        Some(StaticType::Model(model)) => {
+            Ok((&model.name, ProjectionSourceKind::Model, model.access))
+        }
+        Some(StaticType::OptionalModel(model)) => Ok((
+            model,
+            ProjectionSourceKind::OptionalModel,
+            ModelAccess::Unverified,
+        )),
+        Some(StaticType::ListModel(model)) => Ok((
+            model,
+            ProjectionSourceKind::ModelList,
+            ModelAccess::Unverified,
+        )),
         _ => Err(CompileError::security(
             "SEC-DATA-004",
-            format!("`expose` requires a model, optional model, or model list; `{source}` is not one"),
+            format!(
+                "`expose` requires a model, optional model, or model list; `{source}` is not one"
+            ),
             Some("load a model value first, then expose an explicit field list".into()),
         )),
     }
@@ -70,9 +85,7 @@ fn projection_source<'a>(
 
 fn validate_identifier(field: &str) -> Result<(), CompileError> {
     if !field.is_empty()
-        && field
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '_')
+        && field.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
         && field
             .chars()
             .next()
@@ -104,7 +117,9 @@ fn validate_disclosure(
         DataSensitivity::Sensitive if access == ModelAccess::Authorized => Ok(()),
         DataSensitivity::Sensitive => Err(CompileError::security(
             "SEC-A01-012",
-            format!("Sensitive field `{model}.{field}` cannot be exposed without object authorization"),
+            format!(
+                "Sensitive field `{model}.{field}` cannot be exposed without object authorization"
+            ),
             Some("authorize the loaded object before exposing this field".into()),
         )),
         DataSensitivity::Secret => Err(CompileError::security(

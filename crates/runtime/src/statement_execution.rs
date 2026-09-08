@@ -1,22 +1,22 @@
-use crate::public_projection::evaluate_public_projection;
 use crate::control_flow;
 use crate::db_execution::execute_read_query;
 use crate::domain_values;
 use crate::execution_context::Budget;
+use crate::public_projection::evaluate_public_projection;
 use crate::rendering::build_current_route_url;
 use crate::request_binding::validate_redirect_location;
+use crate::response::AppResponse;
 use crate::scalars::is_canonical_slug;
 use crate::templates;
 use crate::vm::eval_expr;
 use chrono::Utc;
 use data::{BindSet, Database, DbTransaction, DbValue, PreparedSql};
 use language_core::{
-    ActionStatement, AppError, AuthorizationMode, FlashKind, FlashMessage, LocalUrl, Program, Redirect,
-    Route, Statement, Value,
+    ActionStatement, AppError, AuthorizationMode, FlashKind, FlashMessage, LocalUrl, Program,
+    Redirect, Route, Statement, Value,
 };
 use std::collections::HashMap;
 use uuid::Uuid;
-use crate::response::AppResponse;
 
 pub(crate) fn authorize_object(
     rule: &language_core::ObjectAuthorization,
@@ -65,7 +65,9 @@ pub(crate) async fn execute_page_plain(
         if matches!(s, Statement::Resource { .. }) {
             return Err(AppError::Internal);
         }
-        if let Some(r) = execute_page_statement(program, route, s, env, budget, db, outbound).await? {
+        if let Some(r) =
+            execute_page_statement(program, route, s, env, budget, db, outbound).await?
+        {
             return Ok(r);
         }
     }
@@ -95,25 +97,53 @@ pub(crate) async fn execute_page_statement(
             env.insert(name.clone(), value);
             Ok(None)
         }
-        Statement::Set { name, expr } => control_flow::assign(name, expr, env, budget).map(|_| None),
-        Statement::While { condition, statements } => control_flow::execute_while(condition, statements, env, budget).map(|_| None),
-        Statement::If { condition, statements } => control_flow::execute_if(condition, statements, env, budget).map(|_| None),
-        Statement::Match { expr, enum_id, arms } => {
+        Statement::Set { name, expr } => {
+            control_flow::assign(name, expr, env, budget).map(|_| None)
+        }
+        Statement::While {
+            condition,
+            statements,
+        } => control_flow::execute_while(condition, statements, env, budget).map(|_| None),
+        Statement::If {
+            condition,
+            statements,
+        } => control_flow::execute_if(condition, statements, env, budget).map(|_| None),
+        Statement::Match {
+            expr,
+            enum_id,
+            arms,
+        } => {
             let value = eval_expr(expr, env, budget)?;
             let variant = match value {
-                Value::Enum { enum_id: actual, variant } if actual == *enum_id => variant,
+                Value::Enum {
+                    enum_id: actual,
+                    variant,
+                } if actual == *enum_id => variant,
                 _ => return Err(AppError::Internal),
             };
-            let arm = arms.iter().find(|arm| arm.variant == variant).ok_or(AppError::Internal)?;
+            let arm = arms
+                .iter()
+                .find(|arm| arm.variant == variant)
+                .ok_or(AppError::Internal)?;
             for statement in &arm.statements {
-                if let Some(response) = Box::pin(execute_page_statement(program, route, statement, env, budget, db, outbound)).await? {
+                if let Some(response) = Box::pin(execute_page_statement(
+                    program, route, statement, env, budget, db, outbound,
+                ))
+                .await?
+                {
                     return Ok(Some(response));
                 }
             }
             Ok(None)
         }
-        Statement::F32ArraySet { array, index, value } => control_flow::set_f32_array(array, index, value, env, budget).map(|_| None),
-        Statement::StringDictSet { dict, key, value } => control_flow::set_string_dict(dict, key, value, env, budget).map(|_| None),
+        Statement::F32ArraySet {
+            array,
+            index,
+            value,
+        } => control_flow::set_f32_array(array, index, value, env, budget).map(|_| None),
+        Statement::StringDictSet { dict, key, value } => {
+            control_flow::set_string_dict(dict, key, value, env, budget).map(|_| None)
+        }
         Statement::LetQuery { name, call } => {
             let database = db.ok_or(AppError::Database)?;
             let v = execute_read_query(program, call, env, budget, database).await?;
@@ -306,25 +336,53 @@ pub(crate) async fn execute_action_statement(
             env.insert(name.clone(), value);
             Ok(None)
         }
-        ActionStatement::Set { name, expr } => control_flow::assign(name, expr, env, budget).map(|_| None),
-        ActionStatement::While { condition, statements } => control_flow::execute_while(condition, statements, env, budget).map(|_| None),
-        ActionStatement::If { condition, statements } => control_flow::execute_if(condition, statements, env, budget).map(|_| None),
-        ActionStatement::Match { expr, enum_id, arms } => {
+        ActionStatement::Set { name, expr } => {
+            control_flow::assign(name, expr, env, budget).map(|_| None)
+        }
+        ActionStatement::While {
+            condition,
+            statements,
+        } => control_flow::execute_while(condition, statements, env, budget).map(|_| None),
+        ActionStatement::If {
+            condition,
+            statements,
+        } => control_flow::execute_if(condition, statements, env, budget).map(|_| None),
+        ActionStatement::Match {
+            expr,
+            enum_id,
+            arms,
+        } => {
             let value = eval_expr(expr, env, budget)?;
             let variant = match value {
-                Value::Enum { enum_id: actual, variant } if actual == *enum_id => variant,
+                Value::Enum {
+                    enum_id: actual,
+                    variant,
+                } if actual == *enum_id => variant,
                 _ => return Err(AppError::Internal),
             };
-            let arm = arms.iter().find(|arm| arm.variant == variant).ok_or(AppError::Internal)?;
+            let arm = arms
+                .iter()
+                .find(|arm| arm.variant == variant)
+                .ok_or(AppError::Internal)?;
             for statement in &arm.statements {
-                if let Some(response) = Box::pin(execute_action_statement(program, statement, env, budget, db, outbound)).await? {
+                if let Some(response) = Box::pin(execute_action_statement(
+                    program, statement, env, budget, db, outbound,
+                ))
+                .await?
+                {
                     return Ok(Some(response));
                 }
             }
             Ok(None)
         }
-        ActionStatement::F32ArraySet { array, index, value } => control_flow::set_f32_array(array, index, value, env, budget).map(|_| None),
-        ActionStatement::StringDictSet { dict, key, value } => control_flow::set_string_dict(dict, key, value, env, budget).map(|_| None),
+        ActionStatement::F32ArraySet {
+            array,
+            index,
+            value,
+        } => control_flow::set_f32_array(array, index, value, env, budget).map(|_| None),
+        ActionStatement::StringDictSet { dict, key, value } => {
+            control_flow::set_string_dict(dict, key, value, env, budget).map(|_| None)
+        }
         ActionStatement::LetQuery { name, call } => {
             let database = db.ok_or(AppError::Database)?;
             let v = execute_read_query(program, call, env, budget, database).await?;
@@ -352,9 +410,15 @@ pub(crate) async fn execute_action_statement(
             );
             Ok(None)
         }
-        ActionStatement::Transaction { outcome, statements } => {
+        ActionStatement::Transaction {
+            outcome,
+            statements,
+        } => {
             let database = db.ok_or(AppError::Database)?;
-            crate::transaction_execution::execute(program, outcome, statements, env, budget, database).await?;
+            crate::transaction_execution::execute(
+                program, outcome, statements, env, budget, database,
+            )
+            .await?;
             Ok(None)
         }
         ActionStatement::ReturnRedirect(call) => {
@@ -363,14 +427,8 @@ pub(crate) async fn execute_action_statement(
                 .iter()
                 .find(|route| route.name == call.route)
                 .ok_or(AppError::Internal)?;
-            let location = crate::rendering::build_route_url(
-                program,
-                route,
-                &call.args,
-                env,
-                budget,
-                true,
-            )?;
+            let location =
+                crate::rendering::build_route_url(program, route, &call.args, env, budget, true)?;
             validate_redirect_location(&location)?;
             let redirect = match (env.get("__flashKind"), env.get("__flashMessage")) {
                 (Some(Value::String(kind)), Some(Value::String(message))) => {
@@ -381,10 +439,12 @@ pub(crate) async fn execute_action_statement(
                         "error" => FlashKind::Error,
                         _ => return Err(AppError::Internal),
                     };
-                    Redirect::new(LocalUrl::parse(location).ok_or(AppError::Internal)?).with_flash(FlashMessage {
-                        kind,
-                        message: message.clone(),
-                    })
+                    Redirect::new(LocalUrl::parse(location).ok_or(AppError::Internal)?).with_flash(
+                        FlashMessage {
+                            kind,
+                            message: message.clone(),
+                        },
+                    )
                 }
                 (None, None) => Redirect::new(LocalUrl::parse(location).ok_or(AppError::Internal)?),
                 _ => return Err(AppError::Internal),

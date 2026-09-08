@@ -47,10 +47,14 @@ pub(super) fn infer(
             require_types(function, args, &[ValueType::String], known, program)?;
             Ok(ValueType::String)
         }
-        BuiltinFunction::Contains
-        | BuiltinFunction::StartsWith
-        | BuiltinFunction::EndsWith => {
-            require_types(function, args, &[ValueType::String, ValueType::String], known, program)?;
+        BuiltinFunction::Contains | BuiltinFunction::StartsWith | BuiltinFunction::EndsWith => {
+            require_types(
+                function,
+                args,
+                &[ValueType::String, ValueType::String],
+                known,
+                program,
+            )?;
             Ok(ValueType::Bool)
         }
         BuiltinFunction::Replace => {
@@ -64,7 +68,13 @@ pub(super) fn infer(
             Ok(ValueType::String)
         }
         BuiltinFunction::Split => {
-            require_types(function, args, &[ValueType::String, ValueType::String], known, program)?;
+            require_types(
+                function,
+                args,
+                &[ValueType::String, ValueType::String],
+                known,
+                program,
+            )?;
             Ok(ValueType::StringList)
         }
         BuiltinFunction::SplitBounded => {
@@ -91,18 +101,38 @@ pub(super) fn infer(
             Ok(ValueType::String)
         }
         BuiltinFunction::IndexOf | BuiltinFunction::LastIndexOf => {
-            require_types(function, args, &[ValueType::String, ValueType::String], known, program)?;
+            require_types(
+                function,
+                args,
+                &[ValueType::String, ValueType::String],
+                known,
+                program,
+            )?;
             Ok(ValueType::Int)
         }
         BuiltinFunction::CharAt => {
-            require_types(function, args, &[ValueType::String, ValueType::Int], known, program)?;
+            require_types(
+                function,
+                args,
+                &[ValueType::String, ValueType::Int],
+                known,
+                program,
+            )?;
             Ok(ValueType::String)
         }
         BuiltinFunction::Repeat => {
-            require_types(function, args, &[ValueType::String, ValueType::Int], known, program)?;
+            require_types(
+                function,
+                args,
+                &[ValueType::String, ValueType::Int],
+                known,
+                program,
+            )?;
             Ok(ValueType::String)
         }
-        _ => Err(CompileError::Syntax("internal: non-string builtin routed to string type checker".into())),
+        _ => Err(CompileError::Syntax(
+            "internal: non-string builtin routed to string type checker".into(),
+        )),
     }
 }
 

@@ -1,15 +1,19 @@
-use crate::{AuthRuntime, LifecycleCliConfig, ObservabilityCliConfig, WebSecurityCliConfig, observe_response};
 use crate::bootstrap_config::PublicPageCache;
 use crate::connection_dispatch;
 use crate::connection_finalize;
 use crate::http_io::{HttpRequest, Response, read_request_head, write_response_with_timeout};
 use crate::presentation::read_error_response;
 use crate::rate_limit::RouteRateLimiter;
-use crate::request_pipeline::{AdmissionError, admit_domain_request, dispatch_early_request, resolve_session, select_domain};
+use crate::request_pipeline::{
+    AdmissionError, admit_domain_request, dispatch_early_request, resolve_session, select_domain,
+};
 use crate::server_config_file::HostingRuntime;
 use crate::server_errors::ConnectionError;
 use crate::tls_support::host_matches_public;
 use crate::web_security::{effective_client_ip, effective_request_https};
+use crate::{
+    AuthRuntime, LifecycleCliConfig, ObservabilityCliConfig, WebSecurityCliConfig, observe_response,
+};
 use auth::SessionBackend;
 use data::{Database, RedisStore};
 use language_core::{HttpMethod, ServerConfig};
@@ -71,7 +75,8 @@ where
             Ok(Ok(None)) => break,
             Ok(Err(err)) => {
                 let response = read_error_response(err);
-                write_response_with_timeout(&mut stream, services.config, response, false, is_tls).await?;
+                write_response_with_timeout(&mut stream, services.config, response, false, is_tls)
+                    .await?;
                 break;
             }
         };
@@ -85,9 +90,12 @@ where
             headers: head.headers.clone(),
             body: Vec::new(),
         };
-        let Some(selection) = select_domain(services.hosting, request_stub.header("host")).map_err(|_| ConnectionError::HostingLockPoisoned)? else {
+        let Some(selection) = select_domain(services.hosting, request_stub.header("host"))
+            .map_err(|_| ConnectionError::HostingLockPoisoned)?
+        else {
             let response = Response::text(421, "Misdirected Request", b"unexpected host\n");
-            write_response_with_timeout(&mut stream, services.config, response, false, is_tls).await?;
+            write_response_with_timeout(&mut stream, services.config, response, false, is_tls)
+                .await?;
             break;
         };
         let domain = selection.domain;
@@ -96,13 +104,20 @@ where
         let _domain_permit = match admit_domain_request(&domain).await {
             Ok(permit) => permit,
             Err(AdmissionError::QueueFull) => {
-                let response = Response::text(503, "Service Unavailable", b"domain request queue full\n");
-                write_response_with_timeout(&mut stream, &domain.config, response, false, is_tls).await?;
+                let response =
+                    Response::text(503, "Service Unavailable", b"domain request queue full\n");
+                write_response_with_timeout(&mut stream, &domain.config, response, false, is_tls)
+                    .await?;
                 break;
             }
             Err(AdmissionError::QueueTimeout | AdmissionError::Closed) => {
-                let response = Response::text(503, "Service Unavailable", b"domain request queue timeout\n");
-                write_response_with_timeout(&mut stream, &domain.config, response, false, is_tls).await?;
+                let response = Response::text(
+                    503,
+                    "Service Unavailable",
+                    b"domain request queue timeout\n",
+                );
+                write_response_with_timeout(&mut stream, &domain.config, response, false, is_tls)
+                    .await?;
                 break;
             }
         };
@@ -168,7 +183,8 @@ where
                 break;
             }
         }
-        let keep_alive = head.keep_alive && request_index + 1 < services.config.max_requests_per_connection;
+        let keep_alive =
+            head.keep_alive && request_index + 1 < services.config.max_requests_per_connection;
         let request_origin = head
             .headers
             .iter()
@@ -267,10 +283,14 @@ where
             .split_once('?')
             .map(|v| v.0.to_string())
             .unwrap_or_else(|| head.target.clone());
-        let route_label = format!("{}:{}", domain_namespace, method
-            .and_then(|m| route_meta_for_request(program, m, &path).ok())
-            .map(|r| r.name.clone())
-            .unwrap_or_else(|| "__unmatched__".into()));
+        let route_label = format!(
+            "{}:{}",
+            domain_namespace,
+            method
+                .and_then(|m| route_meta_for_request(program, m, &path).ok())
+                .map(|r| r.name.clone())
+                .unwrap_or_else(|| "__unmatched__".into())
+        );
         let upload_route = method
             .and_then(|m| route_meta_for_request(program, m, &path).ok())
             .and_then(|r| r.upload.as_ref().map(|u| (r, u)));
@@ -303,13 +323,8 @@ where
             )
             .await
         } else {
-            connection_dispatch::dispatch_buffered(
-                &mut stream,
-                &mut buffer,
-                head,
-                &dispatch_ctx,
-            )
-            .await
+            connection_dispatch::dispatch_buffered(&mut stream, &mut buffer, head, &dispatch_ctx)
+                .await
         };
         let force_close = dispatch.force_close;
         let response = dispatch.response;
@@ -345,4 +360,3 @@ where
     let _ = stream.shutdown().await;
     Ok(())
 }
-

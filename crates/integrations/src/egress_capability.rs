@@ -1,4 +1,4 @@
-use crate::egress::{canonical_host, Target};
+use crate::egress::{Target, canonical_host};
 use crate::error::IntegrationError;
 
 #[derive(Clone)]
@@ -11,11 +11,7 @@ impl EgressCapability {
         Self { target }
     }
 
-    pub fn endpoint(
-        &self,
-        host: &str,
-        port: u16,
-    ) -> Result<EgressEndpoint, IntegrationError> {
+    pub fn endpoint(&self, host: &str, port: u16) -> Result<EgressEndpoint, IntegrationError> {
         let host = canonical_host(host)?;
         if !self.target.hosts.iter().any(|allowed| allowed == &host) {
             return Err(IntegrationError::Policy(
