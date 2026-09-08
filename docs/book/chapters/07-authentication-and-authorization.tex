@@ -267,12 +267,17 @@ Login has its own rate-limit policy. For example:
 \begin{lstlisting}
 [auth]
 login_max_attempts = 8
+login_principal_max_attempts = 16
+login_source_max_attempts = 64
+mfa_max_attempts = 5
 login_window_secs = 300
 \end{lstlisting}
 
 After trusted-proxy processing, the server uses the effective client IP together with the canonical username as part of the limiter key. This is why \code{trusted_proxy_cidrs} is also an authentication-security setting behind a reverse proxy.
 
 A failed credential or second factor does not produce detailed failure information for the client. Use \code{429 Too Many Requests} for rate limiting and \code{503 Service Unavailable} when the authentication backend is unavailable.
+
+The limiter is deliberately multi-dimensional rather than a single username+IP counter. The platform simultaneously tracks source+principal, principal across sources, and source across principals; MFA/recovery attempts use a stricter stage. This blocks both distributed guessing against one account and credential stuffing from one source. A successful login clears the concrete pair but does not erase source-wide or principal-wide abuse history. Shared limiter-store failure is fail closed.
 
 \section{CSRF, Origin, and Fetch Metadata}
 

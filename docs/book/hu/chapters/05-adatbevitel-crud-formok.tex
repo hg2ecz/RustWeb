@@ -1,6 +1,6 @@
 \chapter{Adatbevitel: typed SQL, CRUD, formok és PRG}
 
-Egy klasszikus webalkalmazás alapciklusa: adatot olvasunk az adatbázisból, HTML formon typed inputot fogadunk, validálunk, tranzakcióban módosítunk, majd redirect után újra GET-tel olvasunk. Ebben a fejezetben ezt a teljes ciklust egy helyen kezeljük.
+Egy klasszikus webalkalmazás alapciklusa: adatot olvasunk az adatbázisból, HTML formon typed inputot fogadunk, validálunk, autorizáljuk az objectet vagy műveletet, tranzakcióban módosítunk, majd redirect után újra GET-tel olvasunk. Ebben a fejezetben ezt a teljes ciklust egy helyen kezeljük. A fontos különbség: a \emph{valid input még nem authorized input}.
 
 \section{Typed SQL és CRUD}
 
@@ -20,19 +20,26 @@ Az SQL szöveg statikus és compiler-owned. Felhasználói érték csak typed bi
 \subsection*{Mutáció transactionben}
 
 \begin{lstlisting}[language=RWLang]
+query fn articleById(db: Db, id: Int)
+    -> Result<Article, DbError> sql {
+    SELECT id, slug, title, body
+    FROM articles
+    WHERE id = :id
+}
+
 query fn updateArticle(
     tx: Transaction,
     id: Int,
     title: String,
     body: String
-) -> Result<Void, DbError> sql {
+) -> Result<Void, DbError> mutates Article by id sql {
     UPDATE articles
     SET title = :title, body = :body
     WHERE id = :id
 }
 \end{lstlisting}
 
-Az action:
+Az action betölti az objectet, létrehozza az authorization proofot, és csak ezután használja az autorizált object kulcsát a mutációhoz:
 
 \begin{lstlisting}[language=RWLang]
 action fn update(
@@ -42,14 +49,16 @@ action fn update(
     title: String,
     body: String
 ) -> Result<Redirect, PageError> {
+    let article = articleById(db, id)?;
+    authorize article authenticated;
     transaction db {
-        updateArticle(tx, id, title, body)?;
+        updateArticle(tx, article.id, title, body)?;
     }
-    return Ok(redirect("/admin/articles"));
+    return Ok(redirect(adminArticles()));
 }
 \end{lstlisting}
 
-Siker esetén commit, hiba esetén rollback. A \code{Transaction} capability nem escape-elhet a blokkból.
+Hétköznapi lokális tranzakciónál siker esetén commit, ismert adatbázishibánál rollback történik. A \code{Transaction} capability nem escape-elhet a blokkból. Retry-sensitive critical műveletnél viszont explicit transaction outcome-ot kell kezelni ahelyett, hogy minden hibáról rollbacket feltételeznénk; a \code{CommitUnknown} szemantikát a \ref{ch:db-deep-dive-hu}. fejezet részletezi.
 
 \subsection*{Portable adatbázis-séma}
 
@@ -116,8 +125,23 @@ action fn create(
     transaction db {
         insertArticle(tx, articleSlug, title, body)?;
     }
-    return Ok(redirect("/admin/articles"));
+    return Ok(redirect(adminArticles()));
 }
 \end{lstlisting}
 
 A checkbox-szerű hiányzó \code{Bool} mező named form esetén \code{false}.
+
+\subsection*{Gyakorlati döntési sorrend}
+
+Állapotváltoztató form tervezésénél és review-jánál ezt a sorrendet használd:
+
+\begin{enumerate}
+  \item decode és validation a route/form boundaryn;
+  \item meglévő rekord módosításánál töltsd be a cél objectet;
+  \item hozd létre az object/permission/tenant authorization proofot;
+  \item a megfelelő transaction vagy critical-operation contract alatt módosíts;
+  \item typed GET route helperre redirectelj;
+  \item csak azt a cache-t invalidáld, amelyet a módosítás ténylegesen elavulttá tett.
+\end{enumerate}
+
+Ez a sorrend kizár egy gyakori hibát: a jól formázott identifier vagy form önmagában nem bizonyítja, hogy a hívó módosíthatja a hivatkozott objectet.

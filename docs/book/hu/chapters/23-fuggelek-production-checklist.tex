@@ -220,6 +220,20 @@ A következő lista szándékosan rövid és végrehajtható. A részletes indok
   \item \textbf{Indítás utáni evidence:} liveness, readiness és legalább egy üzleti smoke kérés sikeres; logban nincs startup fallback vagy váratlan policy-hiba.
 \end{enumerate}
 
+\subsection*{Platform-release security evidence}
+
+Az RWLang platform release csak akkor nevezhető release-ready állapotúnak, ha pontosan az a source tree átmegy ezen:
+
+\begin{lstlisting}
+cargo fmt --all -- --check
+cargo metadata --locked --format-version 1 >/dev/null
+cargo check --workspace --locked
+cargo test --workspace --locked
+./verify.sh
+\end{lstlisting}
+
+A supply-chain envelope egyezzen a \code{Cargo.lock} és \path{SUPPLY-CHAIN-CAPABILITIES.txt} állapottal. Release packaging nem generálhat vagy pecsételhet le Cargo szerint stale lockfile-t. Minden dokumentáció/book változás után a release manifestet is újra kell verifikálni.
+
 \section{Gyors hibadiagnosztikai térkép}
 
 \begin{longtable}{L{0.23\textwidth}L{0.30\textwidth}L{0.38\textwidth}}

@@ -100,8 +100,11 @@ Key & Default & Meaning \\
 \path{auth.roles_file} & none & External role-mapping file. \\
 \path{auth.local_auth_db_url_file} & none & Local-auth identity-store URL from a secret file. \\
 \path{auth.require_totp} & \code{false} & Whether TOTP is required after a successful first factor. \\
-\path{auth.login_max_attempts} & \code{8} & Maximum login attempts in one rate-limit window. \\
-\path{auth.login_window_secs} & \code{300} & Login rate-limit window in seconds. \\
+\path{auth.login_max_attempts} & \code{8} & Maximum source+principal password failures per window. \\
+\path{auth.login_principal_max_attempts} & \code{16} & Maximum password failures for one principal across sources. \\
+\path{auth.login_source_max_attempts} & \code{64} & Maximum authentication failures from one source across principals. \\
+\path{auth.mfa_max_attempts} & \code{5} & Maximum second-factor failures per source+principal/principal window. \\
+\path{auth.login_window_secs} & \code{300} & Authentication abuse-control window in seconds. \\
 \bottomrule
 \end{longtable}
 

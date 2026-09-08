@@ -36,11 +36,11 @@ action fn uploadFile(ctx: ActionContext, file: Upload)
     let originalName = file.filename;
     let contentType = file.contentType;
     let byteCount = file.bytes;
-    return Ok(redirect("/uploaded"));
+    return Ok(redirect(uploaded()));
 }
 \end{lstlisting}
 
-This is an important resource-protection property: the runtime streams multipart content, so a large file does not automatically become an equally large VM heap allocation.
+The redirect uses the typed \code{uploaded()} GET route helper. More importantly, a raw \code{Upload} remains private application data; it does not become a public asset merely because the handler can inspect its metadata. This is also an important resource-protection property: the runtime streams multipart content, so a large file does not automatically become an equally large VM heap allocation.
 
 \section{AppFs: the application's writable filesystem}
 

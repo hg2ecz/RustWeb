@@ -132,11 +132,11 @@ action fn create(
     transaction db {
         createProduct(tx, name, price)?;
     }
-    return Ok(redirect("/"));
+    return Ok(redirect(home()));
 }
 \end{lstlisting}
 
-This is the Post/Redirect/Get pattern. If the user refreshes the resulting page, the browser does not automatically repeat the INSERT.
+The redirect target is the typed GET route helper \code{home()}, not a string URL. This is the Post/Redirect/Get pattern: if the user refreshes the resulting page, the browser does not automatically repeat the INSERT.
 
 \section{Routes and validation}
 
@@ -152,6 +152,8 @@ route create POST "/products"
 \end{lstlisting}
 
 The POST route turns both fields into typed input before the handler runs. An empty or over-100-character name, a negative or excessively large price, or a non-integer value never reaches the INSERT as a valid business operation.
+
+The public write is deliberate for this tiny teaching example. In a real public submission endpoint, decide explicitly whether authentication, route rate limiting, abuse monitoring, or a stronger business permission is required. Do not copy \code{public} merely because the example uses it.
 
 \section{The complete application in one place}
 

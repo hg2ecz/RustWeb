@@ -1,4 +1,4 @@
-\chapter{Adatbázis mélyebben: tranzakció, migráció és konkurencia}
+\chapter{Adatbázis mélyebben: tranzakció, migráció és konkurencia}\label{ch:db-deep-dive-hu}
 
 Az előző fejezetben már láttuk a typed SQL és a CRUD alapmintáját. Egy valódi wiki, CMS vagy ügyviteli alkalmazás azonban hamar eljut oda, ahol már nem az a kérdés, hogy \emph{hogyan futtatunk egy SELECT-et}, hanem az, hogy hogyan őrizzük meg az adat integritását több kérés, több szerverpéldány és több release között.
 
@@ -16,7 +16,7 @@ RWLang alkalmazásnál érdemes három réteget szétválasztani:
 
 Az alkalmazás tehát nem nyit tetszőleges socketet az adatbázishoz és nem épít saját connection poolt. A \code{Db} és a \code{Transaction} capability az a felület, amelyen keresztül adatbázis-művelet történhet.
 
-A V1 data layer secure defaultjai jelenleg többek között 32 maximális poolkapcsolatot, 5 másodperces connection-acquire timeoutot, 10 másodperces query timeoutot, 10\,000 soros és 16 MiB-os eredménykorlátot használnak. Ezeket ne alkalmazáslogikaként kezeld: a helyes query ettől függetlenül legyen rövid, paginált és indexelhető.
+A V1 data layer általános defense-in-depth korlátai között van a legfeljebb 32 poolkapcsolat, az 5 másodperces connection-acquire timeout, a 10 másodperces query timeout, a 10\,000 soros backend eredményplafon és a 16 MiB-os eredményméret-plafon. Az RWLang modell-lista query ennél szigorúbb: a compiler literal \code{LIMIT}-et követel, és compiler/runtime szinten 1000 sor a felső korlát. Ezek biztonsági plafonok, nem pagination design; a helyes query ettől függetlenül legyen rövid, paginált és indexelhető.
 
 Több szerverpéldánynál a DB connection budgetet az operatornak összesítve kell méreteznie:
 
@@ -45,12 +45,12 @@ query fn articleBySlug(db: Db, slug: Slug)
     WHERE slug = :slug
 }
 
-query fn recentArticles(db: Db, limit: Int, offset: Int)
+query fn recentArticles(db: Db, offset: Int)
     -> Result<List<Article>, DbError> sql {
     SELECT id, slug, title, body, version
     FROM articles
     ORDER BY id DESC
-    LIMIT :limit OFFSET :offset
+    LIMIT 100 OFFSET :offset
 }
 \end{lstlisting}
 
@@ -69,6 +69,8 @@ Típus & Elvárt eredmény & Cardinality sérülése \\
 \end{center}
 
 Ez több egyszerű kényelmi jelölésnél: a lekérdezés eredményének alakja része a program futás közben is kikényszerített szerződésének. Az \code{Article?} nem azt jelenti, hogy ``vedd az első sort, ha van'': ha a query kettő vagy több sort ad, az invariáns sérült, ezért a runtime fail-closed DB-hibát ad. Ugyanezért egy \code{Article} query nulla sor esetén \code{404 Not Found}, több sor esetén pedig nem választ önkényesen rekordot.
+
+A \code{List<Model>} querynek az SQL-ben statikus literal sorlimitje is kell legyen. A bound a reusable query contract része, nem a hívó által adott \code{limit} paraméter; használj fix \code{LIMIT}-et, és bounded offsettel vagy más explicit hozzáférési mintával paginálj.
 
 \subsection*{A row shape legyen explicit}
 
@@ -124,7 +126,7 @@ query fn renameArticle(
     tx: Transaction,
     id: Int,
     title: String
-) -> Result<Void, DbError> sql {
+) -> Result<Void, DbError> mutates Article by id sql {
     UPDATE articles
     SET title = :title
     WHERE id = :id
@@ -140,14 +142,32 @@ action fn rename(
     id: Int,
     title: String
 ) -> Result<Redirect, PageError> {
+    let article = articleById(db, id)?;
+    authorize article authenticated;
     transaction db {
-        renameArticle(tx, id, title)?;
+        renameArticle(tx, article.id, title)?;
     }
-    return Ok(redirect("/admin/articles"));
+    return Ok(redirect(adminArticles()));
 }
 \end{lstlisting}
 
-A tranzakció sikeres blokk után commitol; hiba esetén rollbackel. A \code{Transaction} nem escape-elhet a blokkból, ezért nem lehet véletlenül egy lezárt tranzakció handle-jét később felhasználni.
+Normál best-effort alkalmazáskódban a sikeres blokk commitol, ismert DB hiba rollbackel. Retry-szenzitív vagy critical műveletnél viszont ne egyszerű siker/hiba állapotra szűkítsd az eredményt. Capture-öld explicit a transaction outcome-ot:
+
+\begin{lstlisting}[language=RWLang]
+let article = articleById(db, id)?;
+authorize article authenticated;
+let outcome = transaction db {
+    renameArticle(tx, article.id, title)?;
+};
+
+match outcome {
+    Committed => { return Ok(redirect(adminArticles())); }
+    RolledBack => { fail conflict; }
+    CommitUnknown => { fail conflict; }
+}
+\end{lstlisting}
+
+A \code{CommitUnknown} azt jelenti, hogy a runtime nem kapott elég bizonyítékot annak eldöntésére, megtörtént-e a commit. Ez nem válhat automatikus retry-já. Critical idempotens transactionnél a compiler kötelezővé teszi az outcome capture-t és exhaustive match-et. A \code{Transaction} továbbra sem escape-elhet a blokkból.
 
 \subsection*{Egy üzleti művelet legyen egy tranzakció}
 
@@ -155,8 +175,8 @@ Több, összetartozó módosítást ne külön actionök vagy külön tranzakci�
 
 \begin{lstlisting}[language=RWLang]
 transaction db {
-    Article.publishChanged(tx, id, version)?;
-    audit Article id action publish;
+    Article.publishChanged(tx, article.id, version)?;
+    audit Article article.id action publish;
         from article.status to ArticleStatus.Published
 }
 \end{lstlisting}
@@ -187,7 +207,7 @@ query fn updateArticle(
     id: Int,
     title: String,
     version: Int
-) -> Result<Changed, DbError> sql {
+) -> Result<Changed, DbError> mutates Article by id sql {
     UPDATE articles
     SET title = :title,
         version = version + 1
@@ -195,7 +215,7 @@ query fn updateArticle(
 }
 \end{lstlisting}
 
-Az edit form elküldi azt a \code{version} értéket, amelyet a felhasználó az oldal megnyitásakor látott. A \code{Changed} szerződése szigorú: a mutációnak \textbf{pontosan egy sort} kell módosítania. Egy módosított sor siker; nulla módosított sor \code{409 Conflict}; kettő vagy több módosított sor DB-hiba, mert a query a saját invariánsát sértette meg. \code{Changed} csak mutáló query visszatérési típusa lehet, és V1-ben nem használható \code{RETURNING} klauzussal.
+A call site előbb töltse be és autorizálja a cikket, és a request ID helyett az \code{article.id} értéket adja át ennek a mutációnak. Az edit form elküldi azt a \code{version} értéket, amelyet a felhasználó az oldal megnyitásakor látott. A \code{Changed} szerződése szigorú: a mutációnak \textbf{pontosan egy sort} kell módosítania. Egy módosított sor siker; nulla módosított sor \code{409 Conflict}; kettő vagy több módosított sor DB-hiba, mert a query a saját invariánsát sértette meg. \code{Changed} csak mutáló query visszatérési típusa lehet, és V1-ben nem használható \code{RETURNING} klauzussal.
 
 Optimistic lockingnál, ha időközben más már mentett, a \code{WHERE id = :id AND version = :version} nulla sort talál, ezért a kérés konfliktusra fut. A helyes UX ilyenkor nem az automatikus újrapróbálás. Mutasd meg, hogy az adat közben változott, töltsd be az új verziót, és a felhasználó döntsön az összeolvasztásról.
 

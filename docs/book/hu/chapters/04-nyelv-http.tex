@@ -277,17 +277,35 @@ action fn create(ctx: ActionContext, db: Db, title: String)
     transaction db {
         insertArticle(tx, title)?;
     }
-    return Ok(redirect("/admin/articles"));
+    return Ok(redirect(adminArticles()));
 }
 \end{lstlisting}
+
+A példa egy \code{adminArticles} nevű GET route-ot feltételez; a redirect cél route call, nem kézzel másolt URL string.
 
 \subsection*{Változók és hibaterjedés}
 
 A \code{let} typed lokális értéket hoz létre. Általános \code{mut} nincs a V1-ben; compute kódban explicit \code{set name = expr} újraértékadás használható az eredeti statikus típus megtartásával és instruction budget alatt. A \code{?} a typed Result hibáját továbbítja.
 
-\subsection*{Enum}
+\subsection*{Enum és exhaustive match}
 
-Zárt választási halmazhoz ne szabad szöveget használj, hanem enumot. Ez form-, route-, JSON- és domain-contractként is erősebb.
+Zárt választási halmazhoz ne szabad szöveget használj, hanem enumot. Ez form-, route-, JSON- és domain-contractként is erősebb. Az enum egyben zárt sum type: ha a vezérlés varianttól függ, használj exhaustive \code{match}-et.
+
+\begin{lstlisting}[language=RWLang]
+enum PublishState {
+    Draft
+    Review
+    Published
+}
+
+match state {
+    Draft => { return Ok(json("draft")); }
+    Review => { return Ok(json("review")); }
+    Published => { return Ok(json("published")); }
+}
+\end{lstlisting}
+
+Ennél a security-releváns formánál nincs wildcard fallthrough. Ha új variant kerül a típusba, a régi match-ek addig nem fordulnak le, amíg az új állapot nincs explicit kezelve. A tranzakciós fejezet ugyanezt használja a \code{CommitUnknown} esetén.
 
 \subsection*{Object}
 

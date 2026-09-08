@@ -5,7 +5,7 @@ This book is for web application developers who are meeting \rwlang{} for the fi
 
 The recommended reading order is deliberately gradual. We first build the model and capability mental model, then compile and install the RWLang programs. After that we walk through a deliberately small A-to-Z application, from the model through a form and the database to the HTTP response. Only then do we break the language, database, authentication, file, and browser-facing topics into deeper chapters.
 
-Once the reader can write an ordinary application, we move on to organizing larger projects and then to a wiki/CMS example. External integration and testing come next, because they make more sense once there is a complete application to reason about. The production part then introduces shared Redis state and caching, security hardening, observability, deployment, and disaster recovery. At the end of the book, the CLI and full \code{server.toml} reference are presented as searchable operator references rather than as introductory teaching material.
+Once the reader can write an ordinary application, we move on to organizing larger projects, a wiki/CMS example, external integrations, testing, and a consolidated security-hardening chapter. That security chapter is intentionally placed \emph{before} production operations: first understand which invariants the language and platform already enforce, then decide how to scale, observe, deploy, and recover the application. At the end of the book, the CLI and full \code{server.toml} reference are presented as searchable operator references rather than as introductory teaching material.
 
 \section*{How to read this book}
 
@@ -18,6 +18,32 @@ On a first pass, do not try to memorize every configuration key or production li
 \end{enumerate}
 
 Once those three questions are clear, the route, form, SQL, authentication, and configuration become different boundaries of the same model rather than unrelated tricks.
+
+A useful discipline throughout the book is to separate what RWLang proves from what the application designer must still decide:
+
+\begin{center}
+\begin{tabularx}{\textwidth}{@{}Y Y@{}}
+\toprule
+\textbf{RWLang/platform responsibility} & \textbf{Application/operator responsibility} \\
+\midrule
+Typed boundaries, escaping, capability checks, bounded resources, secure session mechanics & Business rules, object ownership, tenant-membership policy, retention and recovery objectives \\
+Fail-closed compiler/runtime invariants & Choosing the correct route policy, permission, critical-operation contract and production topology \\
+Safe SQL, redirect, upload, egress and cryptographic primitives & Deciding when a business operation is allowed and how domain-specific conflicts are resolved \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+The secure-by-construction model removes classes of plumbing; it does not invent the application's business authorization rules.
+
+\subsection*{If you are in a hurry}
+
+Use the book as a path, not as a checklist:
+
+\begin{itemize}
+  \item \textbf{first working application:} Chapters 1--5;
+  \item \textbf{authenticated CRUD or API work:} continue through the database, auth, files, and JSON chapters, then read the security-hardening chapter before shipping;
+  \item \textbf{production ownership:} add cache/scaling, observability, deployment, recovery, and the operator references.
+\end{itemize}
 
 \section*{Five recurring terms}
 

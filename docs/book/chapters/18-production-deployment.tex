@@ -2,6 +2,21 @@
 
 This chapter does not repeat the configuration reference or observability details. From a production perspective, it summarizes how a verified release becomes a running service, how release switching works, and how the process lifecycle remains controlled. Complete backup, restore, and disaster recovery are covered separately in the next chapter.
 
+\section{The application production contract}
+
+Production security is partly declared by the RWLang program itself:
+
+\begin{lstlisting}[language=RWLang]
+production {
+    https required;
+    debug disabled;
+    hsts required;
+    database tls required;
+}
+\end{lstlisting}
+
+This is not a second secret/configuration system. It states requirements; the server/operator configuration still supplies certificates, paths and trusted networks. In other words, the RWLang source says \emph{what must be true}, while trusted deployment configuration says \emph{how this environment makes it true}. Startup fails if the real topology cannot satisfy the contract. Source reload cannot silently change it; changing production security requirements requires a restart and explicit operator review.
+
 \section{Release path}
 
 Recommended order:

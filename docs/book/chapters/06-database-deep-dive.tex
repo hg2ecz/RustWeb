@@ -1,4 +1,4 @@
-\chapter{Database deep dive: transactions, migrations, and concurrency}
+\chapter{Database deep dive: transactions, migrations, and concurrency}\label{ch:db-deep-dive}
 
 The previous chapter introduced typed SQL and the basic CRUD pattern. A real wiki, CMS, or line-of-business application soon reaches a point where the question is no longer merely \emph{how to run a SELECT}, but how to preserve data integrity across concurrent requests, multiple server instances, and multiple releases.
 
@@ -16,7 +16,7 @@ In an RWLang application it is useful to separate three layers:
 
 The application therefore does not open arbitrary sockets to the database or build its own connection pool. \code{Db} and \code{Transaction} are the capabilities through which database work occurs.
 
-The current V1 data-layer secure defaults include, among other things, a maximum pool size of 32 connections, a 5-second connection-acquire timeout, a 10-second query timeout, a 10,000-row result limit, and a 16 MiB result-size limit. Do not treat these as application logic: correct queries should still be short, paginated, and indexable.
+The current V1 data layer also has broad defense-in-depth limits, including a maximum pool size of 32 connections, a 5-second connection-acquire timeout, a 10-second query timeout, a 10,000-row backend result ceiling, and a 16 MiB result-size ceiling. RWLang model-list queries are stricter: the compiler requires a literal \code{LIMIT}, and the compiler/runtime cap that list at 1,000 rows. These are safety ceilings, not pagination design; correct queries should still be short, paginated, and indexable.
 
 With multiple server instances, the operator must budget total database connections across all instances:
 
@@ -45,12 +45,12 @@ query fn articleBySlug(db: Db, slug: Slug)
     WHERE slug = :slug
 }
 
-query fn recentArticles(db: Db, limit: Int, offset: Int)
+query fn recentArticles(db: Db, offset: Int)
     -> Result<List<Article>, DbError> sql {
     SELECT id, slug, title, body, version
     FROM articles
     ORDER BY id DESC
-    LIMIT :limit OFFSET :offset
+    LIMIT 100 OFFSET :offset
 }
 \end{lstlisting}
 
@@ -69,6 +69,8 @@ Type & Expected result & Cardinality violation \\
 \end{center}
 
 This is more than convenient notation: result shape is part of the program contract and is enforced at runtime. \code{Article?} does not mean ``take the first row if one exists.'' If the query returns two or more rows, the invariant is broken and the runtime fails closed with a DB error. Similarly, an \code{Article} query returns \code{404 Not Found} for zero rows and does not arbitrarily choose a row if there are several.
+
+A \code{List<Model>} query must also declare a static literal row bound in SQL. The bound belongs to the reusable query contract, not to a caller-supplied \code{limit} parameter; use a fixed \code{LIMIT} and paginate with a bounded offset or another explicit access pattern.
 
 \subsection*{Make row shape explicit}
 
@@ -124,7 +126,7 @@ query fn renameArticle(
     tx: Transaction,
     id: Int,
     title: String
-) -> Result<Void, DbError> sql {
+) -> Result<Void, DbError> mutates Article by id sql {
     UPDATE articles
     SET title = :title
     WHERE id = :id
@@ -140,14 +142,32 @@ action fn rename(
     id: Int,
     title: String
 ) -> Result<Redirect, PageError> {
+    let article = articleById(db, id)?;
+    authorize article authenticated;
     transaction db {
-        renameArticle(tx, id, title)?;
+        renameArticle(tx, article.id, title)?;
     }
-    return Ok(redirect("/admin/articles"));
+    return Ok(redirect(adminArticles()));
 }
 \end{lstlisting}
 
-A successful block commits; an error rolls back. \code{Transaction} cannot escape the block, so a closed transaction handle cannot accidentally be used later.
+For ordinary best-effort application code, a successful block commits and a known database failure rolls back. For retry-sensitive or critical work, do not collapse the outcome to a Boolean success/failure. Capture the transaction outcome explicitly:
+
+\begin{lstlisting}[language=RWLang]
+let article = articleById(db, id)?;
+authorize article authenticated;
+let outcome = transaction db {
+    renameArticle(tx, article.id, title)?;
+};
+
+match outcome {
+    Committed => { return Ok(redirect(adminArticles())); }
+    RolledBack => { fail conflict; }
+    CommitUnknown => { fail conflict; }
+}
+\end{lstlisting}
+
+\code{CommitUnknown} means the client/runtime did not receive enough evidence to prove whether the commit took effect. It must not automatically trigger a retry. Critical idempotent transactions are compiler-required to capture and exhaustively match this outcome. \code{Transaction} still cannot escape the block, so a closed transaction handle cannot accidentally be reused.
 
 \subsection*{One business operation should be one transaction}
 
@@ -155,8 +175,8 @@ Do not split related mutations across separate actions or separate transactions:
 
 \begin{lstlisting}[language=RWLang]
 transaction db {
-    Article.publishChanged(tx, id, version)?;
-    audit Article id action publish;
+    Article.publishChanged(tx, article.id, version)?;
+    audit Article article.id action publish;
         from article.status to ArticleStatus.Published
 }
 \end{lstlisting}
@@ -187,7 +207,7 @@ query fn updateArticle(
     id: Int,
     title: String,
     version: Int
-) -> Result<Changed, DbError> sql {
+) -> Result<Changed, DbError> mutates Article by id sql {
     UPDATE articles
     SET title = :title,
         version = version + 1
@@ -195,7 +215,7 @@ query fn updateArticle(
 }
 \end{lstlisting}
 
-The edit form sends the \code{version} value the user saw when opening the page. The \code{Changed} contract is strict: the mutation must affect \textbf{exactly one row}. One changed row is success; zero changed rows become \code{409 Conflict}; two or more rows become a DB error because the query violated its own invariant. \code{Changed} is only valid as the return type of a mutating query, and in V1 it cannot be combined with a \code{RETURNING} clause.
+At the call site, load and authorize the article first and pass \code{article.id}, not the request ID directly, into this mutation. The edit form sends the \code{version} value the user saw when opening the page. The \code{Changed} contract is strict: the mutation must affect \textbf{exactly one row}. One changed row is success; zero changed rows become \code{409 Conflict}; two or more rows become a DB error because the query violated its own invariant. \code{Changed} is only valid as the return type of a mutating query, and in V1 it cannot be combined with a \code{RETURNING} clause.
 
 With optimistic locking, if another editor saved in the meantime, \code{WHERE id = :id AND version = :version} matches zero rows and the request becomes a conflict. The correct UX is not an automatic retry. Tell the user that the data changed, load the new version, and let the user decide how to merge.
 

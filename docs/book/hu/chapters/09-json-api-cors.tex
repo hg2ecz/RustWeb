@@ -35,7 +35,7 @@ Content-Type: application/json; charset=utf-8
 true
 \end{lstlisting}
 
-A \code{json(value)} nem tetszőleges objektum-serializáló. A támogatott értékek kötöttek: scalar értékek, model record, optional model és modell-lista. Ez illeszkedik az RWLang typed boundary szemléletéhez: a response alakja nem dinamikus, requestenként változó adatszerkezetből épül fel.
+A \code{json(value)} nem tetszőleges objektum-serializáló. Scalar érték közvetlenül kódolható, de database/domain model publikus JSON boundaryn explicit \code{expose(...)} projectionön keresztül léphet át. Így egy új model field---különösen egy sensitive mező---nem jelenhet meg észrevétlenül egy meglévő API-ban. A response shape tehát tudatos szerződés, nem egy runtime objektum automatikus lenyomata.
 
 \section{Adatbázisból JSON lista}
 
@@ -48,28 +48,28 @@ model Product {
     price: Int
 }
 
-query fn listProducts(db: Db, limit: Int, offset: Int)
+query fn listProducts(db: Db, offset: Int)
     -> Result<List<Product>, DbError> sql {
     SELECT id, name, price
     FROM products
     ORDER BY id
-    LIMIT :limit OFFSET :offset
+    LIMIT 100 OFFSET :offset
 }
 
 page fn productsApi(ctx: PageContext, db: Db,
-                    limit: Int, offset: Int)
+                    offset: Int)
     -> Result<Json, PageError> {
-    let products = listProducts(db, limit, offset)?;
-    return Ok(json(products));
+    let products = listProducts(db, offset)?;
+    return Ok(json(expose(products, id, name, price)));
 }
 
 route productsApi GET "/api/products"
-    query limit<Int> offset<Int>
-    validate limit range 1 100 offset range 0 1000000
+    query offset<Int>
+    validate offset range 0 1000000
     public => productsApi;
 \end{lstlisting}
 
-A fontos rész itt nem a JSON, hanem az, hogy az input ugyanúgy typed és validált, mint HTML route esetén. A kliens nem tudja például egy korlátlan \code{limit} értékkel megkerülni az alkalmazás route policy-ját.
+A fontos rész nem pusztán a JSON encoding. A reusable list query saját statikus row boundot hordoz; a kliens csak a bounded offsetet adja, nem az SQL cardinality authorityját. A route input typed és validált marad, a response pedig explicit public projectiont használ. Így egy később hozzáadott model field nem válik észrevétlenül az API részévé.
 
 \Needspace{17\baselineskip}
 \section{Typed JSON POST body}

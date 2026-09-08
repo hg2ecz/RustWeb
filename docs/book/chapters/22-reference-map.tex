@@ -1,66 +1,62 @@
 \chapter{Developer reference and where to go next}
 
-\section{Where to look for each topic}
+\section{Canonical documentation map}
 
-This English book is the canonical long-form guide. The repository is in the process of making English the default language for all supporting Markdown documentation as well. Where an English topic document already exists, the table points to \code{docs/}; where only the Hungarian companion currently exists, it is explicitly marked under \code{docs/hu/}. Do not infer that a missing English Markdown file means the feature is undocumented in this book.
+This book is the long-form development guide. The current high-level security status is \path{SECURITY-STATUS.md}; detailed canonical topic documentation lives in \path{docs/}. Hungarian operator/developer companions remain under \path{docs/hu/} where a translated topic exists.
 
-\begin{longtable}{L{0.31\textwidth}L{0.61\textwidth}}
+\begin{longtable}{L{0.34\textwidth}L{0.58\textwidth}}
 \toprule
-Topic & Detailed project documentation \\
+Topic & Canonical project documentation \\
 \midrule
-Routing, input, validation & \code{docs/hu/04-routing-input.md} \\
-Database and SQL & \code{docs/hu/05-adatbazis.md} \\
-CRUD and transactions & \code{docs/hu/06-crud.md} \\
-Auth and Redis & \code{docs/hu/07-auth-redis.md} \\
-Route rate limiting & \code{docs/hu/08-rate-limiting.md} \\
-JSON API and CORS & \code{docs/hu/05-json-api-cors.md} \\
-Static assets & \code{docs/hu/06-static-assets.md} \\
-Public page cache & \code{docs/hu/13-cache.md} \\
-HTTPS and proxy security & \code{docs/hu/08-https-security.md} \\
-Upload and AppFs & \code{docs/hu/09-upload-appfs.md} \\
-Migrations & \code{docs/hu/10-database-migrations.md} \\
-Forms & \code{docs/hu/12-forms.md} \\
-Components and layouts & \code{docs/hu/14-components-layouts.md} \\
-Security checklist & \code{docs/hu/15-security-checklist.md} \\
-Dependency security & \code{docs/19-dependency-security.md} \\
-Server configuration & \code{docs/hu/15-server-config.md} \\
-Markdown/rich text & \code{docs/hu/16-markdown-rich-text.md} \\
-Media library & \code{docs/hu/17-media-library.md} \\
-Object authorization & \code{docs/hu/20-object-authorization.md} \\
-Project structure and modules & \code{docs/hu/21-modules-slugs-project-layout.md} \\
-Modules and namespaces & \code{docs/21-modules-and-namespaces.md} \\
-Arithmetic, F32 math, timing & \code{docs/44-math-and-timing.md} \\
-String builtins & \code{docs/46-string-builtins.md} \\
-Typed string lists & \code{docs/47-string-lists.md} \\
-Typed string dictionaries & \code{docs/48-string-dictionaries.md} \\
-Regular expressions & \code{docs/49-regular-expressions.md} \\
-Domain objects & \code{docs/hu/22-domain-objects.md} \\
-Enums & \code{docs/hu/23-enums.md} \\
-Optimistic locking & \code{docs/24-optimistic-locking.md} \\
-Business audit & \code{docs/hu/25-business-audit-trail.md} \\
-Domain validation & \code{docs/hu/26-domain-validation.md} \\
-Canonical URL & \code{docs/hu/27-canonical-url.md} \\
-PRG, flash, conflict UX & \code{docs/hu/28-prg-flash-conflict.md} \\
-Production deployment & \code{docs/hu/29-production-deployment.md} \\
-Backup, restore, upgrade & \code{docs/hu/30-backup-restore-upgrade-rollback.md} \\
-V1 developer handoff & \code{docs/hu/31-v1-developer-guide.md} \\
-IPv6-ready outbound egress & \code{docs/32-ipv6-egress.md} \\
-CLI and daily workflow & \code{docs/hu/33-cli-workflow.md} \\
-Server TOML reference & \code{docs/hu/34-server-toml-reference.md} \\
-Production checklist and examples & \code{docs/hu/35-production-checklist.md} \\
-Debian package and dpkg installation & \code{docs/36-debian-package.md} \\
+Current security architecture & \path{SECURITY-STATUS.md}, \path{docs/99-security-architecture-and-status.md} \\
+Secure-by-construction foundation & \path{docs/57-secure-by-construction-foundation.md} \\
+Domain types and bounded collections & \path{docs/62-domain-types-and-bounded-collections.md} \\
+Nominal types and refinement & \path{docs/63-nominal-domain-types.md}, \path{docs/64-domain-value-refinement.md} \\
+Public projections and secret flows & \path{docs/65-explicit-public-projections.md}, \path{docs/66-secret-consumer-contracts.md} \\
+Passwords, tokens and sessions & \path{docs/67-typed-credentials-and-passwords.md} through \path{docs/74-platform-owned-browser-sessions.md} \\
+Permissions, MFA and critical operations & \path{docs/75-function-level-permissions.md} through \path{docs/77-critical-operation-contracts.md} \\
+Resource profiles and bounded request input & \path{docs/78-route-budget-profiles.md}, \path{docs/79-bounded-request-collections.md} \\
+Public error boundary & \path{docs/80-public-error-boundaries.md} \\
+Tenant authority and isolation & \path{docs/81-tenant-membership-authority.md}, \path{docs/82-compiler-enforced-tenant-isolation.md} \\
+Idempotent critical operations & \path{docs/83-idempotent-critical-operations.md} \\
+Verified webhooks & \path{docs/91-verified-webhook-integrity.md} \\
+Safe upload state machine & \path{docs/84-safe-file-upload-state-machine.md} \\
+Effect/capability model & \path{docs/85-effect-capability-foundation.md} \\
+Typed outbound integrations & \path{docs/86-typed-outbound-integration-calls.md} \\
+Production security policy & \path{docs/87-production-configuration-policy.md} \\
+Typed HTTP metadata & \path{docs/88-typed-http-metadata.md} \\
+Crypto key purpose/lifecycle & \path{docs/89-crypto-key-purpose-lifecycle.md} \\
+Generated CSP/security headers & \path{docs/90-generated-security-headers.md} \\
+Supply-chain capabilities/provenance & \path{docs/92-supply-chain-capability-provenance.md} \\
+Authentication abuse protection & \path{docs/93-authentication-abuse-protection.md} \\
+Closed sum types/exhaustive match & \path{docs/94-sum-types-and-exhaustive-match.md} \\
+Transaction outcome semantics & \path{docs/95-transaction-outcome-semantics.md} \\
+Authenticated encryption/key lifecycle & \path{docs/96-authenticated-encryption-key-lifecycle.md} \\
+Advanced resource safety & \path{docs/97-advanced-resource-safety.md} \\
+Typed security events & \path{docs/100-typed-security-events.md} \\
+Security monitoring/redaction & \path{docs/98-security-monitoring-and-redaction.md} \\
+Dependency security & \path{docs/19-dependency-security.md} \\
+Modules/namespaces & \path{docs/21-modules-and-namespaces.md} \\
+Math/timing, string/list/dict/regex & \path{docs/44-math-and-timing.md}, \path{docs/46-string-builtins.md} through \path{docs/49-regular-expressions.md} \\
+Optimistic locking & \path{docs/24-optimistic-locking.md} \\
+IPv6-ready egress & \path{docs/32-ipv6-egress.md} \\
+Debian package/install & \path{docs/36-debian-package.md} \\
+Reverse proxy/multidomain/reload & \path{docs/37-multi-domain-hosting.md} through \path{docs/39-automatic-source-reload.md} \\
+Maintainability/architecture gates & \path{docs/50-maintainability-and-clean-code.md} \\
 \bottomrule
 \end{longtable}
 
-\section{Daily development checklist}
+\section{Daily secure development checklist}
 
 \begin{enumerate}
-  \item Use typed route/input contracts, and an enum for closed choices.
-  \item Never place user input into raw SQL or raw HTML.
-  \item Perform mutations inside a transaction when the business operation must be atomic.
-  \item After a successful browser POST, use Post/Redirect/Get.
-  \item Do not public-cache pages that depend on user/session state.
-  \item Supply secrets only through \code{*_file} boundaries.
-  \item Before release, run application checks, configuration preflight, and migration verification; when releasing the RWLang platform itself, also run \code{./verify.sh}.
-  \item After deployment, verify live/ready, logs, metrics, audit, and an application smoke path.
+  \item Keep authority explicit: route policy, DB capability, tenant, permission/MFA and named outbound integration.
+  \item Refine untrusted input to nominal/domain types; do not confuse validation with authorization.
+  \item Use object/mutation authorization before protected writes.
+  \item Use critical contracts for operations that need permission, MFA, transaction, audit or idempotency.
+  \item For retry-sensitive transactions, capture and exhaustively handle \code{Committed}, \code{RolledBack}, and\\ \code{CommitUnknown}.
+  \item Never reintroduce raw SQL, raw HTML, arbitrary redirect/header/filename or arbitrary outbound URL shortcuts.
+  \item Keep file uploads staged/private until inspection and explicit publish.
+  \item Keep secrets behind typed secret/credential/key boundaries and use \code{redact(...)} for safe monitoring representation.
+  \item Keep DB rows, collections, files, outbound bodies and request time bounded.
+  \item Before platform release run locked Cargo metadata/check/tests, \code{./verify.sh}, supply-chain verification and release-manifest verification.
 \end{enumerate}

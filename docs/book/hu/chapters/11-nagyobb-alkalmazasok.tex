@@ -167,11 +167,11 @@ action fn publish(ctx: ActionContext, db: Db, id: Int)
     let article = Article.byId(db, id)?;
     authorize article owner authorUsername or role Publisher;
     // ... allapotvaltas tranzakcioban ...
-    return Ok(redirect("/admin/articles"));
+    return Ok(redirect(adminArticles()));
 }
 \end{lstlisting}
 
-A handler aláírásából továbbra is látszik, hogy adatbázishoz fér hozzá. Ugyanez igaz AppFs-re, authra és később hálózati egressre is: a domain object nem válhat rejtett service locatorrá.
+A handler aláírásából továbbra is látszik, hogy adatbázishoz fér hozzá. Ugyanez igaz AppFs-re, authra és named hálózati egressre is: a domain object nem válhat rejtett service locatorrá.
 
 \section{Miért maradjon a route top-level?}
 

@@ -167,11 +167,11 @@ action fn publish(ctx: ActionContext, db: Db, id: Int)
     let article = Article.byId(db, id)?;
     authorize article owner authorUsername or role Publisher;
     // ... state transition inside a transaction ...
-    return Ok(redirect("/admin/articles"));
+    return Ok(redirect(adminArticles()));
 }
 \end{lstlisting}
 
-The handler signature still reveals database access. The same principle applies to AppFs, auth, and later network egress: a domain object must not become a hidden service locator.
+The handler signature still reveals database access. The same principle applies to AppFs, auth, and named network egress: a domain object must not become a hidden service locator.
 
 \section{Why should routes remain top-level?}
 

@@ -271,17 +271,35 @@ action fn create(ctx: ActionContext, db: Db, title: String)
     transaction db {
         insertArticle(tx, title)?;
     }
-    return Ok(redirect("/admin/articles"));
+    return Ok(redirect(adminArticles()));
 }
 \end{lstlisting}
+
+The example assumes a GET route named \code{adminArticles}; redirect targets are route calls, not copied URL strings.
 
 \subsection*{Variables and error propagation}
 
 \code{let} introduces a typed local value. V1 has no general-purpose \code{mut}; compute code uses explicit \code{set name = expr} reassignment, with the original static type preserved and execution charged to the instruction budget. The \code{?} operator propagates an error from a typed \code{Result}.
 
-\subsection*{Enum}
+\subsection*{Enum and exhaustive match}
 
-Use an enum for a closed set of choices rather than free-form text. This gives a stronger contract in forms, routes, JSON, and domain logic.
+Use an enum for a closed set of choices rather than free-form text. This gives a stronger contract in forms, routes, JSON, and domain logic. Enums are also closed sum types: when control flow depends on a variant, use an exhaustive \code{match}.
+
+\begin{lstlisting}[language=RWLang]
+enum PublishState {
+    Draft
+    Review
+    Published
+}
+
+match state {
+    Draft => { return Ok(json("draft")); }
+    Review => { return Ok(json("review")); }
+    Published => { return Ok(json("published")); }
+}
+\end{lstlisting}
+
+There is no wildcard fallthrough for this security-relevant form. Adding a new variant therefore makes old matches fail compilation until the new state is handled explicitly. Later, the transaction chapter uses exactly this property for \code{CommitUnknown}.
 
 \subsection*{Object}
 

@@ -267,12 +267,17 @@ A login külön rate-limit policyt kap. Például:
 \begin{lstlisting}
 [auth]
 login_max_attempts = 8
+login_principal_max_attempts = 16
+login_source_max_attempts = 64
+mfa_max_attempts = 5
 login_window_secs = 300
 \end{lstlisting}
 
 A szerver a trusted proxy szabályok után meghatározott effective client IP-t és a kanonikus usernevet használja a limiter kulcsához. Ezért reverse proxy mögött a \code{trusted_proxy_cidrs} auth security szempontból is fontos.
 
 Sikertelen credential vagy második faktor nem ad részletes hibát a kliensnek. Rate-limit esetén \code{429 Too Many Requests}, auth backend elérhetetlenségnél \code{503 Service Unavailable} a megfelelő kategória.
+
+A limiter szándékosan többdimenziós, nem egyetlen username+IP counter. A platform egyszerre követi a source+principal, principal több source-on keresztül és source több principalon keresztül dimenziót; MFA/recovery külön szigorúbb stage. Így distributed guessing egy account ellen és credential stuffing egy source-ból is korlátozott. Sikeres login csak a konkrét párt törli, a source-wide/principal-wide abuse historyt nem. Shared limiter-store hiba fail closed.
 
 \section{CSRF, Origin és Fetch Metadata}
 

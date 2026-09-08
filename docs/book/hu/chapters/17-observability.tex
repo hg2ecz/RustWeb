@@ -158,6 +158,16 @@ transaction db {
 
 A helyes sorrend: \textbf{azonosítás -> authorization -> módosítás -> ugyanazon tranzakción belüli audit}.
 
+\section{Platform security event, redaction és burst alert}
+
+A security monitoring strukturált platform boundary, nem ad-hoc log message convention. Automatikus event keletkezik auth abuse, MFA failure, policy/CSRF/origin/CORS denial, webhook verification failure, idempotency conflict és resource exhaustion esetén.
+
+Az event schema szándékosan nem fogad arbitrary request payloadot vagy message textet. Emitted principal/source mező redacted. Ha alkalmazáskódnak érzékeny szövegből biztonságos monitoring reprezentáció kell, a trusted \code{redact(...)} builtint használd; \code{Redacted<T>} annotationnel vagy casttal nem hozható létre.
+
+A server bounded in-memory correlationt és platform-owned burst thresholdokat/cooldownt is használ. Threshold átlépéskor strukturált \code{threshold_exceeded} alert event keletkezik. Raw correlation key átmenetileg memóriában lehet, de security eventbe nem kerül.
+
+Ez a monitoring layer nem helyettesíti az enforcementet. Rate limiting, authorization, replay prevention és resource limit továbbra is blokkol; az alert detection és incident-response evidence-et ad.
+
 \section{Prometheus metrics külön management socketen}
 
 A metrics nem application route. Külön listeneren fut:

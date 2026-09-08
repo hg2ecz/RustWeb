@@ -1,44 +1,60 @@
 \chapter{External services and egress policy}
 
-A real web application rarely remains completely self-contained. It may need to reach a payment provider, directory service, mapping API, internal corporate service, or another HTTPS endpoint. This is a different security boundary from an incoming HTTP route: here the application itself initiates a network connection.
+A real web application rarely remains self-contained. Payments, directory services, internal APIs, mapping services, or other HTTPS providers create a separate trust boundary because the application initiates the connection. RWLang treats this as an explicit capability rather than ambient network access.
 
-\section{First, the V1 boundary}
+\section{The current RWLang boundary}
 
-V1 has \textbf{no general RWLang \code{HttpClient} or \code{Secrets} language API}. Application code therefore does not receive arbitrary network access. The following is intentionally not RWLang syntax; it illustrates a shortcut you must not assume exists:
+RWLang intentionally has no unrestricted \code{http.get(userUrl)} style API. Instead, source declares a named integration and the handler explicitly receives the capability:
 
-\begin{lstlisting}
-// There is NO general V1 surface like this:
-// let r = http.get(user_supplied_url);
+\begin{lstlisting}[language=RWLang]
+integration Billing {
+    egress payments
+}
+
+action fn charge(
+    ctx: ActionContext,
+    amount: Int
+) -> Result<Json, PageError>
+    uses Billing
+{
+    let status = Billing.postJson("/v1/charges", amount)?;
+    return Ok(json(status));
+}
 \end{lstlisting}
 
-The repository's \code{integrations} crate does contain a trusted Rust adapter layer with:
+The declaration exposes only a trusted \emph{name}. Host, IP, port, TLS and network ranges are not source-code authority. The compiler records the call as the \code{net.payments} effect; a handler cannot perform the call without the matching \code{uses Billing} capability.
 
-\begin{itemize}
-  \item a policy-controlled outbound HTTPS client;
-  \item named egress targets;
-  \item host, CIDR, port, and TLS restrictions;
-  \item send/receive size limits and timeouts;
-  \item a file-based \code{SecretsStore}.
-\end{itemize}
-
-This is an important design decision: \textbf{if a capability is not in the language surface, do not build an application-level bypass}. External integration should be implemented as a trusted adapter or as a later, separately designed language/runtime feature.
-
-\section{Why is an arbitrary URL dangerous?}
-
-Suppose a route could directly fetch a URL supplied by the user. The application could easily be tricked into contacting internal or local services:
+The safe-path rule is therefore:
 
 \begin{lstlisting}
-http://127.0.0.1:...
+RWLang business intent
+        |
+        v
+named integration capability
+        |
+        v
+trusted operator egress policy
+        |
+        v
+bounded HTTPS transport
+\end{lstlisting}
+
+\section{Why arbitrary URLs are intentionally unrepresentable}
+
+A user-controlled fetch target creates classic SSRF risk. Examples that must never become ordinary application destinations include loopback, link-local metadata services and internal infrastructure:
+
+\begin{lstlisting}
+http://127.0.0.1/...
 http://169.254.169.254/...
 http://internal-db.example/...
 http://[::1]/...
 \end{lstlisting}
 
-This is classic SSRF (Server-Side Request Forgery). The correct model is therefore not ``the request tells us where to connect,'' but ``trusted configuration predefines a named target.''
+RWLang source can choose a relative path within a declared integration, but not the scheme, host, IP or port. Paths must be compiler-known rooted relative literals; absolute, protocol-relative and dynamic destination URLs are rejected.
 
-\section{Named target: configuring a network capability}
+\section{Named target: configuring the network authority}
 
-A target may look like:
+The trusted egress policy binds the RWLang target name to concrete transport authority. A target may look like:
 
 \begin{lstlisting}
 [[target]]
@@ -54,178 +70,111 @@ connect_timeout_ms = 5000
 total_timeout_ms = 15000
 \end{lstlisting}
 
-The name -- here \code{payments} -- is the capability known to the application/integration. Hostnames and network ranges are trusted operator policy.
-
-The same pattern is available in \code{examples/egress/policy.toml}.
+For the RWLang typed call surface the startup policy must resolve the target unambiguously to the supported endpoint shape. An application using an outbound effect does not start if the required egress policy is missing or inconsistent.
 
 \section{Policy checks multiple layers}
 
-Egress policy does more than check a hostname.
+Egress policy is intentionally stronger than a hostname allowlist.
 
-\subsection*{Host}
+\subsection*{Host, port and TLS}
 
-The requested host must appear in the target's explicit \code{hosts} list. Use a named host that can be validated by TLS rather than an IP-literal hostname.
-
-\subsection*{Port and TLS}
-
-The port must be on the allowed list. The current adapter requires TLS; the usual target is HTTPS on port 443.
+The destination host and port come from trusted policy, and TLS identity verification uses the configured hostname. Application input cannot weaken TLS or choose a different port.
 
 \subsection*{DNS and CIDR}
 
-Every A and AAAA answer returned by DNS is checked. The rule is fail-closed: if even one resolved address falls outside the allowed CIDRs, the entire connection is rejected.
+Every A and AAAA answer is checked against the allowed network ranges. If any answer violates policy, the resolution is rejected fail closed. This protects against DNS rebinding and accidental split-horizon exposure.
 
-This matters because a hostname allowlist by itself does not protect against DNS rebinding or incorrect DNS configuration.
+\subsection*{Peer verification after connect}
 
-\subsection*{Peer check after connect}
+After TCP connection establishment, the actual peer IP is checked again. The selected address must still satisfy CIDR policy; DNS validation is not treated as permanent proof.
 
-After the TCP connection is established, the adapter checks the actual peer IP again. It must match the selected address and still satisfy the CIDR policy.
+\section{IPv4 and IPv6 use the same authority model}
 
-\subsection*{TLS identity}
+The policy is dual-stack. IPv4-mapped IPv6 addresses are normalized before policy evaluation so an IPv4 restriction cannot be bypassed through an IPv6 representation. Loopback, link-local, ULA, multicast and unspecified ranges receive no implicit trust.
 
-Certificate verification uses the original hostname. CIDR policy does not replace TLS identity verification; the two checks reinforce each other.
+\section{Typed outbound operations}
 
-\section{IPv4 and IPv6 belong to the same policy}
+The first RWLang call surface deliberately stays small:
 
-Outbound policy is dual-stack. A target can list both IPv4 and IPv6 CIDRs:
-
-\begin{lstlisting}
-cidrs = [
-  "203.0.113.0/24",
-  "2001:db8:1200::/48"
-]
+\begin{lstlisting}[language=RWLang]
+let status = Billing.get("/v1/status")?;
+let status = Billing.postJson("/v1/charges", amount)?;
 \end{lstlisting}
 
-The runtime normalizes IPv4-mapped IPv6 addresses. For example, \code{::ffff:203.0.113.9} is checked as IPv4, so it cannot bypass the IPv4 rule.
+Important constraints are part of the security model:
 
-Loopback, link-local, ULA, multicast, and unspecified IPv6 ranges receive no implicit trust. If access to such a range is genuinely required, it must also be allowed by explicit CIDR policy.
+\begin{itemize}
+  \item page handlers may perform outbound GET but not outbound POST side effects;
+  \item JSON POST is an action capability;
+  \item generic outbound JSON cannot receive \code{Secret}, \code{Sensitive}, credential-purpose or upload values;
+  \item server-side egress does not grant browser network authority -- generated CSP keeps \code{connect-src 'none'} unless a separately designed browser capability exists;
+  \item the current typed call returns the HTTP status code, not an automatically trusted response body.
+\end{itemize}
 
-\section{Size and time limits}
+The last point is deliberate. External response data would have to enter as untrusted data and cross a typed validation/refinement boundary; the language does not silently convert arbitrary upstream JSON into trusted domain values.
 
-An upstream service can be broken or hostile just like an incoming client. Target policy therefore limits more than destination address:
+\section{Size, protocol and time limits}
 
-\begin{longtable}{L{0.36\textwidth}L{0.54\textwidth}}
-\toprule
-Setting & What does it limit? \\
-\midrule
-\code{max_dns_answers} & number of acceptable DNS answers \\
-\code{max_sent_bytes} & maximum request size sent upstream \\
-\code{max_received_bytes} & maximum response size accepted \\
-\code{connect_timeout_ms} & duration of one connection attempt \\
-\code{total_timeout_ms} & total outbound-operation time \\
-\bottomrule
-\end{longtable}
+An upstream service may be broken or hostile. The transport therefore bounds DNS answers, request bytes, response bytes and time. In addition to operator target limits, the RWLang status-call surface applies its own hard upstream-body ceiling and rejects unsupported transfer/content encodings.
 
-The principle is the same as elsewhere in RWLang: \textbf{untrusted application code must not choose its own resource limits}.
+The complete request also participates in the runtime cumulative external-I/O budget. This prevents several individually legal network operations from composing into one unbounded request.
 
-\section{A secret is not a configuration string}
+\section{Secrets for external services}
 
-External APIs often require credentials. The trusted adapter can use a \code{SecretsStore} that reads by name from a dedicated secret root.
-
-For example:
+External credentials remain behind a dedicated secret-store boundary, for example:
 
 \begin{lstlisting}
 /run/secrets/rwlang/
   payments-bearer
 \end{lstlisting}
 
-A secret name cannot contain paths, \code{..}, or arbitrary separators. The adapter does not follow symlinks, limits file size, and on Unix verifies that the secret is not world-accessible.
+Secret names cannot become arbitrary filesystem paths. Credentials must never be written to response bodies, ordinary logs, security events or audit payloads. RWLang's typed \code{Secret<T>} rules and the trusted Rust secret store reinforce the same boundary at different layers.
 
-\code{SecretString} has a redacted debug representation, and its stored bytes are overwritten on drop. Even so, the rule remains: credentials must not be written to logs, error messages, or audit payloads.
+\section{Retries, idempotency and exceptional outcomes}
 
-\section{GET and JSON POST in the trusted adapter}
+Automatic retry of a side-effecting POST is intentionally not a default. Critical retry-sensitive application operations should use the RWLang idempotency contract rather than ad-hoc retry loops.
 
-The current Rust adapter provides two common operations: HTTPS GET and JSON POST with an optional bearer secret. This is \textbf{trusted Rust code}, not \code{.rw} syntax.
+For critical database work, transaction outcome is explicit:
 
-\begin{lstlisting}[language={}]
-let policy = EgressPolicy::from_toml_file(policy_path)?;
-let client = OutboundHttpsClient::new(policy);
-let secrets = SecretsStore::new("/run/secrets/rwlang")?;
-let token = secrets.get("payments-bearer")?;
+\begin{lstlisting}[language=RWLang]
+let outcome = transaction db {
+    charge(tx)?;
+};
 
-let response = client
-    .post_json(
-        "payments",
-        "api.payments.example",
-        443,
-        "/v1/charge",
-        body,
-        Some(&token),
-    )
-    .await?;
+match outcome {
+    Committed => { return Ok(json(true)); }
+    RolledBack => { fail conflict; }
+    CommitUnknown => { fail conflict; }
+}
 \end{lstlisting}
 
-Both the \code{payments} target and concrete host must satisfy trusted policy. An arbitrary host derived from the request cannot become a new target.
+An idempotent critical transaction must capture and exhaustively handle this outcome. \code{CommitUnknown} must not silently become ``retry the POST'', because the side effect may already have committed.
 
-\section{Error model}
+\section{Webhooks are the inverse boundary}
 
-For external integration, distinguish these classes of failure:
-
-\begin{itemize}
-  \item \textbf{Policy}: the requested target or resolved/peer address is not allowed;
-  \item \textbf{Secret}: a credential cannot be read or violates secret-store rules;
-  \item \textbf{DNS}: name resolution fails;
-  \item \textbf{Connect/TLS}: network or identity failure;
-  \item \textbf{Timeout}: upstream is too slow;
-  \item \textbf{Protocol}: malformed HTTP response;
-  \item \textbf{ResponseTooLarge/SendTooLarge}: a policy size limit is exceeded.
-\end{itemize}
-
-Do not collapse all of these automatically into the same business error. A policy denial is a configuration/security event; an upstream \code{503} is an availability problem.
-
-\section{Retries and idempotency}
-
-The current adapter does not provide a general automatic retry layer. That is the right default: retrying a POST can repeat a side effect.
-
-Before adding retries to a later integration, answer:
-
-\begin{enumerate}
-  \item is the operation idempotent;
-  \item does the upstream support an idempotency key;
-  \item which failures are retryable;
-  \item what is the total timeout budget;
-  \item how will retry storms be avoided?
-\end{enumerate}
-
-For payments or webhook-like operations, an idempotency key is business data, not merely network tuning.
+An outbound integration and an inbound webhook solve opposite problems. A webhook route uses a declared verification policy, raw-body signature verification, timestamp/replay-window checks and an atomic replay claim before the handler receives authority. Do not model a webhook as merely a public JSON POST.
 
 \section{Synchronous request or background work?}
 
-The V1 surface has no general background-job language API. Do not hide a long external workflow behind a normal page/action request merely because a trusted adapter can technically perform it.
-
-A short, well-bounded integration may fit into the request/response cycle. A long or reliably retryable workflow needs a separate explicit job/outbox feature; do not emulate that with ad-hoc threads or subprocesses.
-
-\section{What does this mean for an RWLang application developer?}
-
-The daily rules are simple:
-
-\begin{enumerate}
-  \item Do not design outbound features around arbitrary user-supplied URLs.
-  \item Do not read secrets through raw filesystem or environment-variable shortcuts.
-  \item Make the integration destination a named capability.
-  \item Keep host/CIDR/port/TLS/timeout/size rules in trusted policy.
-  \item Let user input choose business payload, not network destination.
-  \item If the integration is not in the V1 language surface, use a trusted adapter or design a reviewed language/runtime feature.
-\end{enumerate}
+RWLang currently has no first-class background-job subsystem. A short, bounded integration can remain in the request/response cycle. A long or reliably retryable workflow should wait for an explicit job/outbox design rather than being emulated with ad-hoc threads, subprocesses or unbounded request time.
 
 \section{Minimum testing}
 
-A happy path is not enough for egress policy. Prove at least:
+Prove at least:
 
 \begin{itemize}
-  \item allowed host + allowed IPv4;
-  \item allowed host + allowed IPv6;
-  \item fail-closed behavior when a mixed A/AAAA answer contains one forbidden address;
-  \item forbidden port;
-  \item too many DNS answers;
-  \item peer-IP revalidation;
-  \item TLS hostname mismatch;
-  \item IPv4-mapped IPv6 normalization;
-  \item send/receive limits and timeouts;
-  \item negative secret traversal/symlink/permission cases.
+  \item unknown integration or missing \code{uses} capability is rejected at compile time;
+  \item dynamic and absolute destination paths are rejected;
+  \item page-side POST is rejected;
+  \item allowed host + allowed IPv4 and IPv6 work;
+  \item mixed DNS answers with one forbidden address fail closed;
+  \item forbidden port, TLS identity mismatch and peer-IP mismatch fail closed;
+  \item request/response byte limits and timeouts are enforced;
+  \item unsupported upstream transfer/content encoding is rejected;
+  \item cumulative external-I/O exhaustion becomes a resource-limit failure;
+  \item secrets cannot flow into generic outbound JSON.
 \end{itemize}
-
-Repository unit tests may prove policy decisions, but release evidence should also include a real dual-stack network integration test.
 
 \section{The essence of this chapter}
 
-External HTTPS is not just a utility; it is a new trust boundary. RWLang V1 intentionally does not grant unrestricted network capability to application code. The current trusted adapter demonstrates the intended model: \textbf{named target + explicit network policy + bounded resources + separate secret store + fail-closed validation}.
+External HTTPS is not a utility function. RWLang exposes only a \textbf{named, typed, bounded capability}; trusted deployment policy owns the network destination. This keeps SSRF resistance, effect visibility, TLS policy and resource safety in the secure path instead of making each application reconstruct them.

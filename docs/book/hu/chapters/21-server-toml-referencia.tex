@@ -100,8 +100,11 @@ Kulcs & Default & Jelentés \\
 \path{auth.roles_file} & nincs & Külső role mapping fájl. \\
 \path{auth.local_auth_db_url_file} & nincs & Local-auth identity store URL secret fájlból. \\
 \path{auth.require_totp} & \code{false} & Sikeres első faktor után TOTP kötelező-e. \\
-\path{auth.login_max_attempts} & \code{8} & Login rate-limit ablakon belüli maximum próbálkozás. \\
-\path{auth.login_window_secs} & \code{300} & Login rate-limit ablak másodpercben. \\
+\path{auth.login_max_attempts} & \code{8} & Maximum jelszóhiba egy source+principal párra ablakonként. \\
+\path{auth.login_principal_max_attempts} & \code{16} & Maximum jelszóhiba egy principalra több source-ból. \\
+\path{auth.login_source_max_attempts} & \code{64} & Maximum authentication hiba egy source-ból több principalra. \\
+\path{auth.mfa_max_attempts} & \code{5} & Maximum második faktor hiba source+principal/principal ablakonként. \\
+\path{auth.login_window_secs} & \code{300} & Authentication abuse-control ablak másodpercben. \\
 \bottomrule
 \end{longtable}
 

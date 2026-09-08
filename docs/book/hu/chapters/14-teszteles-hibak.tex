@@ -263,6 +263,20 @@ Nem található record & \code{404} & \code{404} + JSON error envelope \\
 A sikeres mutáló HTML action tipikusan \code{303 See Other} választ használ a Post/Redirect/Get mintához. A \code{303} redirect tehát nem hiba, hanem a böngészős vezérlési folyamat része.
 
 
+\section{Exceptional state-ek exhaustív tesztelése}
+
+Az RWLang zárt sum type-jai security-releváns exceptional state-et compile-time tesztelhetővé tesznek. A \code{match} nem ad catch-all wildcardot, ezért új variant hozzáadása minden érintett match site review-ját kikényszeríti.
+
+Critical transactionnél legyen teszt mindhárom outcome-ra:
+
+\begin{itemize}
+  \item \code{Committed}: success path és stabil replay state;
+  \item \code{RolledBack}: a művelet nem történt meg, a public outcome biztonságos;
+  \item \code{CommitUnknown}: nincs automatikus side-effect retry, az unknown állapot explicit kezelt.
+\end{itemize}
+
+Negatív compiler teszt bizonyítsa azt is, hogy idempotens critical transaction outcome capture vagy exhaustive match nélkül reject.
+
 \section{Request ID-val hibakeresni}
 
 Ha egy HTTP kérés hibázik, a legjobb első diagnosztikai adat a szerver által generált request ID. A kliens válaszából vagy az access logból indulva:

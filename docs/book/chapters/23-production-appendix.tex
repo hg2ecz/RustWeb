@@ -220,6 +220,20 @@ The following list is intentionally short and executable. The earlier chapters p
   \item \textbf{Post-start evidence:} liveness, readiness, and at least one business smoke request succeed; logs show no startup fallback or unexpected policy failure.
 \end{enumerate}
 
+\subsection*{Platform-release security evidence}
+
+When releasing the RWLang platform itself, do not call the tree release-ready unless the exact source tree passes:
+
+\begin{lstlisting}
+cargo fmt --all -- --check
+cargo metadata --locked --format-version 1 >/dev/null
+cargo check --workspace --locked
+cargo test --workspace --locked
+./verify.sh
+\end{lstlisting}
+
+The supply-chain envelope must match both \code{Cargo.lock} and \path{SUPPLY-CHAIN-CAPABILITIES.txt}. Release packaging must not regenerate or bless a Cargo-stale lockfile. Verify the release manifest after all documentation/book changes as well.
+
 \section{Quick troubleshooting map}
 
 \begin{longtable}{L{0.23\textwidth}L{0.30\textwidth}L{0.38\textwidth}}

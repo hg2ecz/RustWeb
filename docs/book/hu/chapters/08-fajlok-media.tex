@@ -36,11 +36,11 @@ action fn uploadFile(ctx: ActionContext, file: Upload)
     let originalName = file.filename;
     let contentType = file.contentType;
     let byteCount = file.bytes;
-    return Ok(redirect("/uploaded"));
+    return Ok(redirect(uploaded()));
 }
 \end{lstlisting}
 
-Ez fontos erőforrás-védelmi tulajdonság: a runtime streameli a multipart tartalmat, ezért egy nagyobb fájl nem válik automatikusan ugyanekkora VM heap-allokációvá.
+A redirect typed \code{uploaded()} GET route helpert használ. Ennél fontosabb, hogy a raw \code{Upload} továbbra is private application data; attól még nem lesz public asset, hogy a handler látja a metadata-ját. Ez egyben fontos erőforrás-védelmi tulajdonság: a runtime streameli a multipart tartalmat, ezért egy nagyobb fájl nem válik automatikusan ugyanekkora VM heap-allokációvá.
 
 \section{AppFs: az alkalmazás írható fájltere}
 

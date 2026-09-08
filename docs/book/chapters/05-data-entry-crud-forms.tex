@@ -1,6 +1,6 @@
 \chapter{Data entry: typed SQL, CRUD, forms, and PRG}
 
-A classic web-application cycle is: read data from the database, accept typed input through an HTML form, validate it, mutate state in a transaction, then redirect and read again with GET. This chapter treats that entire cycle as one unit.
+A classic web-application cycle is: read data from the database, accept typed input through an HTML form, validate it, authorize the object or operation, mutate state in a transaction, then redirect and read again with GET. This chapter treats that entire cycle as one unit. The important distinction is that \emph{valid input is not yet authorized input}.
 
 \section{Typed SQL and CRUD}
 
@@ -20,19 +20,26 @@ The SQL text is static and compiler-owned. A user-provided value may enter only 
 \subsection*{Mutation in a transaction}
 
 \begin{lstlisting}[language=RWLang]
+query fn articleById(db: Db, id: Int)
+    -> Result<Article, DbError> sql {
+    SELECT id, slug, title, body
+    FROM articles
+    WHERE id = :id
+}
+
 query fn updateArticle(
     tx: Transaction,
     id: Int,
     title: String,
     body: String
-) -> Result<Void, DbError> sql {
+) -> Result<Void, DbError> mutates Article by id sql {
     UPDATE articles
     SET title = :title, body = :body
     WHERE id = :id
 }
 \end{lstlisting}
 
-The action:
+The action loads the object, establishes authorization, and only then uses the authorized object key for the mutation:
 
 \begin{lstlisting}[language=RWLang]
 action fn update(
@@ -42,14 +49,16 @@ action fn update(
     title: String,
     body: String
 ) -> Result<Redirect, PageError> {
+    let article = articleById(db, id)?;
+    authorize article authenticated;
     transaction db {
-        updateArticle(tx, id, title, body)?;
+        updateArticle(tx, article.id, title, body)?;
     }
-    return Ok(redirect("/admin/articles"));
+    return Ok(redirect(adminArticles()));
 }
 \end{lstlisting}
 
-Success commits; failure rolls back. A \code{Transaction} capability cannot escape the block.
+For an ordinary local transaction, success commits and a known database failure rolls back. A \code{Transaction} capability cannot escape the block. For retry-sensitive critical work, capture the explicit transaction outcome instead of assuming every failure proves rollback; Chapter~\ref{ch:db-deep-dive} explains \code{CommitUnknown}.
 
 \subsection*{Portable database schema}
 
@@ -115,8 +124,23 @@ action fn create(
     transaction db {
         insertArticle(tx, articleSlug, title, body)?;
     }
-    return Ok(redirect("/admin/articles"));
+    return Ok(redirect(adminArticles()));
 }
 \end{lstlisting}
 
 For a named form, a missing checkbox-like \code{Bool} field is interpreted as \code{false}.
+
+\subsection*{A practical decision order}
+
+For a state-changing form, use this order during design and review:
+
+\begin{enumerate}
+  \item decode and validate the request at the route/form boundary;
+  \item load the target object if the operation concerns an existing record;
+  \item establish object/permission/tenant authorization;
+  \item perform the mutation inside the appropriate transaction or critical-operation contract;
+  \item redirect with a typed GET route helper;
+  \item invalidate only the caches that the mutation actually makes stale.
+\end{enumerate}
+
+This ordering prevents a common mistake: treating a well-formed identifier or form as proof that the caller may modify the referenced object.

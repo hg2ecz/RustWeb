@@ -2,7 +2,7 @@
 
 A következő két minta ugyanazokra az alapokra épül, de eltérő termékigényeket mutat. A minimális wiki a stabil slugot, Markdown tartalmat és autentikált szerkesztést kapcsolja össze; az érettebb wikihez később optimistic locking és audit trail adható. A CMS-minta ehhez többfájlos projektstruktúrát, szerkesztői jogosultságot és public cache-t ad, majd külön felsoroljuk a production CMS további rétegeit.
 
-A wiki minimális, fordítási fixture-ként is ellenőrzött változata az \code{examples/wiki/main.rw}; a CMS többfájlos mintája az \code{examples/news-site/}. Így az alábbi két alkalmazásminta nem csak könyvbeli pszeudokód.
+A wiki minimális, fordítási fixture-ként is ellenőrzött változata az \code{examples/wiki/main.rw}; a CMS többfájlos mintája az \code{examples/news-site/}. Így az alábbi két alkalmazásminta nem csak könyvbeli pszeudokód. Ha a könyv egy listinget rövidít, copy/paste kiindulópontnak a repository fixture legyen a source of truth.
 
 \section{Egyszerű wiki}
 
@@ -144,7 +144,7 @@ action fn create(ctx: ActionContext, db: Db,
     transaction db {
         insertArticle(tx, articleSlug, title, body)?;
     }
-    return Ok(redirect("/admin/articles"));
+    return Ok(redirect(adminArticles()));
 }
 
 route articleCreate POST "/admin/articles"

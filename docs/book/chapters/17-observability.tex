@@ -158,6 +158,16 @@ transaction db {
 
 The correct order is: \textbf{identity -> authorization -> mutation -> audit in the same transaction}.
 
+\section{Platform security events, redaction, and burst alerts}
+
+Security monitoring is now a structured platform boundary, not an ad-hoc log message convention. Automatic events cover authentication abuse, MFA failure, policy/CSRF/origin/CORS denial, webhook verification failure, idempotency conflict and resource exhaustion.
+
+The event schema intentionally does not accept arbitrary request payload or message text. Emitted principal/source fields are redacted. If application code must create a safe representation of sensitive text for a permitted monitoring sink, use the trusted \code{redact(...)} builtin; \code{Redacted<T>} cannot be created by annotation or cast.
+
+The server also maintains bounded in-memory correlation and platform-owned burst thresholds with cooldowns. When a threshold is crossed, it emits a structured \code{threshold_exceeded} alert event. Raw correlation keys may exist transiently in memory but are not written into the security event.
+
+This monitoring layer does not replace enforcement. Rate limiting, authorization, replay prevention and resource limits still block the request; alerts add detection and incident-response evidence.
+
 \section{Prometheus metrics on a separate management socket}
 
 Metrics are not an application route. They run on a separate listener:

@@ -2,7 +2,7 @@
 
 The next two examples use the same foundations but demonstrate different product needs. The minimal wiki combines stable slugs, Markdown content, and authenticated editing; a more mature wiki can later add optimistic locking and an audit trail. The CMS example adds a multi-file project structure, editor authorization, and public cache, then lists the additional layers a production CMS usually needs.
 
-The minimal wiki is also checked as a compilation fixture in \code{examples/wiki/main.rw}; the CMS is the multi-file \code{examples/news-site/} project. These examples are therefore not merely book pseudocode.
+The minimal wiki is also checked as a compilation fixture in \code{examples/wiki/main.rw}; the CMS is the multi-file \code{examples/news-site/} project. These examples are therefore not merely book pseudocode. When a listing is shortened here, prefer the repository fixture as the copy/paste source of truth.
 
 \section{A simple wiki}
 
@@ -143,7 +143,7 @@ action fn create(ctx: ActionContext, db: Db,
     transaction db {
         insertArticle(tx, articleSlug, title, body)?;
     }
-    return Ok(redirect("/admin/articles"));
+    return Ok(redirect(adminArticles()));
 }
 
 route articleCreate POST "/admin/articles"

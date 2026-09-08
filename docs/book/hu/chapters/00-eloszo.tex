@@ -5,7 +5,7 @@ Ez a könyv webalkalmazás-fejlesztőknek szól, akik most találkoznak előszö
 
 A könyv ajánlott olvasási sorrendje tudatosan fokozatos. Először felépítjük a model- és capability-szemléletet, majd lefordítjuk és telepítjük az RWLang programokat. Ezután egy szándékosan kicsi, A--Z alkalmazáson végigmegyünk a modeltől a formon és adatbázison át a HTTP válaszig. Csak ezután bontjuk szét részletesen a nyelvi, adatbázis-, auth-, fájl- és böngészős témákat.
 
-Amikor az olvasó már normál alkalmazást tud írni, következik a nagyobb projektek szervezése, majd egy wiki/CMS példa. A külső integráció és a tesztelés ezután jön, mert ezekhez már érdemes egy teljes alkalmazás fejével gondolkodni. A production részben kerül elő a megosztott Redis state és cache, a security hardening, az observability, a deployment és a disaster recovery. A könyv végén a CLI és a teljes \code{server.toml} referencia már nem tananyagként, hanem visszakereshető operátori segédletként szolgál.
+Amikor az olvasó már normál alkalmazást tud írni, következik a nagyobb projektek szervezése, egy wiki/CMS példa, a külső integrációk, a tesztelés, majd egy összefoglaló security-hardening fejezet. Ez a fejezet szándékosan a production üzemeltetés elé került: előbb legyen világos, mit garantál már a nyelv és a platform, és csak utána döntsünk skálázásról, megfigyelésről, deploymentről és recoveryről. A könyv végén a CLI és a teljes \code{server.toml} referencia már nem tananyagként, hanem visszakereshető operátori segédletként szolgál.
 
 \section*{Hogyan olvasd a könyvet?}
 
@@ -18,6 +18,32 @@ Első olvasáskor ne próbáld megjegyezni az összes konfigurációs kulcsot va
 \end{enumerate}
 
 Ha ez a három kérdés tiszta, a route, a form, az SQL, az auth és a konfiguráció már ugyanannak a modellnek a különböző határai lesznek, nem egymástól független trükkök.
+
+A könyvben végig hasznos szétválasztani, mit bizonyít az RWLang, és mit kell továbbra is az alkalmazás tervezőjének eldöntenie:
+
+\begin{center}
+\begin{tabularx}{\textwidth}{@{}Y Y@{}}
+\toprule
+\textbf{RWLang/platform felelőssége} & \textbf{Alkalmazás/operator felelőssége} \\
+\midrule
+Typed boundaryk, escaping, capability check, bounded erőforrások, secure session mechanika & Üzleti szabályok, object ownership, tenant-membership policy, retention és recovery célok \\
+Fail-closed compiler/runtime invariantok & A helyes route policy, permission, critical-operation contract és production topológia kiválasztása \\
+Biztonságos SQL-, redirect-, upload-, egress- és crypto-primitívek & Annak eldöntése, mikor megengedett az üzleti művelet és mi történjen domain conflict esetén \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+A secure-by-construction modell egész plumbing-osztályokat vesz le a fejlesztőről; az alkalmazás üzleti authorization szabályait viszont nem találja ki helyette.
+
+\subsection*{Ha sietsz}
+
+A könyvet útvonalként használd, ne checklistként:
+
+\begin{itemize}
+  \item \textbf{első működő alkalmazás:} 1--5. fejezet;
+  \item \textbf{autentikált CRUD vagy API:} folytasd az adatbázis-, auth-, fájl- és JSON-fejezetekkel, majd release előtt olvasd el a security-hardening fejezetet;
+  \item \textbf{production üzemeltetés:} ehhez jön a cache/skálázás, observability, deployment, recovery és az operátori referencia.
+\end{itemize}
 
 \section*{Öt visszatérő szó}
 

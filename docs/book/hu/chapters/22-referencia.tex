@@ -1,64 +1,62 @@
 \chapter{Fejlesztői referencia és továbblépés}
 
-\section{Melyik témát hol keresd?}
+\section{Canonical dokumentációs térkép}
+
+Ez a könyv a hosszú formájú fejlesztői útmutató. A jelenlegi high-level security státusz a \path{SECURITY-STATUS.md}; a részletes canonical témadokumentáció a \path{docs/} alatt él. Ahol van magyar operator/fejlesztő companion, az a \path{docs/hu/} alatt található.
 
 \begin{longtable}{L{0.34\textwidth}L{0.58\textwidth}}
 \toprule
-Téma & Részletes projekt-dokumentáció \\
+Téma & Canonical projekt-dokumentáció \\
 \midrule
-Routing, input, validáció & \code{docs/hu/04-routing-input.md} \\
-Adatbázis és SQL & \code{docs/hu/05-adatbazis.md} \\
-CRUD, tranzakció & \code{docs/hu/06-crud.md} \\
-Auth és Redis & \code{docs/hu/07-auth-redis.md} \\
-Route rate limiting & \code{docs/hu/08-rate-limiting.md} \\
-JSON API és CORS & \code{docs/hu/05-json-api-cors.md} \\
-Statikus assetek & \code{docs/hu/06-static-assets.md} \\
-Public page cache & \code{docs/hu/13-cache.md} \\
-HTTPS és proxy security & \code{docs/hu/08-https-security.md} \\
-Upload/AppFs & \code{docs/hu/09-upload-appfs.md} \\
-Migration & \code{docs/hu/10-database-migrations.md} \\
-Formok & \code{docs/hu/12-forms.md} \\
-Komponensek/layoutok & \code{docs/hu/14-components-layouts.md} \\
-Security checklist & \code{docs/hu/15-security-checklist.md} \\
-Dependency security & \code{docs/19-dependency-security.md} \\
-Server config & \code{docs/hu/15-server-config.md} \\
-Markdown & \code{docs/hu/16-markdown-rich-text.md} \\
-Media library & \code{docs/hu/17-media-library.md} \\
-Object authorization & \code{docs/hu/20-object-authorization.md} \\
-Projektstruktúra/modulok & \code{docs/hu/21-modules-slugs-project-layout.md} \\
-Modulok és névterek & \code{docs/21-modules-and-namespaces.md} \\
-Aritmetika, F32 matematika, időmérés & \code{docs/44-math-and-timing.md} \\
-String builtinok & \code{docs/46-string-builtins.md} \\
-Typed string listák & \code{docs/47-string-lists.md} \\
-Typed string dictionaryk & \code{docs/48-string-dictionaries.md} \\
-Reguláris kifejezések & \code{docs/49-regular-expressions.md} \\
-Domain objectek & \code{docs/hu/22-domain-objects.md} \\
-Enumok & \code{docs/hu/23-enums.md} \\
-Optimistic locking & \code{docs/24-optimistic-locking.md} \\
-Business audit & \code{docs/hu/25-business-audit-trail.md} \\
-Domain-validáció & \code{docs/hu/26-domain-validation.md} \\
-Canonical URL & \code{docs/hu/27-canonical-url.md} \\
-PRG/flash/conflict UX & \code{docs/hu/28-prg-flash-conflict.md} \\
-Production deployment & \code{docs/hu/29-production-deployment.md} \\
-Backup/restore/upgrade & \path{docs/hu/30-backup-restore-upgrade-rollback.md} \\
-V1 átadási lista & \path{docs/hu/31-v1-developer-guide.md} \\
-IPv6-ready outbound egress & \code{docs/32-ipv6-egress.md} \\
-CLI és napi workflow & \code{docs/hu/33-cli-workflow.md} \\
-Server TOML referencia & \code{docs/hu/34-server-toml-reference.md} \\
-Production checklist és minták & \code{docs/hu/35-production-checklist.md} \\
-Debian csomag és dpkg telepítés & \code{docs/hu/36-debian-csomag.md} \\
+Aktuális security architecture & \path{SECURITY-STATUS.md}, \path{docs/99-security-architecture-and-status.md} \\
+Secure-by-construction alap & \path{docs/57-secure-by-construction-foundation.md} \\
+Domain típusok és bounded collectionök & \path{docs/62-domain-types-and-bounded-collections.md} \\
+Nominal type és refinement & \path{docs/63-nominal-domain-types.md}, \path{docs/64-domain-value-refinement.md} \\
+Public projection és secret flow & \path{docs/65-explicit-public-projections.md}, \path{docs/66-secret-consumer-contracts.md} \\
+Password, token és session & \path{docs/67-typed-credentials-and-passwords.md} - \path{docs/74-platform-owned-browser-sessions.md} \\
+Permission, MFA, critical operation & \path{docs/75-function-level-permissions.md} - \path{docs/77-critical-operation-contracts.md} \\
+Resource profile és bounded request input & \path{docs/78-route-budget-profiles.md}, \path{docs/79-bounded-request-collections.md} \\
+Public error boundary & \path{docs/80-public-error-boundaries.md} \\
+Tenant authority és isolation & \path{docs/81-tenant-membership-authority.md}, \path{docs/82-compiler-enforced-tenant-isolation.md} \\
+Idempotens critical operation & \path{docs/83-idempotent-critical-operations.md} \\
+Verified webhook & \path{docs/91-verified-webhook-integrity.md} \\
+Safe upload state machine & \path{docs/84-safe-file-upload-state-machine.md} \\
+Effect/capability modell & \path{docs/85-effect-capability-foundation.md} \\
+Typed outbound integration & \path{docs/86-typed-outbound-integration-calls.md} \\
+Production security policy & \path{docs/87-production-configuration-policy.md} \\
+Typed HTTP metadata & \path{docs/88-typed-http-metadata.md} \\
+Crypto key purpose/lifecycle & \path{docs/89-crypto-key-purpose-lifecycle.md} \\
+Generált CSP/security header & \path{docs/90-generated-security-headers.md} \\
+Supply-chain capability/provenance & \path{docs/92-supply-chain-capability-provenance.md} \\
+Authentication abuse protection & \path{docs/93-authentication-abuse-protection.md} \\
+Zárt sum type/exhaustive match & \path{docs/94-sum-types-and-exhaustive-match.md} \\
+Transaction outcome semantics & \path{docs/95-transaction-outcome-semantics.md} \\
+Authenticated encryption/key lifecycle & \path{docs/96-authenticated-encryption-key-lifecycle.md} \\
+Advanced resource safety & \path{docs/97-advanced-resource-safety.md} \\
+Typed security event & \path{docs/100-typed-security-events.md} \\
+Security monitoring/redaction & \path{docs/98-security-monitoring-and-redaction.md} \\
+Dependency security & \path{docs/19-dependency-security.md} \\
+Modulok/névterek & \path{docs/21-modules-and-namespaces.md} \\
+Matematika/idő, string/list/dict/regex & \path{docs/44-math-and-timing.md}, \path{docs/46-string-builtins.md} - \path{docs/49-regular-expressions.md} \\
+Optimistic locking & \path{docs/24-optimistic-locking.md} \\
+IPv6-ready egress & \path{docs/32-ipv6-egress.md} \\
+Debian package/install & \path{docs/36-debian-package.md} \\
+Reverse proxy/multidomain/reload & \path{docs/37-multi-domain-hosting.md} - \path{docs/39-automatic-source-reload.md} \\
+Maintainability/architecture gate & \path{docs/50-maintainability-and-clean-code.md} \\
 \bottomrule
 \end{longtable}
 
-\section{Napi fejlesztési ellenőrzőlista}
+\section{Napi secure fejlesztési checklist}
 
 \begin{enumerate}
-  \item Typed route/input és zárt választásnál enum.
-  \item User input nem kerül raw SQL-be vagy raw HTML-be.
-  \item Mutáció transactionben.
-  \item Sikeres POST után PRG redirect.
-  \item User/session dependent oldal nem public cache.
-  \item Secret csak \code{*_file} formában.
-  \item Release előtt \code{./verify.sh}, config check és migration verify.
-  \item Production után live/ready, log, metric és audit review.
+  \item Authority legyen explicit: route policy, DB capability, tenant, permission/MFA és named outbound integration.
+  \item Untrusted inputot nominal/domain típusra refine-olj; validationt ne keverd authorizationnel.
+  \item Protected write előtt object/mutation authorization proof kell.
+  \item Permission/MFA/transaction/audit/idempotency igénynél használj critical contractot.
+  \item Retry-szenzitív transactionnél kezeld exhaustívan a \code{Committed}, \code{RolledBack},\\ \code{CommitUnknown} állapotot.
+  \item Ne vezess vissza raw SQL/HTML, arbitrary redirect/header/filename vagy arbitrary outbound URL kerülőutat.
+  \item Upload maradjon staged/private inspectionig és explicit publishig.
+  \item Secret maradjon typed secret/credential/key boundary mögött; monitoringhoz\\ \code{redact(...)}.
+  \item DB row, collection, file, outbound body és request idő legyen bounded.
+  \item Platform release előtt locked Cargo metadata/check/test, \code{./verify.sh}, supply-chain és release-manifest verification.
 \end{enumerate}

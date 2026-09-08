@@ -2,6 +2,21 @@
 
 Ez a fejezet nem ismétli meg a konfigurációs referencia és az observability részleteit. A production szempontból azt foglalja össze, hogyan lesz egy ellenőrzött release-ből futó service, hogyan történik a release-váltás, és hogyan marad kontrollált a process lifecycle. A teljes backup/restore és disaster recovery a következő fejezet önálló témája.
 
+\section{Az alkalmazás production contractja}
+
+A production security egy része magában az RWLang programban deklarált:
+
+\begin{lstlisting}[language=RWLang]
+production {
+    https required;
+    debug disabled;
+    hsts required;
+    database tls required;
+}
+\end{lstlisting}
+
+Ez nem második secret/config rendszer. Követelményt deklarál; certificate/path/trusted network továbbra is server/operator config. Másképp fogalmazva: az RWLang source azt mondja meg, \emph{minek kell igaznak lennie}, a trusted deployment config pedig azt, \emph{hogyan teszi ezt igazzá az adott környezet}. Startup elbukik, ha a valós topology nem teljesíti a contractot. Source reload nem változtathatja meg csendben; production security requirement módosítás restartot és explicit operator review-t igényel.
+
 \section{Release útvonal}
 
 Ajánlott sorrend:

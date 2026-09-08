@@ -132,11 +132,11 @@ action fn create(
     transaction db {
         createProduct(tx, name, price)?;
     }
-    return Ok(redirect("/"));
+    return Ok(redirect(home()));
 }
 \end{lstlisting}
 
-Ez a Post/Redirect/Get minta. Ha a felhasználó frissíti a visszakapott oldalt, a böngésző nem küldi be újra automatikusan az INSERT-et.
+A redirect célja a typed GET route helper, \code{home()}, nem string URL. Ez a Post/Redirect/Get minta: ha a felhasználó frissíti a visszakapott oldalt, a böngésző nem küldi be újra automatikusan az INSERT-et.
 
 \section{A route-ok és a validáció}
 
@@ -152,6 +152,8 @@ route create POST "/products"
 \end{lstlisting}
 
 A POST route már a handler előtt typed inputtá alakítja a két mezőt. Üres vagy 100 karakternél hosszabb név, negatív ár, túl nagy ár vagy nem egész szám esetén a kérés nem jut el érvényes üzleti műveletként az INSERT-ig.
+
+A publikus írás ebben a kicsi tanpéldában szándékos egyszerűsítés. Valódi public submission endpointnál explicit döntsd el, kell-e authentication, route rate limit, abuse monitoring vagy erősebb business permission. Ne másold át a \code{public} policyt csak azért, mert a példa ezt használja.
 
 \section{A teljes alkalmazás egy helyen}
 
