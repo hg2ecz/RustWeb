@@ -67,7 +67,7 @@ fn infer_field_static_type(
                 _ => {
                     return Err(CompileError::Syntax(format!(
                         "Upload has no field `{field}`"
-                    )));
+                    )))
                 }
             };
             Ok(StaticType::untrusted_scalar(value_type))
@@ -97,9 +97,7 @@ fn expression_metadata(
             language_core::BuiltinFunction::PasswordHash => {
                 expression_metadata(&args[0], known, program)?;
                 Ok(ScalarType {
-                    value_type: ValueType::Credential(
-                        language_core::CredentialPurpose::PasswordHash,
-                    ),
+                    value_type: ValueType::Credential(language_core::CredentialPurpose::PasswordHash),
                     trust: TrustLevel::Trusted,
                     sensitivity: DataSensitivity::Secret,
                     disclosure: DisclosureEvidence::None,
@@ -110,8 +108,36 @@ fn expression_metadata(
             }
             language_core::BuiltinFunction::PasswordVerify
             | language_core::BuiltinFunction::TokenMatches
-            | language_core::BuiltinFunction::TokenActive => {
+            | language_core::BuiltinFunction::TokenActive
+            | language_core::BuiltinFunction::VerifyWebhookSignature => {
                 Ok(ScalarType::trusted(ValueType::Bool))
+            }
+            language_core::BuiltinFunction::SignWebhook => {
+                Ok(ScalarType::trusted(ValueType::String))
+            }
+            language_core::BuiltinFunction::EncryptUserData
+            | language_core::BuiltinFunction::DecryptUserData => {
+                Ok(ScalarType {
+                    value_type: ValueType::String,
+                    trust: TrustLevel::Trusted,
+                    sensitivity: DataSensitivity::Sensitive,
+                    disclosure: DisclosureEvidence::None,
+                    mutation: None,
+                    tenant: None,
+                    lifecycle: None,
+                })
+            }
+            language_core::BuiltinFunction::Redact => {
+                expression_metadata(&args[0], known, program)?;
+                Ok(ScalarType {
+                    value_type: ValueType::String,
+                    trust: TrustLevel::Trusted,
+                    sensitivity: DataSensitivity::Redacted,
+                    disclosure: DisclosureEvidence::None,
+                    mutation: None,
+                    tenant: None,
+                    lifecycle: None,
+                })
             }
             language_core::BuiltinFunction::NewSessionToken => Ok(ScalarType::issued_token(
                 ValueType::Credential(language_core::CredentialPurpose::SessionToken),
@@ -177,6 +203,7 @@ fn expression_metadata(
     }
 }
 
+
 fn combine_expression_metadata<'a>(
     expressions: impl Iterator<Item = &'a Expr>,
     known: &HashMap<String, StaticType>,
@@ -190,17 +217,12 @@ fn combine_expression_metadata<'a>(
     Ok(combined)
 }
 
+
 fn token_hash_purpose(value_type: ValueType) -> Option<language_core::CredentialPurpose> {
     match value_type {
-        ValueType::Credential(language_core::CredentialPurpose::SessionToken) => {
-            Some(language_core::CredentialPurpose::SessionTokenHash)
-        }
-        ValueType::Credential(language_core::CredentialPurpose::PasswordResetToken) => {
-            Some(language_core::CredentialPurpose::PasswordResetTokenHash)
-        }
-        ValueType::Credential(language_core::CredentialPurpose::CsrfToken) => {
-            Some(language_core::CredentialPurpose::CsrfTokenHash)
-        }
+        ValueType::Credential(language_core::CredentialPurpose::SessionToken) => Some(language_core::CredentialPurpose::SessionTokenHash),
+        ValueType::Credential(language_core::CredentialPurpose::PasswordResetToken) => Some(language_core::CredentialPurpose::PasswordResetTokenHash),
+        ValueType::Credential(language_core::CredentialPurpose::CsrfToken) => Some(language_core::CredentialPurpose::CsrfTokenHash),
         _ => None,
     }
 }

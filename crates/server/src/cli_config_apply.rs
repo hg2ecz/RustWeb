@@ -1,16 +1,10 @@
+use crate::{AuthCliConfig, CacheCliConfig, LifecycleCliConfig, ObservabilityCliConfig, StaticAssetsCliConfig, StorageCliConfig, TlsCliConfig, WebSecurityCliConfig, validate_reserved_path};
 use crate::bootstrap_config::{json_log_escape, read_secret_file};
 use crate::resource_limits::ResourceLimitConfig;
-use crate::server_config_file::{
-    FileDomain, SourceReloadCliConfig, config_abs_path, read_server_config,
-};
+use crate::server_config_file::{FileDomain, SourceReloadCliConfig, config_abs_path, read_server_config};
 use crate::server_errors::CliParseError;
 use crate::tls_support::validate_public_host;
 use crate::web_security::valid_cors_origin;
-use crate::{
-    AuthCliConfig, CacheCliConfig, LifecycleCliConfig, ObservabilityCliConfig,
-    StaticAssetsCliConfig, StorageCliConfig, TlsCliConfig, WebSecurityCliConfig,
-    validate_reserved_path,
-};
 use language_core::ServerConfig;
 use observability::{LogConfig, server_log};
 use std::collections::HashSet;
@@ -70,6 +64,9 @@ pub(super) fn load(path: Option<&Path>) -> Result<LoadedCliConfig, CliParseError
     let mut auth = AuthCliConfig {
         ldap_username_attribute: "uid".into(),
         login_max_attempts: 8,
+        login_principal_max_attempts: 16,
+        login_source_max_attempts: 64,
+        mfa_max_attempts: 5,
         login_window_secs: 300,
         ..Default::default()
     };
@@ -174,6 +171,15 @@ pub(super) fn load(path: Option<&Path>) -> Result<LoadedCliConfig, CliParseError
         if let Some(v) = file.auth.login_max_attempts {
             auth.login_max_attempts = v;
         }
+        if let Some(v) = file.auth.login_principal_max_attempts {
+            auth.login_principal_max_attempts = v;
+        }
+        if let Some(v) = file.auth.login_source_max_attempts {
+            auth.login_source_max_attempts = v;
+        }
+        if let Some(v) = file.auth.mfa_max_attempts {
+            auth.mfa_max_attempts = v;
+        }
         if let Some(v) = file.auth.login_window_secs {
             auth.login_window_secs = v;
         }
@@ -207,6 +213,9 @@ pub(super) fn load(path: Option<&Path>) -> Result<LoadedCliConfig, CliParseError
         }
         if let Some(v) = file.web.webhook_secrets_dir {
             web.webhook_secrets_dir = Some(config_abs_path(&v, "web.webhook_secrets_dir")?);
+        }
+        if let Some(v) = file.web.egress_policy_file {
+            web.egress_policy_file = Some(config_abs_path(&v, "web.egress_policy_file")?);
         }
         if let Some(v) = file.storage.data_root {
             storage.data_root = Some(config_abs_path(&v, "storage.data_root")?);
@@ -292,15 +301,9 @@ pub(super) fn load(path: Option<&Path>) -> Result<LoadedCliConfig, CliParseError
         if let Some(v) = file.cache.singleflight_wait_timeout_ms {
             cache_cli.singleflight_wait_timeout_ms = v;
         }
-        if let Some(v) = file.reload.enabled {
-            source_reload.enabled = v;
-        }
-        if let Some(v) = file.reload.poll_interval_ms {
-            source_reload.poll_interval_ms = v;
-        }
-        if let Some(v) = file.reload.debounce_ms {
-            source_reload.debounce_ms = v;
-        }
+        if let Some(v) = file.reload.enabled { source_reload.enabled = v; }
+        if let Some(v) = file.reload.poll_interval_ms { source_reload.poll_interval_ms = v; }
+        if let Some(v) = file.reload.debounce_ms { source_reload.debounce_ms = v; }
         if let Some(v) = file.limits.max_header_bytes {
             config.max_header_bytes = v;
         }

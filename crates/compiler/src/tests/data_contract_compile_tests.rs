@@ -173,7 +173,7 @@ route publishRoute POST "/articles/:id<Int>/publish" form version<Int> auth role
         let audit = stmts
             .iter()
             .find_map(|s| match s {
-                ActionStatement::Transaction { statements } => {
+                ActionStatement::Transaction { statements, .. } => {
                     statements.iter().find_map(|t| match t {
                         TxStatement::BusinessAudit(a) => Some(a),
                         _ => None,

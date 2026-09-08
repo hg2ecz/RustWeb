@@ -1,9 +1,7 @@
+use crate::response_headers::HeaderName;
 use crate::http_io::{HttpReadError, Response};
 use auth::SessionSnapshot;
-use language_core::{
-    ActionBody, ActionStatement, AppError, FormFailure, HttpMethod, PageBody, Program, Route,
-    RouteAuth, Statement, ValueType,
-};
+use language_core::{ActionBody, ActionStatement, AppError, FormFailure, HttpMethod, PageBody, Program, Route, RouteAuth, Statement, ValueType};
 use std::collections::HashMap;
 
 pub(super) fn app_error_response(error: AppError, json_api: bool) -> Response {
@@ -56,6 +54,20 @@ pub(super) fn app_error_response(error: AppError, json_api: bool) -> Response {
             "Service Unavailable",
             "resource_limit",
             b"request memory limit exceeded\n",
+        ),
+        AppError::DeadlineExceeded => endpoint_error(
+            json_api,
+            503,
+            "Service Unavailable",
+            "resource_limit",
+            b"request execution deadline exceeded\n",
+        ),
+        AppError::ExternalIoLimit => endpoint_error(
+            json_api,
+            503,
+            "Service Unavailable",
+            "resource_limit",
+            b"request external I/O limit exceeded\n",
         ),
         AppError::Database => endpoint_error(
             json_api,
@@ -189,7 +201,7 @@ pub(super) fn render_form_failure(
         "text/html; charset=utf-8",
         body.as_bytes(),
     );
-    r.headers.push(("Cache-Control".into(), "no-store".into()));
+    r.push_header(HeaderName::CacheControl, "no-store");
     r
 }
 fn push_html_escaped(out: &mut String, value: &str) {
@@ -216,24 +228,17 @@ pub(super) fn authorize_route(
         RouteAuth::Mfa if session.is_authenticated() && session.mfa_verified => None,
         RouteAuth::Role(role) if session.is_authenticated() && session.has_role(role) => None,
         RouteAuth::Permission { roles, .. }
-            if session.is_authenticated() && roles.iter().any(|role| session.has_role(role)) =>
-        {
-            None
-        }
+            if session.is_authenticated() && roles.iter().any(|role| session.has_role(role)) => None,
         RouteAuth::PermissionMfa { roles, .. }
             if session.is_authenticated()
                 && session.mfa_verified
-                && roles.iter().any(|role| session.has_role(role)) =>
-        {
-            None
-        }
+                && roles.iter().any(|role| session.has_role(role)) => None,
         RouteAuth::User
         | RouteAuth::Mfa
         | RouteAuth::Role(_)
         | RouteAuth::Permission { .. }
         | RouteAuth::PermissionMfa { .. }
-            if !session.is_authenticated() =>
-        {
+            if !session.is_authenticated() => {
             if json_api {
                 Some(endpoint_error(
                     true,
@@ -266,8 +271,7 @@ pub(super) fn route_returns_json(program: &Program, route: &Route) -> bool {
     }
     fn action_json(statements: &[ActionStatement]) -> bool {
         match statements.last() {
-            Some(ActionStatement::ReturnJson(_))
-            | Some(ActionStatement::ReturnJsonProjection(_)) => true,
+            Some(ActionStatement::ReturnJson(_)) | Some(ActionStatement::ReturnJsonProjection(_)) => true,
             Some(ActionStatement::Resource { statements, .. }) => action_json(statements),
             _ => false,
         }
@@ -294,9 +298,7 @@ pub(super) fn conflict_response(json_api: bool) -> Response {
             "text/html; charset=utf-8",
             b"<!doctype html><html><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>Conflict</title></head><body><main><h1>The data changed</h1><p>Another request changed this record before your save completed. Reload the edit page, review the current values, and submit your changes again.</p></main></body></html>",
         );
-        response
-            .headers
-            .push(("Cache-Control".into(), "no-store".into()));
+        response.push_header(HeaderName::CacheControl, "no-store");
         response
     }
 }
@@ -320,6 +322,7 @@ pub(super) fn endpoint_error(
         Response::text(status, reason, text)
     }
 }
+
 
 pub(super) fn accepts_media(header: Option<&str>, wanted: &str) -> bool {
     let Some(header) = header else { return true };
@@ -395,12 +398,9 @@ mod permission_auth_tests {
             name: "BillingWrite".into(),
             roles: vec!["BillingAdmin".into()],
         };
-        assert!(
-            authorize_route(&policy, &session_with_mfa(&["BillingAdmin"], true), true).is_none()
-        );
-        assert!(
-            authorize_route(&policy, &session_with_mfa(&["BillingAdmin"], false), true).is_some()
-        );
+        assert!(authorize_route(&policy, &session_with_mfa(&["BillingAdmin"], true), true).is_none());
+        assert!(authorize_route(&policy, &session_with_mfa(&["BillingAdmin"], false), true).is_some());
         assert!(authorize_route(&policy, &session_with_mfa(&["Viewer"], true), true).is_some());
     }
+
 }

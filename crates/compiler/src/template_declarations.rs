@@ -1,27 +1,17 @@
 use crate::declarations;
 use crate::diagnostics::CompileError;
-use crate::handler_types::StaticType;
 use crate::html_template;
 use crate::module_namespace::qualify;
+use crate::handler_types::StaticType;
 use crate::source_syntax::{function_bounds, is_identifier, matching_brace, split_top_level};
 use crate::type_resolution::resolve_value_type;
-use language_core::{
-    ComponentFunction, HtmlPart, HtmlTemplate, LayoutFunction, Program, TemplateParam,
-    TemplateParamType, ValueType,
-};
+use language_core::{ComponentFunction, HtmlPart, HtmlTemplate, LayoutFunction, Program, TemplateParam, TemplateParamType, ValueType};
 use std::collections::{HashMap, HashSet};
 
-fn parse_template_param_type(
-    raw: &str,
-    namespace: &str,
-    p: &Program,
-) -> Result<TemplateParamType, CompileError> {
+fn parse_template_param_type(raw: &str, namespace: &str, p: &Program) -> Result<TemplateParamType, CompileError> {
     let raw = raw.trim();
     if let Some(v) = resolve_value_type(raw, namespace, p) {
-        if matches!(
-            v,
-            ValueType::Upload | ValueType::F32Array | ValueType::StringList | ValueType::StringDict
-        ) {
+        if matches!(v, ValueType::Upload | ValueType::F32Array | ValueType::StringList | ValueType::StringDict) {
             return Err(CompileError::Syntax(
                 "Upload is not allowed as component/layout parameter".into(),
             ));
@@ -29,22 +19,14 @@ fn parse_template_param_type(
         return Ok(TemplateParamType::Scalar(v));
     }
     if let Some(base) = raw.strip_suffix('?') {
-        if p.model(&crate::module_namespace::resolve(namespace, base))
-            .is_some()
-        {
-            return Ok(TemplateParamType::OptionalModel(
-                crate::module_namespace::resolve(namespace, base),
-            ));
+        if p.model(&crate::module_namespace::resolve(namespace, base)).is_some() {
+            return Ok(TemplateParamType::OptionalModel(crate::module_namespace::resolve(namespace, base)));
         }
     }
     if raw.starts_with("List<") && raw.ends_with('>') {
         let base = &raw[5..raw.len() - 1];
-        if p.model(&crate::module_namespace::resolve(namespace, base))
-            .is_some()
-        {
-            return Ok(TemplateParamType::ListModel(
-                crate::module_namespace::resolve(namespace, base),
-            ));
+        if p.model(&crate::module_namespace::resolve(namespace, base)).is_some() {
+            return Ok(TemplateParamType::ListModel(crate::module_namespace::resolve(namespace, base)));
         }
     }
     let model_name = crate::module_namespace::resolve(namespace, raw);
@@ -78,12 +60,8 @@ pub(super) fn argument_type_compatible(
             }
         }
         (StaticType::Model(actual), TemplateParamType::Model(expected)) => actual.name == *expected,
-        (StaticType::OptionalModel(actual), TemplateParamType::OptionalModel(expected)) => {
-            actual == expected
-        }
-        (StaticType::ListModel(actual), TemplateParamType::ListModel(expected)) => {
-            actual == expected
-        }
+        (StaticType::OptionalModel(actual), TemplateParamType::OptionalModel(expected)) => actual == expected,
+        (StaticType::ListModel(actual), TemplateParamType::ListModel(expected)) => actual == expected,
         _ => false,
     }
 }
@@ -141,11 +119,7 @@ fn extract_html_body<'a>(kind: &str, name: &str, body: &'a str) -> Result<&'a st
     }
     Ok(&trimmed[open + 1..close])
 }
-pub(super) fn parse_template_functions(
-    source: &str,
-    namespace: &str,
-    p: &mut Program,
-) -> Result<(), CompileError> {
+pub(super) fn parse_template_functions(source: &str, namespace: &str, p: &mut Program) -> Result<(), CompileError> {
     #[derive(Clone)]
     struct Pending {
         kind: u8,
@@ -182,8 +156,7 @@ pub(super) fn parse_template_functions(
             if p.component(&symbol_name).is_some() || p.layout(&symbol_name).is_some() {
                 return Err(CompileError::Syntax(format!("duplicate template `{name}`")));
             }
-            let params =
-                parse_template_params(&source[sig_open + 1..sig_close], namespace, p, &name)?;
+            let params = parse_template_params(&source[sig_open + 1..sig_close], namespace, p, &name)?;
             pending.push(Pending {
                 kind,
                 name: symbol_name.clone(),
@@ -217,13 +190,7 @@ pub(super) fn parse_template_functions(
             .iter()
             .map(|x| (x.name.clone(), template_static_type(&x.ty)))
             .collect();
-        let template = html_template::parse_html_template_mode(
-            &item.body,
-            namespace,
-            &known,
-            p,
-            item.kind == 1,
-        )?;
+        let template = html_template::parse_html_template_mode(&item.body, namespace, &known, p, item.kind == 1)?;
         if item.kind == 1 {
             let slots = count_content_slots(&template);
             if slots != 1 {
@@ -325,3 +292,4 @@ pub(super) fn validate_template_cycles(p: &Program) -> Result<(), CompileError> 
     }
     Ok(())
 }
+

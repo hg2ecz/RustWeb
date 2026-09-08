@@ -56,12 +56,8 @@ fn eval_bytecode(
             bytecode::Op::PushInt(v) => stack.push(Value::Int(*v)),
             bytecode::Op::PushF32(v) => stack.push(Value::F32(*v)),
             bytecode::Op::NewF32Array => {
-                let Value::F32(fill) = stack.pop().ok_or(AppError::Internal)? else {
-                    return Err(AppError::Internal);
-                };
-                let Value::Int(len) = stack.pop().ok_or(AppError::Internal)? else {
-                    return Err(AppError::Internal);
-                };
+                let Value::F32(fill) = stack.pop().ok_or(AppError::Internal)? else { return Err(AppError::Internal); };
+                let Value::Int(len) = stack.pop().ok_or(AppError::Internal)? else { return Err(AppError::Internal); };
                 budget.charge_alloc((len.max(0) as u64).saturating_mul(4))?;
                 stack.push(arrays::new_f32(len, fill)?);
             }
@@ -69,31 +65,21 @@ fn eval_bytecode(
                 let key = stack.pop().ok_or(AppError::Internal)?;
                 stack.push(collections::get(env, name, key)?);
             }
-            bytecode::Op::LoadCollectionLen(name) => {
-                stack.push(Value::Int(collections::len(env, name)?))
-            }
+            bytecode::Op::LoadCollectionLen(name) => stack.push(Value::Int(collections::len(env, name)?)),
             bytecode::Op::PushBool(v) => stack.push(Value::Bool(*v)),
             bytecode::Op::PushEnum { enum_id, variant } => stack.push(Value::Enum {
                 enum_id: *enum_id,
                 variant: variant.clone(),
             }),
-            bytecode::Op::LoadVariable(name) => {
-                stack.push(env.get(name).cloned().ok_or(AppError::Internal)?)
-            }
+            bytecode::Op::LoadVariable(name) => stack.push(env.get(name).cloned().ok_or(AppError::Internal)?),
             bytecode::Op::LoadField { base, field } => match env.get(base) {
-                Some(Value::Record(fields)) => {
-                    stack.push(fields.get(field).cloned().ok_or(AppError::Internal)?)
-                }
+                Some(Value::Record(fields)) => stack.push(fields.get(field).cloned().ok_or(AppError::Internal)?),
                 _ => return Err(AppError::Internal),
             },
             bytecode::Op::Slugify => {
-                let Value::String(text) = stack.pop().ok_or(AppError::Internal)? else {
-                    return Err(AppError::Internal);
-                };
+                let Value::String(text) = stack.pop().ok_or(AppError::Internal)? else { return Err(AppError::Internal); };
                 let slug = slugify_ascii(&text);
-                if !is_canonical_slug(&slug) {
-                    return Err(AppError::BadRequest);
-                }
+                if !is_canonical_slug(&slug) { return Err(AppError::BadRequest); }
                 budget.charge_alloc(slug.len() as u64)?;
                 stack.push(Value::String(slug));
             }
@@ -105,31 +91,17 @@ fn eval_bytecode(
                 stack.push(value);
             }
             bytecode::Op::Not => {
-                let Value::Bool(value) = stack.pop().ok_or(AppError::Internal)? else {
-                    return Err(AppError::Internal);
-                };
+                let Value::Bool(value) = stack.pop().ok_or(AppError::Internal)? else { return Err(AppError::Internal); };
                 stack.push(Value::Bool(!value));
             }
-            bytecode::Op::Pop => {
-                stack.pop().ok_or(AppError::Internal)?;
-            }
+            bytecode::Op::Pop => { stack.pop().ok_or(AppError::Internal)?; }
             bytecode::Op::JumpIfFalse(target) => {
-                let Some(Value::Bool(value)) = stack.last() else {
-                    return Err(AppError::Internal);
-                };
-                if !value {
-                    ip = *target;
-                    continue;
-                }
+                let Some(Value::Bool(value)) = stack.last() else { return Err(AppError::Internal); };
+                if !value { ip = *target; continue; }
             }
             bytecode::Op::JumpIfTrue(target) => {
-                let Some(Value::Bool(value)) = stack.last() else {
-                    return Err(AppError::Internal);
-                };
-                if *value {
-                    ip = *target;
-                    continue;
-                }
+                let Some(Value::Bool(value)) = stack.last() else { return Err(AppError::Internal); };
+                if *value { ip = *target; continue; }
             }
             bytecode::Op::Binary(op) => {
                 let right = stack.pop().ok_or(AppError::Internal)?;
@@ -144,3 +116,4 @@ fn eval_bytecode(
     }
     stack.pop().ok_or(AppError::Internal)
 }
+

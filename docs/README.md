@@ -1,120 +1,105 @@
 # RWLang documentation
 
-English is the canonical documentation language for the RWLang repository.
+English is the canonical documentation language for the RWLang repository. Hungarian translations and developer/operator guides live under [`hu/`](hu/).
 
-## Language layout
+## Start here
 
-- Canonical English documentation lives directly under `docs/`.
-- Hungarian translations and legacy Hungarian documentation live under `docs/hu/`.
-- The canonical English LaTeX book lives under `docs/book/`; the Hungarian translation lives under `docs/book/hu/`.
-- A document outside a `hu/` directory should be English unless its filename has an explicit `_hu` suffix.
-
-This convention also applies to READMEs in examples and other subdirectories.
+- [Repository README](../README.md)
+- [Current security status](../SECURITY-STATUS.md)
+- [V1 release notes](../RELEASE-NOTES-V1.0.md)
+- [Release checklist](../RELEASE-CHECKLIST.md)
+- [Hungarian developer/operator handbook](hu/README.md)
 
 ## Core language reference
 
-- [Modules and namespaces](21-modules-and-namespaces.md) - application-root-relative `::` namespaces and explicit cross-module references.
-- [Numeric operators, F32 math and monotonic timing](44-math-and-timing.md) - checked arithmetic, `%`, shifts, bitwise/logical operators, short-circuit logic, logarithms, exponentials and rounding.
-- [Typed string builtins](46-string-builtins.md) - Unicode-aware trimming, case conversion, search, `replace`, `split`, substring/index operations, character access and repetition.
-- [Regular expressions](49-regular-expressions.md) - typed regex matching, replacement and captures.
-- [Statement terminators](56-statement-terminators.md) - explicit `;`, no automatic semicolon insertion, and the `mod`/`route` top-level rule.
-- [Secure-by-construction foundation](57-secure-by-construction-foundation.md) - explicit route access, safe local redirects, bounded external strings, and stable security diagnostics.
-- [Domain types and bounded collections](62-domain-types-and-bounded-collections.md) - reusable input invariants and fail-closed collection construction.
-- [Secret consumer contracts](66-secret-consumer-contracts.md) - explicit secret sinks, query contracts, and audit leakage prevention.
-- [Token hashes at rest](70-token-hash-at-rest.md) - purpose-safe bearer-token persistence and verification without storing raw tokens.
-
-## Current canonical English documents
-
-- [Release checklist](../RELEASE-CHECKLIST.md)
-- [V1 release notes](../RELEASE-NOTES-V1.0.md)
-- [Dependency security and reproducible builds](19-dependency-security.md)
 - [Modules and namespaces](21-modules-and-namespaces.md)
+- [Numeric operators, F32 math and monotonic timing](44-math-and-timing.md)
+- [Typed string builtins](46-string-builtins.md)
+- [String lists](47-string-lists.md)
+- [String dictionaries](48-string-dictionaries.md)
+- [Regular expressions](49-regular-expressions.md)
+- [Statement terminators](56-statement-terminators.md)
+- [Domain types and bounded collections](62-domain-types-and-bounded-collections.md)
+- [Nominal domain types](63-nominal-domain-types.md)
+- [Domain value refinement](64-domain-value-refinement.md)
+- [Closed sum types and exhaustive match](94-sum-types-and-exhaustive-match.md)
+
+## Security architecture
+
+Start with [Secure-by-construction foundation](57-secure-by-construction-foundation.md), then use the focused chapters below.
+
+### Access control and data flow
+
+- [Authorized mutations](59-authorized-mutations.md)
+- [Secure routing and egress](60-secure-routing-and-egress.md)
+- [Validated input flow](61-validated-input-flow.md)
+- [Explicit public projections](65-explicit-public-projections.md)
+- [Secret consumer contracts](66-secret-consumer-contracts.md)
+- [Function-level permissions](75-function-level-permissions.md)
+- [MFA elevation proofs](76-mfa-elevation-proofs.md)
+- [Critical operation contracts](77-critical-operation-contracts.md)
+- [Tenant membership authority](81-tenant-membership-authority.md)
+- [Compiler-enforced tenant isolation](82-compiler-enforced-tenant-isolation.md)
+
+### Authentication, tokens and cryptography
+
+- [Typed credentials and password primitives](67-typed-credentials-and-passwords.md)
+- [Credential purpose types](68-credential-purpose-types.md)
+- [Purpose-safe token primitives](69-purpose-safe-token-primitives.md)
+- [Token hashes at rest](70-token-hash-at-rest.md)
+- [Expiry-aware token verification](71-expiry-aware-token-verification.md)
+- [Atomic token lifecycle](72-atomic-token-lifecycle.md)
+- [Atomic session rotation](73-atomic-session-rotation.md)
+- [Platform-owned browser sessions](74-platform-owned-browser-sessions.md)
+- [Cryptographic key purpose and lifecycle](89-crypto-key-purpose-lifecycle.md)
+- [Authentication abuse protection](93-authentication-abuse-protection.md)
+- [Authenticated encryption and key lifecycle](96-authenticated-encryption-key-lifecycle.md)
+
+### Integrity, I/O and deployment boundaries
+
+- [Idempotent critical operations](83-idempotent-critical-operations.md)
+- [Verified webhook integrity](81-verified-webhook-integrity.md)
+- [Safe file-upload state machine](84-safe-file-upload-state-machine.md)
+- [Effect/capability foundation](85-effect-capability-foundation.md)
+- [Typed outbound integration calls](86-typed-outbound-integration-calls.md)
+- [Production configuration policy](87-production-configuration-policy.md)
+- [Typed HTTP metadata](88-typed-http-metadata.md)
+- [Generated CSP and security headers](90-generated-security-headers.md)
+- [Supply-chain capability and provenance](92-supply-chain-capability-provenance.md)
+
+### Exceptional conditions, resources and monitoring
+
+- [Public error boundaries](80-public-error-boundaries.md)
+- [Route budget profiles](78-route-budget-profiles.md)
+- [Bounded request collections](79-bounded-request-collections.md)
+- [Closed sum types and exhaustive match](94-sum-types-and-exhaustive-match.md)
+- [Transaction outcome semantics](95-transaction-outcome-semantics.md)
+- [Advanced resource safety](97-advanced-resource-safety.md)
+- [Security monitoring and redaction](98-security-monitoring-and-redaction.md)
+- [Security architecture and current status](99-security-architecture-and-status.md)
+
+## Operations and delivery
+
+- [Dependency security and reproducible builds](19-dependency-security.md)
 - [Optimistic locking and concurrent edits](24-optimistic-locking.md)
 - [IPv6-ready outbound egress](32-ipv6-egress.md)
-- [Debian package build and dpkg installation](36-debian-package.md)
+- [Debian package build and installation](36-debian-package.md)
 - [Multi-domain hosting](37-multi-domain-hosting.md)
 - [Reverse-proxy application-server mode](38-reverse-proxy-application-server.md)
 - [Automatic application source reload](39-automatic-source-reload.md)
-
-The larger developer/operator documentation set currently has a Hungarian edition under [`hu/`](hu/). New or revised canonical documentation should be written in English first; Hungarian versions should be maintained as translations.
+- [Maintainability and clean-code boundaries](50-maintainability-and-clean-code.md)
 
 ## Source examples as compatibility surface
 
-Positive RWLang examples are enumerated in `examples/positive-entrypoints.txt` and are treated as part of the language compatibility surface. The dedicated `examples/module-namespaces/` application demonstrates the canonical R48 module rules: application-root-relative resolution, explicit source-graph membership, nested `::` namespaces, and qualified cross-module references. Negative and security fixtures are maintained separately as rejection tests.
+Positive RWLang examples are enumerated in `examples/positive-entrypoints.txt` and are part of the language compatibility surface. The namespace compatibility application lives at `examples/module-namespaces/` and demonstrates canonical application-root-relative module resolution. Negative/security fixtures are rejection tests and are not examples of supported application code.
 
 ## Book
 
-The canonical long-form English book lives under [`book/`](book/). The Hungarian translation is isolated under [`book/hu/`](book/hu/). Use `make book`, `make book-hu`, or `make books` from the repository root.
+The canonical English book lives under [`book/`](book/); the Hungarian edition lives under [`book/hu/`](book/hu/).
 
-## Repository documentation rule
+## Documentation rule
 
-When adding a document:
-
-1. write the canonical version in English;
-2. keep it at the normal project path;
-3. if a Hungarian translation is needed, put it under the nearest `hu/` directory or use `_hu.md` when a directory split would be awkward;
-4. do not mix Hungarian prose into the canonical English document except for quoted user-facing examples where the language is itself relevant.
-
-
-- [Bytecode expression execution](40-bytecode-execution.md)
-
-- [F32 numeric values](41-f32-numerics.md)
-
-- [F32 arrays](42-f32-arrays.md)
-
-- [Budgeted while loops and local assignment](43-budgeted-while.md)
-
-- [F32 math and monotonic timing](44-math-and-timing.md)
-
-- [Compute if, explicit F32 conversion, and FFT4096](45-if-conversion-and-fft.md)
-
-- [Typed string builtins](46-string-builtins.md)
-
-
-- [Typed String lists](47-string-lists.md)
-
-- [Typed String dictionaries](48-string-dictionaries.md)
-
-- [Regular expressions](49-regular-expressions.md)
-
-- [Maintainability and clean-code boundaries](50-maintainability-and-clean-code.md)
-
-- [Typed errors and explicit module dependencies](51-typed-errors-and-explicit-dependencies.md)
-
-- [52. Typed server configuration and TLS errors](52-typed-server-boundaries.md)
-
-- [53. Typed authentication, policy, resource-profile, and CLI errors](53-typed-auth-policy-and-cli-errors.md)
-
-- [54. Typed runtime and cache boundaries](54-typed-runtime-boundaries.md)
-
-- [55. Typed backend, reload, and HTTP boundaries](55-typed-backend-reload-and-http-boundaries.md)
-- [Statement terminators](56-statement-terminators.md) - explicit `;`, no automatic semicolon insertion.
-
-- [Secure-by-construction foundation](57-secure-by-construction-foundation.md) - first breaking security-language layer.
-
-- [65. Explicit public projections](65-explicit-public-projections.md) - response-boundary field allowlists for model JSON output.
-- [66. Secret consumer contracts](66-secret-consumer-contracts.md) - explicit secret sinks and fail-closed audit boundaries.
-
-- [Typed credentials and password primitives](67-typed-credentials-and-passwords.md)
-
-- [Credential purpose types](68-credential-purpose-types.md) - non-interchangeable password, token, session, CSRF, and key identities.
-
-- [Purpose-safe token primitives](69-purpose-safe-token-primitives.md) - purpose-typed issuance, validated presentation, and constant-time token comparison.
-- [Expiry-aware token verification](71-expiry-aware-token-verification.md) - session/reset verification that cannot omit expiry.
-- [Atomic token lifecycle](72-atomic-token-lifecycle.md) - consume-once reset grants and current-session revocation with compiler proofs.
-- [Atomic session rotation](73-atomic-session-rotation.md) - guarded session hash replacement with presented-token and fresh-issued-token proofs.
-
-- [Platform-owned browser sessions](74-platform-owned-browser-sessions.md)
-
-- [Function-level permissions](75-function-level-permissions.md) - named business permissions with compiler-enforced handler contracts and role-backed runtime authorization.
-
-- [MFA elevation proofs](76-mfa-elevation-proofs.md) - handler-level MFA contracts composable with named permissions.
-
-- [Route budget profiles](78-route-budget-profiles.md) - secure-by-default route resource profiles with operator-owned limits.
-
-- [Bounded request collections](79-bounded-request-collections.md) - bounded `List<String>` query/form/JSON inputs with safe defaults.
-
-- [Tenant membership authority](81-tenant-membership-authority.md)
-- [Compiler-enforced tenant isolation](82-compiler-enforced-tenant-isolation.md) - active-tenant proofs, scoped models, and SQL tenant guards.
-
-- [Safe file-upload state machine](84-safe-file-upload-state-machine.md) - staged private uploads, byte-authoritative image inspection, and explicit publish transitions.
+1. Write canonical documentation in English.
+2. Keep Hungarian translations under `hu/` (or use an explicit `_hu` suffix where needed).
+3. Prefer one canonical topic document over per-iteration verification/build-fix Markdown files.
+4. Temporary build-fix notes belong in version control/review history, not in the release documentation tree.

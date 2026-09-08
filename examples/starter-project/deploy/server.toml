@@ -22,6 +22,9 @@ allow_insecure = false
 [auth]
 require_totp = false
 login_max_attempts = 8
+login_principal_max_attempts = 16
+login_source_max_attempts = 64
+mfa_max_attempts = 5
 login_window_secs = 300
 
 [web]

@@ -1,6 +1,6 @@
+use crate::handler_types::StaticType;
 use crate::diagnostics::CompileError;
 use crate::expression::{infer_expr_type, parse_expr_in_namespace};
-use crate::handler_types::StaticType;
 use crate::source_syntax::is_identifier;
 use language_core::{Expr, Program, ValueType};
 use std::collections::HashMap;
@@ -13,19 +13,15 @@ pub(super) fn parse_f32_array_set(
     known: &HashMap<String, StaticType>,
     program: &Program,
 ) -> Result<(String, Expr, Expr), CompileError> {
-    let (lhs, rhs) = text.split_once('=').ok_or_else(|| {
-        CompileError::Syntax(format!("{handler_kind} `{handler_name}` set requires ="))
-    })?;
+    let (lhs, rhs) = text
+        .split_once('=')
+        .ok_or_else(|| CompileError::Syntax(format!("{handler_kind} `{handler_name}` set requires =")))?;
     let lhs = lhs.trim();
     let open = lhs.find('[').ok_or_else(|| {
-        CompileError::Syntax(format!(
-            "{handler_kind} `{handler_name}` set target must be array[index]"
-        ))
+        CompileError::Syntax(format!("{handler_kind} `{handler_name}` set target must be array[index]"))
     })?;
     let close = lhs.rfind(']').ok_or_else(|| {
-        CompileError::Syntax(format!(
-            "{handler_kind} `{handler_name}` set target missing ]"
-        ))
+        CompileError::Syntax(format!("{handler_kind} `{handler_name}` set target missing ]"))
     })?;
     if close != lhs.len() - 1 {
         return Err(CompileError::Syntax(format!(
@@ -34,10 +30,7 @@ pub(super) fn parse_f32_array_set(
     }
     let array = lhs[..open].trim();
     if !is_identifier(array)
-        || !known
-            .get(array)
-            .map(|value| value.is_scalar(ValueType::F32Array))
-            .unwrap_or(false)
+        || !known.get(array).map(|value| value.is_scalar(ValueType::F32Array)).unwrap_or(false)
     {
         return Err(CompileError::Syntax(format!(
             "{handler_kind} `{handler_name}` set target `{array}` is not Array<F32>"

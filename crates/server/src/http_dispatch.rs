@@ -1,22 +1,17 @@
+use crate::response_headers::HeaderName;
+use crate::{AuthRuntime, WebSecurityCliConfig, public_cache_key};
 use crate::auth_http::{auth_login, auth_logout};
 use crate::bootstrap_config::{CachedPage, PublicPageCache};
 use crate::http_io::{HttpRequest, Response};
-use crate::presentation::{
-    accepts_media, authorize_route, conflict_response, endpoint_error, render_form_failure,
-    route_returns_json,
-};
+use crate::presentation::{accepts_media, authorize_route, conflict_response, endpoint_error, render_form_failure, route_returns_json};
 use crate::rate_limit::RouteRateLimiter;
 use crate::request_input::{decode_json_object_limited, media_type_is};
 use crate::web_security::{cors_preflight, validate_browser_state_change};
-use crate::{AuthRuntime, WebSecurityCliConfig, public_cache_key};
 use auth::{SessionBackend, SessionSnapshot};
 use data::{Database, RedisStore};
 use language_core::{AppError, HttpMethod, ServerConfig, Value};
-use observability::{Metrics, server_event, server_log};
-use runtime::{
-    AppResponse, ExecutionLimits, ResourceProfiles, decode_urlencoded_limited,
-    execute_request_with_profiles, route_meta_for_request,
-};
+use observability::{Metrics, server_log};
+use runtime::{AppResponse, ResourceProfiles, decode_urlencoded_limited, route_meta_for_request};
 use std::time::Duration;
 use tokio::time::timeout;
 
@@ -32,6 +27,7 @@ pub(super) async fn dispatch(
     route_rate_limiter: &RouteRateLimiter,
     public_cache: &PublicPageCache,
     idempotency_redis: Option<&RedisStore>,
+    outbound: Option<&dyn runtime::OutboundRuntime>,
     metrics: &Metrics,
     request_id: &str,
     peer_key: &str,
@@ -116,12 +112,7 @@ pub(super) async fn dispatch(
     }
     if let Some(policy) = route.rate_policy.as_deref() {
         match route_rate_limiter
-            .check(
-                policy,
-                &format!("{domain_namespace}:{}", route.name),
-                peer_key,
-                session.principal.as_deref(),
-            )
+            .check(policy, &format!("{domain_namespace}:{}", route.name), peer_key, session.principal.as_deref())
             .await
         {
             Ok((true, _)) => {}
@@ -133,8 +124,7 @@ pub(super) async fn dispatch(
                     "rate_limited",
                     b"rate limit exceeded\n",
                 );
-                r.headers
-                    .push(("Retry-After".into(), retry_after.to_string()));
+                r.push_header(HeaderName::RetryAfter, retry_after.to_string());
                 return r;
             }
             Err(_) => {
@@ -209,14 +199,7 @@ pub(super) async fn dispatch(
                     );
                 }
             };
-            let key = public_cache_key(
-                domain_namespace,
-                route,
-                generation,
-                path,
-                &query_pairs,
-                json_api,
-            );
+            let key = public_cache_key(domain_namespace, route, generation, path, &query_pairs, json_api);
             match public_cache.get(&key).await {
                 Ok(Some(hit)) => {
                     metrics.inc_cache_hit();
@@ -226,21 +209,15 @@ pub(super) async fn dispatch(
                         "text/html; charset=utf-8"
                     };
                     let mut r = Response::new(200, "OK", ct, &hit.body);
-                    r.headers.push((
-                        "Cache-Control".into(),
+                    r.push_header(
+                        HeaderName::CacheControl,
                         format!("public, max-age={}", policy.ttl_secs),
-                    ));
+                    );
                     return r;
                 }
                 Ok(None) => {
                     if public_cache.prune_rebuild_locks().is_err() {
-                        return endpoint_error(
-                            json_api,
-                            503,
-                            "Service Unavailable",
-                            "cache_unavailable",
-                            b"cache unavailable\n",
-                        );
+                        return endpoint_error(json_api, 503, "Service Unavailable", "cache_unavailable", b"cache unavailable\n");
                     }
                     let lock = match public_cache.rebuild_lock(&key) {
                         Ok(v) => v,
@@ -257,27 +234,13 @@ pub(super) async fn dispatch(
                     let permit = match timeout(
                         Duration::from_millis(public_cache.singleflight_wait_timeout_ms()),
                         lock.acquire_owned(),
-                    )
-                    .await
-                    {
+                    ).await {
                         Ok(Ok(v)) => v,
                         Ok(Err(_)) => {
-                            return endpoint_error(
-                                json_api,
-                                503,
-                                "Service Unavailable",
-                                "cache_unavailable",
-                                b"cache unavailable\n",
-                            );
+                            return endpoint_error(json_api, 503, "Service Unavailable", "cache_unavailable", b"cache unavailable\n");
                         }
                         Err(_) => {
-                            return endpoint_error(
-                                json_api,
-                                503,
-                                "Service Unavailable",
-                                "cache_fill_timeout",
-                                b"cache fill wait timeout\n",
-                            );
+                            return endpoint_error(json_api, 503, "Service Unavailable", "cache_fill_timeout", b"cache fill wait timeout\n");
                         }
                     };
                     match public_cache.get(&key).await {
@@ -289,10 +252,10 @@ pub(super) async fn dispatch(
                                 "text/html; charset=utf-8"
                             };
                             let mut r = Response::new(200, "OK", ct, &hit.body);
-                            r.headers.push((
-                                "Cache-Control".into(),
+                            r.push_header(
+                                HeaderName::CacheControl,
                                 format!("public, max-age={}", policy.ttl_secs),
-                            ));
+                            );
                             return r;
                         }
                         Ok(None) => {
@@ -497,40 +460,15 @@ pub(super) async fn dispatch(
         system_values.push(("__flashKind".to_string(), Value::String(flash.kind)));
         system_values.push(("__flashMessage".to_string(), Value::String(flash.message)));
     }
-    let execution = execute_request_with_profiles(
-        program,
-        method,
-        path,
-        &query_pairs,
-        &form_pairs,
-        &ExecutionLimits {
-            max_instructions: config.max_instructions,
-            max_allocated_bytes: config.max_runtime_alloc_bytes,
-        },
-        resource_profiles,
-        &system_values,
-        database,
+    let execution = crate::app_execution::execute(
+        program, method, path, &query_pairs, &form_pairs, config, resource_profiles,
+        &system_values, database, outbound,
     )
     .await;
     if let Err(err) = &execution {
-        let (level, event) = match err {
-            AppError::InstructionLimit => ("warn", "app_instruction_limit"),
-            AppError::MemoryLimit => ("warn", "app_memory_limit"),
-            AppError::Database => ("error", "app_database_error"),
-            AppError::Internal => ("error", "app_internal_error"),
-            _ => ("", ""),
-        };
-        if !event.is_empty() {
-            server_event(
-                level,
-                event,
-                "runtime",
-                &format!(
-                    "request_id={request_id} domain={domain_namespace} route={} method={} path={} error={err}",
-                    route.name, request.method, path
-                ),
-            );
-        }
+        crate::runtime_error_logging::log_runtime_error(
+            err, request_id, domain_namespace, &route.name, &request.method, path,
+        );
     }
     let mut response = match execution {
         Ok(AppResponse::Html(html)) => {
@@ -618,6 +556,20 @@ pub(super) async fn dispatch(
             "resource_limit",
             b"request memory limit exceeded\n",
         ),
+        Err(AppError::DeadlineExceeded) => endpoint_error(
+            json_api,
+            503,
+            "Service Unavailable",
+            "resource_limit",
+            b"request execution deadline exceeded\n",
+        ),
+        Err(AppError::ExternalIoLimit) => endpoint_error(
+            json_api,
+            503,
+            "Service Unavailable",
+            "resource_limit",
+            b"request external I/O limit exceeded\n",
+        ),
         Err(AppError::Database) => endpoint_error(
             json_api,
             503,
@@ -634,17 +586,13 @@ pub(super) async fn dispatch(
         ),
     };
     if had_flash {
-        response
-            .headers
-            .retain(|(name, _)| !name.eq_ignore_ascii_case("cache-control"));
-        response
-            .headers
-            .push(("Cache-Control".into(), "no-store".into()));
+        response.remove_header(HeaderName::CacheControl);
+        response.push_header(HeaderName::CacheControl, "no-store");
     }
     if let (Some(key), Some(policy)) = (cache_key.as_deref(), route.public_cache.as_ref()) {
         if response.status == 200 {
             let cached = CachedPage {
-                content_type: response.content_type.to_string(),
+                content_type: response.content_type().to_string(),
                 body: response.body.clone(),
             };
             if public_cache
@@ -660,10 +608,10 @@ pub(super) async fn dispatch(
                     b"cache unavailable\n",
                 );
             }
-            response.headers.push((
-                "Cache-Control".into(),
+            response.push_header(
+                HeaderName::CacheControl,
                 format!("public, max-age={}", policy.ttl_secs),
-            ));
+            );
         }
     }
     drop(cache_guard);

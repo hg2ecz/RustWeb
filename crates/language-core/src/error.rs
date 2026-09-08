@@ -13,6 +13,8 @@ pub enum AppError {
     Conflict,
     InstructionLimit,
     MemoryLimit,
+    DeadlineExceeded,
+    ExternalIoLimit,
     Database,
     Internal,
 }
@@ -29,6 +31,8 @@ impl fmt::Display for AppError {
             Self::Conflict => "conflict",
             Self::InstructionLimit => "instruction limit exceeded",
             Self::MemoryLimit => "runtime allocation limit exceeded",
+            Self::DeadlineExceeded => "request execution deadline exceeded",
+            Self::ExternalIoLimit => "request external I/O budget exceeded",
             Self::Database => "database operation failed",
             Self::Internal => "internal error",
         })

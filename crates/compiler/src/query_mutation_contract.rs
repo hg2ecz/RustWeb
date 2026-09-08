@@ -31,11 +31,7 @@ pub(super) fn parse_query_contracts(
         return Ok(QueryContracts {
             return_type: return_part.trim().to_string(),
             mutation_target: Some(parse_mutation_target(
-                contract_part.trim(),
-                namespace,
-                program,
-                params,
-                query_name,
+                contract_part.trim(), namespace, program, params, query_name,
             )?),
             credential_lifecycle: None,
         });
@@ -50,12 +46,7 @@ pub(super) fn parse_query_contracts(
                 return_type: return_part.trim().to_string(),
                 mutation_target: None,
                 credential_lifecycle: Some(parse_credential_lifecycle_target(
-                    contract_part.trim(),
-                    namespace,
-                    program,
-                    params,
-                    query_name,
-                    mode,
+                    contract_part.trim(), namespace, program, params, query_name, mode,
                 )?),
             });
         }
@@ -77,9 +68,7 @@ pub(super) fn validate_sql_mutation_contract(
 ) -> Result<(), CompileError> {
     if let Some(target) = lifecycle {
         let expected_keyword = match target.mode {
-            CredentialLifecycleMode::ConsumeReset | CredentialLifecycleMode::RevokeSession => {
-                "DELETE"
-            }
+            CredentialLifecycleMode::ConsumeReset | CredentialLifecycleMode::RevokeSession => "DELETE",
             CredentialLifecycleMode::RotateSession => "UPDATE",
         };
         if sql_keyword != expected_keyword {
@@ -138,23 +127,16 @@ fn parse_mutation_target(
     let model = program
         .model(&model_name)
         .ok_or_else(|| CompileError::UnknownModel(model_name.clone()))?;
-    let field = model
-        .fields
-        .iter()
-        .find(|field| field.name == key)
-        .ok_or_else(|| {
-            CompileError::Syntax(format!(
-                "query `{query_name}` mutation key `{key}` does not exist on model `{model_name}`"
-            ))
-        })?;
-    let param = params
-        .iter()
-        .find(|param| param.name == key)
-        .ok_or_else(|| {
-            CompileError::Syntax(format!(
-                "query `{query_name}` mutation key `{key}` must also be a query parameter"
-            ))
-        })?;
+    let field = model.fields.iter().find(|field| field.name == key).ok_or_else(|| {
+        CompileError::Syntax(format!(
+            "query `{query_name}` mutation key `{key}` does not exist on model `{model_name}`"
+        ))
+    })?;
+    let param = params.iter().find(|param| param.name == key).ok_or_else(|| {
+        CompileError::Syntax(format!(
+            "query `{query_name}` mutation key `{key}` must also be a query parameter"
+        ))
+    })?;
     if param.ty != field.ty || !mutation_key_type_allowed(param.ty) {
         return Err(CompileError::Syntax(format!(
             "query `{query_name}` mutation key `{key}` must have the same scalar type as `{model_name}.{key}`"
@@ -185,7 +167,10 @@ fn parse_credential_lifecycle_target(
             (words[0], words[2], None, None)
         }
         CredentialLifecycleMode::RotateSession
-            if words.len() == 7 && words[1] == "by" && words[3] == "to" && words[5] == "until" =>
+            if words.len() == 7
+                && words[1] == "by"
+                && words[3] == "to"
+                && words[5] == "until" =>
         {
             (words[0], words[2], Some(words[6]), Some(words[4]))
         }
@@ -194,7 +179,9 @@ fn parse_credential_lifecycle_target(
                 CredentialLifecycleMode::ConsumeReset => {
                     "consumes <Model> by <tokenHashField> before <expiresAtField>"
                 }
-                CredentialLifecycleMode::RevokeSession => "revokes <Model> by <tokenHashField>",
+                CredentialLifecycleMode::RevokeSession => {
+                    "revokes <Model> by <tokenHashField>"
+                }
                 CredentialLifecycleMode::RotateSession => {
                     "rotates <Model> by <tokenHashField> to <newTokenHashParam> until <expiresAtField>"
                 }
@@ -222,10 +209,7 @@ fn parse_credential_lifecycle_target(
     {
         return Err(CompileError::security(
             "SEC-A07-009",
-            format!(
-                "{model_name}.{hash_field} must be Secret<{}>",
-                expected_purpose.source_name()
-            ),
+            format!("{model_name}.{hash_field} must be Secret<{}>", expected_purpose.source_name()),
             Some("persist only purpose-matched token hashes in lifecycle state".into()),
         ));
     }
@@ -263,10 +247,7 @@ fn parse_credential_lifecycle_target(
     {
         return Err(CompileError::security(
             "SEC-A07-011",
-            format!(
-                "query `{query_name}` `{hash_field}` parameter must be a presented {} value",
-                expected_purpose.source_name()
-            ),
+            format!("query `{query_name}` `{hash_field}` parameter must be a presented {} value", expected_purpose.source_name()),
             Some("derive it from the presented bearer token with presentedTokenHash(token)".into()),
         ));
     }
@@ -303,11 +284,7 @@ fn validate_lifecycle_sql_predicates(
     target: &CredentialLifecycleTarget,
     sql: &str,
 ) -> Result<(), CompileError> {
-    let normalized = sql
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ")
-        .to_ascii_lowercase();
+    let normalized = sql.split_whitespace().collect::<Vec<_>>().join(" ").to_ascii_lowercase();
     let (mutation_clause, where_clause) = normalized
         .split_once(" where ")
         .unwrap_or((normalized.as_str(), ""));
@@ -357,9 +334,7 @@ fn validate_lifecycle_sql_predicates(
         };
         return Err(CompileError::security(
             "SEC-A07-013",
-            format!(
-                "credential lifecycle query `{query_name}` is missing its atomic lifecycle predicate"
-            ),
+            format!("credential lifecycle query `{query_name}` is missing its atomic lifecycle predicate"),
             Some(help),
         ));
     }
@@ -369,10 +344,6 @@ fn validate_lifecycle_sql_predicates(
 fn mutation_key_type_allowed(value_type: ValueType) -> bool {
     !matches!(
         value_type,
-        ValueType::Upload
-            | ValueType::Image
-            | ValueType::F32Array
-            | ValueType::StringList
-            | ValueType::StringDict
+        ValueType::Upload | ValueType::Image | ValueType::F32Array | ValueType::StringList | ValueType::StringDict
     )
 }

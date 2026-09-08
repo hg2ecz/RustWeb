@@ -11,11 +11,7 @@ pub enum CompileError {
     UnknownVariable(String),
     UnsafeSql(String),
     UnsafeHtml(String),
-    Security {
-        code: &'static str,
-        message: String,
-        help: Option<String>,
-    },
+    Security { code: &'static str, message: String, help: Option<String> },
     UnknownQuery(String),
     UnknownModel(String),
 }
@@ -32,11 +28,7 @@ impl fmt::Display for CompileError {
             Self::UnknownVariable(v) => write!(f, "unknown variable `{v}`"),
             Self::UnsafeSql(v) => write!(f, "security error[SEC-A05-001]: unsafe SQL: {v}"),
             Self::UnsafeHtml(v) => write!(f, "security error[SEC-A05-002]: unsafe HTML: {v}"),
-            Self::Security {
-                code,
-                message,
-                help,
-            } => {
+            Self::Security { code, message, help } => {
                 write!(f, "security error[{code}]: {message}")?;
                 if let Some(help) = help {
                     write!(f, "\nhelp: {help}")?;

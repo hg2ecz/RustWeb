@@ -27,24 +27,16 @@ pub(crate) fn eval(function: BuiltinFunction, stack: &mut Vec<Value>) -> Result<
     match function {
         BuiltinFunction::StringLen => {
             let text = pop_string(stack)?;
-            Ok(Value::Int(
-                text.chars().count().min(i64::MAX as usize) as i64
-            ))
+            Ok(Value::Int(text.chars().count().min(i64::MAX as usize) as i64))
         }
         BuiltinFunction::Trim => unary_string(stack, |text| text.trim().to_owned()),
         BuiltinFunction::TrimStart => unary_string(stack, |text| text.trim_start().to_owned()),
         BuiltinFunction::TrimEnd => unary_string(stack, |text| text.trim_end().to_owned()),
         BuiltinFunction::Lower => unary_string(stack, |text| text.to_lowercase()),
         BuiltinFunction::Upper => unary_string(stack, |text| text.to_uppercase()),
-        BuiltinFunction::Contains => {
-            binary_string_bool(stack, |text, needle| text.contains(needle))
-        }
-        BuiltinFunction::StartsWith => {
-            binary_string_bool(stack, |text, prefix| text.starts_with(prefix))
-        }
-        BuiltinFunction::EndsWith => {
-            binary_string_bool(stack, |text, suffix| text.ends_with(suffix))
-        }
+        BuiltinFunction::Contains => binary_string_bool(stack, |text, needle| text.contains(needle)),
+        BuiltinFunction::StartsWith => binary_string_bool(stack, |text, prefix| text.starts_with(prefix)),
+        BuiltinFunction::EndsWith => binary_string_bool(stack, |text, suffix| text.ends_with(suffix)),
         BuiltinFunction::Replace => replace(stack),
         BuiltinFunction::Split => crate::bounded_strings::split(stack),
         BuiltinFunction::SplitBounded => crate::bounded_strings::split_bounded(stack),
@@ -68,12 +60,8 @@ pub(crate) fn estimated_result_alloc(
         | BuiltinFunction::EndsWith
         | BuiltinFunction::IndexOf
         | BuiltinFunction::LastIndexOf => Ok(0),
-        BuiltinFunction::Trim | BuiltinFunction::TrimStart | BuiltinFunction::TrimEnd => {
-            string_arg_len(stack, 0)
-        }
-        BuiltinFunction::Lower | BuiltinFunction::Upper => {
-            string_arg_len(stack, 0).map(|bytes| bytes.saturating_mul(4))
-        }
+        BuiltinFunction::Trim | BuiltinFunction::TrimStart | BuiltinFunction::TrimEnd => string_arg_len(stack, 0),
+        BuiltinFunction::Lower | BuiltinFunction::Upper => string_arg_len(stack, 0).map(|bytes| bytes.saturating_mul(4)),
         BuiltinFunction::Replace => estimate_replace(stack),
         BuiltinFunction::Split => crate::bounded_strings::estimate_split(stack),
         BuiltinFunction::SplitBounded => crate::bounded_strings::estimate_split_bounded(stack),
@@ -96,19 +84,9 @@ fn replace(stack: &mut Vec<Value>) -> Result<Value, AppError> {
 
 fn substring(stack: &mut Vec<Value>) -> Result<Value, AppError> {
     let has_length = matches!(stack.last(), Some(Value::Int(_)))
-        && matches!(
-            stack.get(stack.len().saturating_sub(2)),
-            Some(Value::Int(_))
-        )
-        && matches!(
-            stack.get(stack.len().saturating_sub(3)),
-            Some(Value::String(_))
-        );
-    let length = if has_length {
-        Some(pop_non_negative_usize(stack)?)
-    } else {
-        None
-    };
+        && matches!(stack.get(stack.len().saturating_sub(2)), Some(Value::Int(_)))
+        && matches!(stack.get(stack.len().saturating_sub(3)), Some(Value::String(_)));
+    let length = if has_length { Some(pop_non_negative_usize(stack)?) } else { None };
     let start = pop_non_negative_usize(stack)?;
     let text = pop_string(stack)?;
     let chars: Vec<char> = text.chars().collect();
@@ -116,10 +94,7 @@ fn substring(stack: &mut Vec<Value>) -> Result<Value, AppError> {
         return Err(AppError::BadRequest);
     }
     let end = match length {
-        Some(length) => start
-            .checked_add(length)
-            .ok_or(AppError::BadRequest)?
-            .min(chars.len()),
+        Some(length) => start.checked_add(length).ok_or(AppError::BadRequest)?.min(chars.len()),
         None => chars.len(),
     };
     Ok(Value::String(chars[start..end].iter().copied().collect()))
@@ -128,25 +103,15 @@ fn substring(stack: &mut Vec<Value>) -> Result<Value, AppError> {
 fn index_of(stack: &mut Vec<Value>, reverse: bool) -> Result<Value, AppError> {
     let needle = pop_string(stack)?;
     let text = pop_string(stack)?;
-    let byte_index = if reverse {
-        text.rfind(needle.as_str())
-    } else {
-        text.find(needle.as_str())
-    };
-    let Some(byte_index) = byte_index else {
-        return Ok(Value::Int(-1));
-    };
-    Ok(Value::Int(
-        text[..byte_index].chars().count().min(i64::MAX as usize) as i64,
-    ))
+    let byte_index = if reverse { text.rfind(needle.as_str()) } else { text.find(needle.as_str()) };
+    let Some(byte_index) = byte_index else { return Ok(Value::Int(-1)); };
+    Ok(Value::Int(text[..byte_index].chars().count().min(i64::MAX as usize) as i64))
 }
 
 fn char_at(stack: &mut Vec<Value>) -> Result<Value, AppError> {
     let index = pop_non_negative_usize(stack)?;
     let text = pop_string(stack)?;
-    let Some(ch) = text.chars().nth(index) else {
-        return Err(AppError::BadRequest);
-    };
+    let Some(ch) = text.chars().nth(index) else { return Err(AppError::BadRequest); };
     Ok(Value::String(ch.to_string()))
 }
 
@@ -157,10 +122,7 @@ fn repeat(stack: &mut Vec<Value>) -> Result<Value, AppError> {
     Ok(Value::String(text.repeat(count)))
 }
 
-fn unary_string(
-    stack: &mut Vec<Value>,
-    operation: impl FnOnce(&str) -> String,
-) -> Result<Value, AppError> {
+fn unary_string(stack: &mut Vec<Value>, operation: impl FnOnce(&str) -> String) -> Result<Value, AppError> {
     let text = pop_string(stack)?;
     Ok(Value::String(operation(&text)))
 }
@@ -189,12 +151,7 @@ fn pop_non_negative_usize(stack: &mut Vec<Value>) -> Result<usize, AppError> {
 }
 
 fn string_arg_len(stack: &[Value], index_from_end: usize) -> Result<u64, AppError> {
-    match stack.get(
-        stack
-            .len()
-            .checked_sub(index_from_end + 1)
-            .ok_or(AppError::Internal)?,
-    ) {
+    match stack.get(stack.len().checked_sub(index_from_end + 1).ok_or(AppError::Internal)?) {
         Some(Value::String(value)) => Ok(value.len() as u64),
         _ => Err(AppError::Internal),
     }
@@ -219,18 +176,11 @@ fn estimate_repeat(stack: &[Value]) -> Result<u64, AppError> {
         _ => return Err(AppError::Internal),
     };
     let text = string_arg(stack, 1)?;
-    (text.len() as u64)
-        .checked_mul(count)
-        .ok_or(AppError::BadRequest)
+    (text.len() as u64).checked_mul(count).ok_or(AppError::BadRequest)
 }
 
 fn string_arg(stack: &[Value], index_from_end: usize) -> Result<&str, AppError> {
-    match stack.get(
-        stack
-            .len()
-            .checked_sub(index_from_end + 1)
-            .ok_or(AppError::Internal)?,
-    ) {
+    match stack.get(stack.len().checked_sub(index_from_end + 1).ok_or(AppError::Internal)?) {
         Some(Value::String(value)) => Ok(value),
         _ => Err(AppError::Internal),
     }
@@ -238,14 +188,9 @@ fn string_arg(stack: &[Value], index_from_end: usize) -> Result<&str, AppError> 
 
 fn estimate_substring(stack: &[Value]) -> Result<u64, AppError> {
     let string_index = if matches!(stack.last(), Some(Value::Int(_)))
-        && matches!(
-            stack.get(stack.len().saturating_sub(2)),
-            Some(Value::Int(_))
-        )
-        && matches!(
-            stack.get(stack.len().saturating_sub(3)),
-            Some(Value::String(_))
-        ) {
+        && matches!(stack.get(stack.len().saturating_sub(2)), Some(Value::Int(_)))
+        && matches!(stack.get(stack.len().saturating_sub(3)), Some(Value::String(_)))
+    {
         2
     } else {
         1
@@ -259,38 +204,19 @@ mod tests {
 
     #[test]
     fn unicode_indices_are_character_based() {
-        let mut stack = vec![
-            Value::String("árvíztűrő".into()),
-            Value::String("tű".into()),
-        ];
-        assert_eq!(
-            eval(BuiltinFunction::IndexOf, &mut stack).unwrap(),
-            Value::Int(5)
-        );
+        let mut stack = vec![Value::String("árvíztűrő".into()), Value::String("tű".into())];
+        assert_eq!(eval(BuiltinFunction::IndexOf, &mut stack).unwrap(), Value::Int(5));
 
         let mut stack = vec![Value::String("árvíz".into()), Value::Int(1), Value::Int(3)];
-        assert_eq!(
-            eval(BuiltinFunction::Substring, &mut stack).unwrap(),
-            Value::String("rví".into())
-        );
+        assert_eq!(eval(BuiltinFunction::Substring, &mut stack).unwrap(), Value::String("rví".into()));
     }
 
     #[test]
     fn replace_and_repeat_are_bounded_by_valid_inputs() {
-        let mut stack = vec![
-            Value::String("a-b-a".into()),
-            Value::String("a".into()),
-            Value::String("x".into()),
-        ];
-        assert_eq!(
-            eval(BuiltinFunction::Replace, &mut stack).unwrap(),
-            Value::String("x-b-x".into())
-        );
+        let mut stack = vec![Value::String("a-b-a".into()), Value::String("a".into()), Value::String("x".into())];
+        assert_eq!(eval(BuiltinFunction::Replace, &mut stack).unwrap(), Value::String("x-b-x".into()));
 
         let mut stack = vec![Value::String("ab".into()), Value::Int(3)];
-        assert_eq!(
-            eval(BuiltinFunction::Repeat, &mut stack).unwrap(),
-            Value::String("ababab".into())
-        );
+        assert_eq!(eval(BuiltinFunction::Repeat, &mut stack).unwrap(), Value::String("ababab".into()));
     }
 }

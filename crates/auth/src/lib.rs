@@ -1,8 +1,8 @@
 use data::RedisStore;
 use std::collections::HashMap;
 use std::fmt;
-use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use std::sync::Mutex;
+use std::time::Duration;
 use totp_rfc::{Secret, Totp, ValidationWindow};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -92,6 +92,15 @@ pub fn verify_totp(secret_bytes: &[u8], unix_seconds: u64, code: &str) -> Result
         .ok_or(AuthError::InvalidSecondFactor)?;
     Ok(matched.counter())
 }
+fn safe_key_component(v: &str) -> String {
+    let mut out = String::with_capacity(v.len() * 2);
+    for b in v.as_bytes() {
+        use std::fmt::Write;
+        let _ = write!(out, "{b:02x}");
+    }
+    out
+}
+
 pub async fn verify_totp_redis(
     redis: &RedisStore,
     credential: &str,
@@ -112,79 +121,8 @@ pub async fn verify_totp_redis(
     }
 }
 
-#[derive(Clone)]
-pub struct LoginRateLimiter {
-    redis: Option<RedisStore>,
-    memory: Arc<Mutex<HashMap<String, (Instant, u32)>>>,
-    pub max_attempts: u32,
-    pub window_secs: u64,
-}
-impl LoginRateLimiter {
-    pub fn memory(max: u32, window: u64) -> Self {
-        Self {
-            redis: None,
-            memory: Arc::new(Mutex::new(HashMap::new())),
-            max_attempts: max,
-            window_secs: window,
-        }
-    }
-    pub fn redis(store: RedisStore, max: u32, window: u64) -> Self {
-        Self {
-            redis: Some(store),
-            memory: Arc::new(Mutex::new(HashMap::new())),
-            max_attempts: max,
-            window_secs: window,
-        }
-    }
-    pub async fn hit(&self, key: &str) -> Result<(), AuthError> {
-        if let Some(r) = &self.redis {
-            let n = r
-                .increment_windowed(
-                    &format!("login-rate:{}", safe_key_component(key)),
-                    self.window_secs,
-                )
-                .await
-                .map_err(|_| AuthError::StoreUnavailable)?;
-            if n > self.max_attempts as i64 {
-                return Err(AuthError::RateLimited);
-            }
-            return Ok(());
-        }
-        let mut m = self.memory.lock().map_err(|_| AuthError::Internal)?;
-        let now = Instant::now();
-        let e = m.entry(key.into()).or_insert((now, 0));
-        if now.duration_since(e.0) >= Duration::from_secs(self.window_secs) {
-            *e = (now, 0)
-        }
-        e.1 += 1;
-        if e.1 > self.max_attempts {
-            Err(AuthError::RateLimited)
-        } else {
-            Ok(())
-        }
-    }
-    pub async fn clear(&self, key: &str) -> Result<(), AuthError> {
-        if let Some(r) = &self.redis {
-            r.delete(&format!("login-rate:{}", safe_key_component(key)))
-                .await
-                .map_err(|_| AuthError::StoreUnavailable)?;
-            return Ok(());
-        }
-        self.memory
-            .lock()
-            .map_err(|_| AuthError::Internal)?
-            .remove(key);
-        Ok(())
-    }
-}
-fn safe_key_component(v: &str) -> String {
-    let mut out = String::with_capacity(v.len() * 2);
-    for b in v.as_bytes() {
-        use std::fmt::Write;
-        let _ = write!(out, "{b:02x}");
-    }
-    out
-}
+mod abuse;
+pub use abuse::{AuthAbuseLimiter, AuthAbusePolicy, AuthAbuseStage};
 
 #[derive(Clone)]
 pub struct LdapConfig {

@@ -1,4 +1,5 @@
-use language_core::ServerConfig;
+use crate::response_headers::{HeaderName, ResponseHeader};
+use language_core::{MediaType, ServerConfig};
 use std::io;
 use std::time::Duration;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
@@ -7,37 +8,87 @@ use tokio::time::timeout;
 pub(super) struct Response {
     pub(super) status: u16,
     pub(super) reason: &'static str,
-    pub(super) content_type: &'static str,
+    content_type: MediaType,
     pub(super) body: Vec<u8>,
-    pub(super) headers: Vec<(String, String)>,
+    headers: Vec<ResponseHeader>,
+    metadata_valid: bool,
     pub(super) content_length_override: Option<usize>,
     pub(super) suppress_body: bool,
 }
 
 impl Response {
-    pub(super) fn new(
-        status: u16,
-        reason: &'static str,
-        content_type: &'static str,
-        body: &[u8],
-    ) -> Self {
+    pub(super) fn new(status: u16, reason: &'static str, content_type: &str, body: &[u8]) -> Self {
+        let parsed_content_type = MediaType::new(content_type);
+        let metadata_valid = parsed_content_type.is_some();
         Self {
             status,
             reason,
-            content_type,
+            content_type: parsed_content_type
+                .unwrap_or_else(|| MediaType::new("application/octet-stream").unwrap()),
             body: body.to_vec(),
             headers: Vec::new(),
+            metadata_valid,
             content_length_override: None,
             suppress_body: false,
         }
     }
+
     pub(super) fn text(status: u16, reason: &'static str, body: &[u8]) -> Self {
         Self::new(status, reason, "text/plain; charset=utf-8", body)
     }
+
     pub(super) fn redirect(status: u16, reason: &'static str, location: &str) -> Self {
         let mut response = Self::new(status, reason, "text/plain; charset=utf-8", b"redirect\n");
-        response.headers.push(("Location".into(), location.into()));
+        response.push_header(HeaderName::Location, location);
         response
+    }
+
+    pub(super) fn content_type(&self) -> &str {
+        self.content_type.as_str()
+    }
+
+    pub(super) fn push_header(&mut self, name: HeaderName, value: impl Into<String>) {
+        let Some(header) = ResponseHeader::new(name, value) else {
+            self.metadata_valid = false;
+            return;
+        };
+        self.headers.push(header);
+    }
+
+    pub(super) fn has_header(&self, name: HeaderName) -> bool {
+        self.headers.iter().any(|header| header.name() == name)
+    }
+
+    pub(super) fn remove_header(&mut self, name: HeaderName) {
+        self.headers.retain(|header| header.name() != name);
+    }
+
+    pub(super) fn stored_headers(&self) -> Vec<(String, String)> {
+        self.headers
+            .iter()
+            .map(|header| (header.name().as_str().to_string(), header.value().to_string()))
+            .collect()
+    }
+
+    pub(super) fn restore_headers(&mut self, headers: Vec<(String, String)>) -> bool {
+        for (name, value) in headers {
+            let Some(name) = HeaderName::parse(&name) else {
+                self.metadata_valid = false;
+                return false;
+            };
+            self.push_header(name, value);
+        }
+        self.metadata_valid
+    }
+
+    pub(super) fn headers(&self) -> impl Iterator<Item = (&str, &str)> {
+        self.headers
+            .iter()
+            .map(|header| (header.name().as_str(), header.value()))
+    }
+
+    pub(super) fn metadata_valid(&self) -> bool {
+        self.metadata_valid
     }
 }
 
@@ -203,10 +254,7 @@ pub(super) struct ParsedHead {
     pub(super) keep_alive: bool,
 }
 
-pub(super) fn parse_request_head(
-    head: &str,
-    max_header_count: usize,
-) -> Result<ParsedHead, HttpReadError> {
+pub(super) fn parse_request_head(head: &str, max_header_count: usize) -> Result<ParsedHead, HttpReadError> {
     let mut lines = head.split("\r\n");
     let request_line = lines.next().ok_or(HttpReadError::BadRequest)?;
     let mut parts = request_line.split(' ');
@@ -318,6 +366,11 @@ pub(super) fn parse_request_head(
                     return Err(HttpReadError::BadRequest);
                 }
             }
+            "content-encoding" => {
+                if !value.eq_ignore_ascii_case("identity") {
+                    return Err(HttpReadError::BadRequest);
+                }
+            }
             "x-csrf-token" => {
                 csrf_header_count += 1;
                 if csrf_header_count > 1 || value.is_empty() {
@@ -412,12 +465,18 @@ pub(super) async fn write_response_with_timeout<S>(
 where
     S: AsyncWrite + Unpin,
 {
+    if !response.metadata_valid() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "response contains invalid typed HTTP metadata",
+        ));
+    }
     let deadline = Duration::from_millis(config.write_timeout_ms);
     let mut head = format!(
         "HTTP/1.1 {} {}\r\nContent-Type: {}\r\nContent-Length: {}\r\nConnection: {}\r\n",
         response.status,
         response.reason,
-        response.content_type,
+        response.content_type(),
         response
             .content_length_override
             .unwrap_or(response.body.len()),
@@ -428,27 +487,24 @@ where
         head.push_str("Strict-Transport-Security: max-age=31536000\r\n");
     }
     head.push_str("Referrer-Policy: no-referrer\r\n");
-    head.push_str("Content-Security-Policy: default-src 'none'; style-src 'self'; img-src 'self' data:; font-src 'self'; media-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'\r\n");
+    let csp = crate::security_headers::content_security_policy(response.content_type(), &response.body);
+    head.push_str("Content-Security-Policy: ");
+    head.push_str(&csp);
+    head.push_str("\r\n");
     head.push_str("Cross-Origin-Opener-Policy: same-origin\r\n");
-    let cors_response = response
-        .headers
-        .iter()
-        .any(|(name, _)| name.eq_ignore_ascii_case("access-control-allow-origin"));
+    let cors_response = response.has_header(HeaderName::AccessControlAllowOrigin);
     head.push_str(if cors_response {
         "Cross-Origin-Resource-Policy: cross-origin\r\n"
     } else {
         "Cross-Origin-Resource-Policy: same-origin\r\n"
     });
     head.push_str("X-Frame-Options: DENY\r\n");
-    if !response
-        .headers
-        .iter()
-        .any(|(name, _)| name.eq_ignore_ascii_case("cache-control"))
+    if !response.has_header(HeaderName::CacheControl)
     {
         head.push_str("Cache-Control: no-store\r\n");
     }
     head.push_str("Permissions-Policy: camera=(), microphone=(), geolocation=()\r\n");
-    for (name, value) in &response.headers {
+    for (name, value) in response.headers() {
         head.push_str(name);
         head.push_str(": ");
         head.push_str(value);
@@ -466,4 +522,26 @@ where
     .await
     .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "response write timeout"))??;
     Ok(())
+}
+
+#[cfg(test)]
+mod response_metadata_tests {
+    use super::Response;
+    use crate::response_headers::HeaderName;
+
+    #[test]
+    fn invalid_dynamic_header_marks_response_fail_closed() {
+        let mut response = Response::text(200, "OK", b"ok");
+        response.push_header(
+            HeaderName::Location,
+            "/safe\r\nSet-Cookie: injected=1",
+        );
+        assert!(!response.metadata_valid());
+    }
+
+    #[test]
+    fn invalid_media_type_marks_response_fail_closed() {
+        let response = Response::new(200, "OK", "text/plain\r\nX-Evil: 1", b"ok");
+        assert!(!response.metadata_valid());
+    }
 }

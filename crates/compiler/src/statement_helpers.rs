@@ -2,23 +2,17 @@ use crate::diagnostics::CompileError;
 use crate::domain_symbols::{display_domain_symbol, internal_domain_symbol};
 use crate::expression::{infer_expr_type, parse_expr_in_namespace, validate_expr};
 use crate::handler_types::{StaticType, query_static_type};
-use crate::module_namespace::{is_symbol_path, last_segment, resolve};
 use crate::mutation_security::{validate_mutation_call, validate_mutation_inputs};
 use crate::secret_usage::{reject_audit_secret, validate_query_argument};
+use crate::module_namespace::{is_symbol_path, last_segment, resolve};
 use crate::source_syntax::{read_ident, split_top_level};
 use crate::type_semantics::display;
 use language_core::{BusinessAudit, Program, QueryCall, QueryCapability, ValueType};
 use std::collections::HashMap;
 
+
 fn audit_object_id_type_allowed(ty: ValueType) -> bool {
-    !matches!(
-        ty,
-        ValueType::Image
-            | ValueType::Upload
-            | ValueType::F32Array
-            | ValueType::StringList
-            | ValueType::StringDict
-    )
+    !matches!(ty, ValueType::Image | ValueType::Upload | ValueType::F32Array | ValueType::StringList | ValueType::StringDict)
 }
 fn audit_change_type_allowed(ty: ValueType) -> bool {
     !matches!(
@@ -142,6 +136,7 @@ pub(super) fn parse_business_audit(
     })
 }
 
+
 pub(super) fn parse_query_call(
     rhs: &str,
     namespace: &str,
@@ -158,8 +153,7 @@ pub(super) fn parse_query_call(
         return Ok(None);
     }
     let source_qname = rhs[..open].trim();
-    let Some(qname) = internal_domain_symbol(source_qname).map(|name| resolve(namespace, &name))
-    else {
+    let Some(qname) = internal_domain_symbol(source_qname).map(|name| resolve(namespace, &name)) else {
         return Ok(None);
     };
     let q = match p.query(&qname) {
@@ -247,13 +241,11 @@ pub(super) fn parse_security_event(
         )));
     }
     let event_name = resolve(namespace, event_raw);
-    let event = p.security_event(&event_name).ok_or_else(|| {
-        CompileError::security(
-            "SEC-A09-003",
-            format!("action `{handler}` references unknown security event `{event_raw}`"),
-            Some("declare it with `security event Name for Model;`".into()),
-        )
-    })?;
+    let event = p.security_event(&event_name).ok_or_else(|| CompileError::security(
+        "SEC-A09-003",
+        format!("action `{handler}` references unknown security event `{event_raw}`"),
+        Some("declare it with `security event Name for Model;`".into()),
+    ))?;
     let tail = rest[event_raw.len()..].trim();
     let (object_id_raw, changes) = match tail.find(" from ") {
         Some(pos) => (&tail[..pos], Some(&tail[pos + " from ".len()..])),
@@ -274,11 +266,9 @@ pub(super) fn parse_security_event(
         )));
     }
     let (previous, new_value) = if let Some(change) = changes {
-        let to_pos = change.find(" to ").ok_or_else(|| {
-            CompileError::Syntax(format!(
-                "action `{handler}` security event change must use `from <old> to <new>`"
-            ))
-        })?;
+        let to_pos = change.find(" to ").ok_or_else(|| CompileError::Syntax(format!(
+            "action `{handler}` security event change must use `from <old> to <new>`"
+        )))?;
         let old = parse_expr_in_namespace(change[..to_pos].trim(), namespace, p)?;
         let new = parse_expr_in_namespace(change[to_pos + 4..].trim(), namespace, p)?;
         validate_expr(&old, known, p)?;
@@ -290,9 +280,7 @@ pub(super) fn parse_security_event(
         if old_ty != new_ty || !audit_change_type_allowed(old_ty) {
             return Err(CompileError::security(
                 "SEC-A09-004",
-                format!(
-                    "security event `{event_raw}` from/to values must use the same auditable non-sensitive scalar type"
-                ),
+                format!("security event `{event_raw}` from/to values must use the same auditable non-sensitive scalar type"),
                 None,
             ));
         }
@@ -303,12 +291,7 @@ pub(super) fn parse_security_event(
     Ok(BusinessAudit {
         object_type: event.object_type.clone(),
         object_id,
-        action: event
-            .name
-            .rsplit("::")
-            .next()
-            .unwrap_or(&event.name)
-            .to_string(),
+        action: event.name.rsplit("::").next().unwrap_or(&event.name).to_string(),
         previous,
         new_value,
         source_action: display_domain_symbol(handler),

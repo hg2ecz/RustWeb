@@ -24,9 +24,7 @@ impl PublicError {
     }
 
     pub fn from_source_name(name: &str) -> Option<Self> {
-        Self::ALL
-            .into_iter()
-            .find(|value| value.source_name() == name)
+        Self::ALL.into_iter().find(|value| value.source_name() == name)
     }
 }
 
@@ -40,10 +38,7 @@ mod tests {
         for error in PublicError::ALL {
             assert!(matches!(
                 AppError::from(error),
-                AppError::BadRequest
-                    | AppError::NotFound
-                    | AppError::Forbidden
-                    | AppError::Conflict
+                AppError::BadRequest | AppError::NotFound | AppError::Forbidden | AppError::Conflict
             ));
         }
     }

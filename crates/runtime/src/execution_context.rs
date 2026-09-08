@@ -110,6 +110,7 @@ struct ScopeBudget {
 pub(crate) struct Budget {
     request_instructions: u64,
     request_alloc_bytes: u64,
+    request_external_bytes: u64,
     scopes: Vec<ScopeBudget>,
 }
 impl Budget {
@@ -117,6 +118,7 @@ impl Budget {
         Self {
             request_instructions: request.max_instructions,
             request_alloc_bytes: request.max_allocated_bytes,
+            request_external_bytes: request.max_allocated_bytes.saturating_mul(2),
             scopes: vec![ScopeBudget {
                 remaining_instructions: default.max_instructions,
                 remaining_alloc_bytes: default.max_allocated_bytes,
@@ -161,6 +163,13 @@ impl Budget {
             .remaining_alloc_bytes
             .checked_sub(n)
             .ok_or(AppError::MemoryLimit)?;
+        Ok(())
+    }
+    pub(crate) fn charge_external_io(&mut self, n: u64) -> Result<(), AppError> {
+        self.request_external_bytes = self
+            .request_external_bytes
+            .checked_sub(n)
+            .ok_or(AppError::ExternalIoLimit)?;
         Ok(())
     }
     pub(crate) fn charge_value(&mut self, v: &Value) -> Result<(), AppError> {

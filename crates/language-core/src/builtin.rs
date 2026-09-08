@@ -62,10 +62,15 @@ pub enum BuiltinFunction {
     PresentedTokenHash,
     TokenMatches,
     TokenActive,
+    SignWebhook,
+    VerifyWebhookSignature,
+    EncryptUserData,
+    DecryptUserData,
+    Redact,
 }
 
 impl BuiltinFunction {
-    pub const ALL: [Self; 46] = [
+    pub const ALL: [Self; 51] = [
         Self::Sin,
         Self::Cos,
         Self::Sqrt,
@@ -112,6 +117,11 @@ impl BuiltinFunction {
         Self::PresentedTokenHash,
         Self::TokenMatches,
         Self::TokenActive,
+        Self::SignWebhook,
+        Self::VerifyWebhookSignature,
+        Self::EncryptUserData,
+        Self::DecryptUserData,
+        Self::Redact,
     ];
 
     pub fn from_source_name(name: &str) -> Option<Self> {
@@ -168,11 +178,14 @@ impl BuiltinFunction {
             Self::PresentedTokenHash => ("presentedTokenHash", 1, 1, 12, false),
             Self::TokenMatches => ("tokenMatches", 2, 2, 12, false),
             Self::TokenActive => ("tokenActive", 3, 3, 14, false),
+            Self::SignWebhook => ("signWebhook", 2, 2, 18, false),
+            Self::VerifyWebhookSignature => ("verifyWebhookSignature", 3, 3, 20, false),
+            Self::EncryptUserData => ("encryptUserData", 2, 2, 32, false),
+            Self::DecryptUserData => ("decryptUserData", 2, 2, 32, false),
+            Self::Redact => ("redact", 1, 1, 2, false),
         };
         let execution_kind = match self {
-            Self::RegexMatch | Self::RegexReplace | Self::RegexCaptures => {
-                BuiltinExecutionKind::Regex
-            }
+            Self::RegexMatch | Self::RegexReplace | Self::RegexCaptures => BuiltinExecutionKind::Regex,
             _ => BuiltinExecutionKind::Simple,
         };
         BuiltinMetadata {
@@ -202,3 +215,4 @@ impl BuiltinFunction {
         count >= metadata.min_args && count <= metadata.max_args
     }
 }
+

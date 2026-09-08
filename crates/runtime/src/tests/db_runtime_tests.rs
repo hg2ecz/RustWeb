@@ -57,7 +57,7 @@ model Product {
     price: Int
 }
 query fn listProducts(db: Db) -> Result<List<Product>, DbError> sql {
-    SELECT id, name, price FROM products ORDER BY id
+    SELECT id, name, price FROM products ORDER BY id LIMIT 100
 }
 query fn findProduct(db: Db, id: Int) -> Result<Product?, DbError> sql {
     SELECT id, name, price FROM products WHERE id = :id

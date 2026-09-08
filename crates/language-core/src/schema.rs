@@ -1,5 +1,6 @@
 use crate::{FunctionParam, ValueType};
 
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EnumDef {
     pub name: String,

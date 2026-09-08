@@ -181,11 +181,7 @@ impl fmt::Display for SecretFileError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Read { path, source } => {
-                write!(
-                    f,
-                    "failed to read secret file `{}`: {source}",
-                    path.display()
-                )
+                write!(f, "failed to read secret file `{}`: {source}", path.display())
             }
             Self::Empty { path } => write!(f, "secret file `{}` is empty", path.display()),
         }
@@ -201,18 +197,19 @@ impl Error for SecretFileError {
     }
 }
 
+
 mod auth_setup;
 mod backend;
 mod cli;
-mod orchestration;
 mod policy_config;
 mod runtime_boundary;
 mod source_reload;
+mod orchestration;
 
 pub(super) use auth_setup::AuthSetupError;
 pub(super) use backend::BackendSupportError;
 pub(super) use cli::{CliParseError, CliValueError, ReservedPathError};
-pub(super) use orchestration::{ConnectionError, StartupError};
 pub(super) use policy_config::{RatePolicyConfigError, ResourceProfileConfigError};
 pub(super) use runtime_boundary::{ClockError, PublicCacheError, UploadRuntimeError};
 pub(super) use source_reload::SourceReloadError;
+pub(super) use orchestration::{ConnectionError, StartupError};

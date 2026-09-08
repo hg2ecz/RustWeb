@@ -16,10 +16,7 @@ pub(super) fn parse(
             continue;
         }
         let (constraint, next) = parse_constraint(name, base, &tokens, index)?;
-        if constraints
-            .iter()
-            .any(|existing| same_constraint_kind(existing, &constraint))
-        {
+        if constraints.iter().any(|existing| same_constraint_kind(existing, &constraint)) {
             return Err(CompileError::Syntax(format!(
                 "type `{name}` contains a duplicate constraint kind"
             )));
@@ -88,10 +85,7 @@ fn same_constraint_kind(left: &ValidationKind, right: &ValidationKind) -> bool {
         (left, right),
         (ValidationKind::Length { .. }, ValidationKind::Length { .. })
             | (ValidationKind::Range { .. }, ValidationKind::Range { .. })
-            | (
-                ValidationKind::Pattern { .. },
-                ValidationKind::Pattern { .. }
-            )
+            | (ValidationKind::Pattern { .. }, ValidationKind::Pattern { .. })
     )
 }
 
@@ -107,11 +101,10 @@ fn parse_i64(name: &str, raw: Option<&String>, label: &str) -> Result<i64, Compi
         .map_err(|_| CompileError::Syntax(format!("type `{name}` {label} must be an integer")))
 }
 
+
 pub(super) fn apply_safe_defaults(base: ValueType, constraints: &mut Vec<ValidationKind>) {
     if base == ValueType::String
-        && !constraints
-            .iter()
-            .any(|value| matches!(value, ValidationKind::Length { .. }))
+        && !constraints.iter().any(|value| matches!(value, ValidationKind::Length { .. }))
     {
         constraints.insert(0, ValidationKind::Length { min: 0, max: 4096 });
     }

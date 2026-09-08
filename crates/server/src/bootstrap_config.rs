@@ -1,14 +1,8 @@
-use crate::rate_limit::{RatePolicy, RateScope};
+use crate::{AuthCliConfig, CacheCliConfig, LifecycleCliConfig, ObservabilityCliConfig, StaticAssetsCliConfig, StorageCliConfig, TlsCliConfig, WebSecurityCliConfig, unix_secs};
 use crate::resource_limits::ResourceLimitConfig;
+use crate::rate_limit::{RatePolicy, RateScope};
 use crate::server_config_file::SourceReloadCliConfig;
-use crate::server_errors::{
-    CliValueError, PublicCacheError, RatePolicyConfigError, ResourceProfileConfigError,
-    SecretFileError,
-};
-use crate::{
-    AuthCliConfig, CacheCliConfig, LifecycleCliConfig, ObservabilityCliConfig,
-    StaticAssetsCliConfig, StorageCliConfig, TlsCliConfig, WebSecurityCliConfig, unix_secs,
-};
+use crate::server_errors::{CliValueError, PublicCacheError, RatePolicyConfigError, ResourceProfileConfigError, SecretFileError};
 use data::RedisStore;
 use language_core::{RouteAuth, ServerConfig};
 use observability::{LogConfig, audit_log, utc_timestamp};
@@ -61,13 +55,12 @@ pub(super) fn print_effective_config(
         auth.require_totp
     );
     println!(
-        "[web]\ntrusted_proxy_count = {}\ncors_origin_count = {}\ncors_allow_credentials = {}\nwebhook_secrets_dir = {:?}",
+        "[web]\ntrusted_proxy_count = {}\ncors_origin_count = {}\ncors_allow_credentials = {}\nwebhook_secrets_dir = {:?}\negress_policy_file = {:?}",
         web.trusted_proxy_cidrs.len(),
         web.cors_origins.len(),
         web.cors_allow_credentials,
-        web.webhook_secrets_dir
-            .as_ref()
-            .map(|p| p.display().to_string())
+        web.webhook_secrets_dir.as_ref().map(|p| p.display().to_string()),
+        web.egress_policy_file.as_ref().map(|p| p.display().to_string())
     );
     println!(
         "[storage]\ndata_root = {:?}\nfs_mode = {:?}\nmax_upload_bytes = {}\nmax_image_pixels = {}",
@@ -177,19 +170,13 @@ impl PublicPageCache {
         self.singleflight_wait_timeout_ms
     }
     pub(super) fn prune_rebuild_locks(&self) -> Result<(), PublicCacheError> {
-        let mut locks = self
-            .rebuild_locks
-            .lock()
-            .map_err(|_| PublicCacheError::LockPoisoned("rebuild"))?;
+        let mut locks = self.rebuild_locks.lock().map_err(|_| PublicCacheError::LockPoisoned("rebuild"))?;
         if locks.len() >= 10_000 {
             locks.retain(|_, lock| Arc::strong_count(lock) > 1 || lock.available_permits() == 0);
         }
         Ok(())
     }
-    pub(super) fn rebuild_lock(
-        &self,
-        key: &str,
-    ) -> Result<Arc<tokio::sync::Semaphore>, PublicCacheError> {
+    pub(super) fn rebuild_lock(&self, key: &str) -> Result<Arc<tokio::sync::Semaphore>, PublicCacheError> {
         let mut locks = self
             .rebuild_locks
             .lock()
@@ -219,7 +206,9 @@ impl PublicPageCache {
     }
     pub(super) async fn invalidate_route(&self, route: &str) -> Result<(), PublicCacheError> {
         if let Some(redis) = &self.redis {
-            redis.increment(&format!("generation:{route}"), 1).await?;
+            redis
+                .increment(&format!("generation:{route}"), 1)
+                .await?;
             return Ok(());
         }
         let mut g = self
@@ -232,10 +221,11 @@ impl PublicPageCache {
     }
     pub(super) async fn get(&self, key: &str) -> Result<Option<CachedPage>, PublicCacheError> {
         if let Some(redis) = &self.redis {
-            let raw = redis.get(&format!("page:{key}")).await?;
-            return raw
-                .map(|v| serde_json::from_slice(&v).map_err(PublicCacheError::from))
-                .transpose();
+            let raw = redis
+                .get(&format!("page:{key}"))
+                .await
+                ?;
+            return raw.map(|v| serde_json::from_slice(&v).map_err(PublicCacheError::from)).transpose();
         }
         let now = unix_secs()?;
         let mut map = self
@@ -247,12 +237,7 @@ impl PublicPageCache {
         }
         Ok(map.get(key).map(|e| e.value.clone()))
     }
-    pub(super) async fn set(
-        &self,
-        key: &str,
-        value: CachedPage,
-        ttl: u64,
-    ) -> Result<(), PublicCacheError> {
+    pub(super) async fn set(&self, key: &str, value: CachedPage, ttl: u64) -> Result<(), PublicCacheError> {
         if let Some(redis) = &self.redis {
             let raw = serde_json::to_vec(&value)?;
             return redis
@@ -340,20 +325,16 @@ pub(super) fn load_rate_policies(
             section = Some(name.into());
             continue;
         }
-        let name = section
-            .clone()
-            .ok_or_else(|| RatePolicyConfigError::Syntax {
-                path: path.to_path_buf(),
-                line: line_no,
-                message: "key outside policy section".into(),
-            })?;
-        let (k, v) = line
-            .split_once('=')
-            .ok_or_else(|| RatePolicyConfigError::Syntax {
-                path: path.to_path_buf(),
-                line: line_no,
-                message: "expected key = value".into(),
-            })?;
+        let name = section.clone().ok_or_else(|| RatePolicyConfigError::Syntax {
+            path: path.to_path_buf(),
+            line: line_no,
+            message: "key outside policy section".into(),
+        })?;
+        let (k, v) = line.split_once('=').ok_or_else(|| RatePolicyConfigError::Syntax {
+            path: path.to_path_buf(),
+            line: line_no,
+            message: "expected key = value".into(),
+        })?;
         let key = k.trim().to_string();
         let map = raw.get_mut(&name).expect("section inserted");
         if map.contains_key(&key) {
@@ -368,42 +349,28 @@ pub(super) fn load_rate_policies(
 
     let mut out = HashMap::new();
     for (name, values) in raw {
-        let limit_raw = values
-            .get("limit")
-            .ok_or_else(|| RatePolicyConfigError::MissingField {
-                policy: name.clone(),
-                field: "limit",
-            })?;
-        let limit = limit_raw
-            .parse()
-            .map_err(|source| RatePolicyConfigError::InvalidNumber {
-                policy: name.clone(),
-                field: "limit",
-                source,
-            })?;
-        let window_raw =
-            values
-                .get("window_secs")
-                .ok_or_else(|| RatePolicyConfigError::MissingField {
-                    policy: name.clone(),
-                    field: "window_secs",
-                })?;
-        let window_secs =
-            window_raw
-                .parse()
-                .map_err(|source| RatePolicyConfigError::InvalidNumber {
-                    policy: name.clone(),
-                    field: "window_secs",
-                    source,
-                })?;
+        let limit_raw = values.get("limit").ok_or_else(|| RatePolicyConfigError::MissingField {
+            policy: name.clone(),
+            field: "limit",
+        })?;
+        let limit = limit_raw.parse().map_err(|source| RatePolicyConfigError::InvalidNumber {
+            policy: name.clone(),
+            field: "limit",
+            source,
+        })?;
+        let window_raw = values.get("window_secs").ok_or_else(|| RatePolicyConfigError::MissingField {
+            policy: name.clone(),
+            field: "window_secs",
+        })?;
+        let window_secs = window_raw.parse().map_err(|source| RatePolicyConfigError::InvalidNumber {
+            policy: name.clone(),
+            field: "window_secs",
+            source,
+        })?;
         if limit == 0 || window_secs == 0 || window_secs > 604799 {
             return Err(RatePolicyConfigError::InvalidLimits { policy: name });
         }
-        let scope = match values
-            .get("scope")
-            .map(String::as_str)
-            .unwrap_or("ip_route")
-        {
+        let scope = match values.get("scope").map(String::as_str).unwrap_or("ip_route") {
             "ip" => RateScope::Ip,
             "route" => RateScope::Route,
             "ip_route" => RateScope::IpRoute,
@@ -413,7 +380,7 @@ pub(super) fn load_rate_policies(
                 return Err(RatePolicyConfigError::UnknownScope {
                     policy: name,
                     scope: other.into(),
-                });
+                })
             }
         };
         for key in values.keys() {
@@ -424,14 +391,7 @@ pub(super) fn load_rate_policies(
                 });
             }
         }
-        out.insert(
-            name,
-            RatePolicy {
-                limit,
-                window_secs,
-                scope,
-            },
-        );
+        out.insert(name, RatePolicy { limit, window_secs, scope });
     }
     Ok(out)
 }
@@ -442,13 +402,10 @@ pub(super) fn validate_route_rate_policies(
 ) -> Result<(), RatePolicyConfigError> {
     for route in &program.routes {
         if let Some(name) = route.rate_policy.as_deref() {
-            let policy =
-                policies
-                    .get(name)
-                    .ok_or_else(|| RatePolicyConfigError::UnknownRoutePolicy {
-                        route: route.name.clone(),
-                        policy: name.to_string(),
-                    })?;
+            let policy = policies.get(name).ok_or_else(|| RatePolicyConfigError::UnknownRoutePolicy {
+                route: route.name.clone(),
+                policy: name.to_string(),
+            })?;
             if matches!(policy.scope, RateScope::User | RateScope::UserRoute)
                 && matches!(route.auth, RouteAuth::Public | RouteAuth::Webhook(_))
             {
@@ -506,49 +463,34 @@ pub(super) fn load_resource_profiles(
                 message: "resource profile key outside a section".into(),
             });
         }
-        let (key, val) =
-            line.split_once('=')
-                .ok_or_else(|| ResourceProfileConfigError::Syntax {
-                    path: path.to_path_buf(),
-                    line: line_no,
-                    message: "expected key = value".into(),
-                })?;
+        let (key, val) = line.split_once('=').ok_or_else(|| ResourceProfileConfigError::Syntax {
+            path: path.to_path_buf(),
+            line: line_no,
+            message: "expected key = value".into(),
+        })?;
         let key = key.trim();
-        if !matches!(
-            key,
-            "max_instructions" | "max_alloc_bytes" | "max_concurrent"
-        ) {
+        if !matches!(key, "max_instructions" | "max_alloc_bytes" | "max_concurrent") {
             return Err(ResourceProfileConfigError::Syntax {
                 path: path.to_path_buf(),
                 line: line_no,
                 message: format!("unknown resource profile key `{key}`"),
             });
         }
-        let value =
-            val.trim()
-                .parse()
-                .map_err(|source| ResourceProfileConfigError::InvalidNumber {
-                    path: path.to_path_buf(),
-                    line: line_no,
-                    key: key.to_string(),
-                    source,
-                })?;
-        values
-            .entry(section.clone())
-            .or_default()
-            .insert(key.into(), value);
+        let value = val.trim().parse().map_err(|source| ResourceProfileConfigError::InvalidNumber {
+            path: path.to_path_buf(),
+            line: line_no,
+            key: key.to_string(),
+            source,
+        })?;
+        values.entry(section.clone()).or_default().insert(key.into(), value);
     }
 
-    let build = |name: &str,
-                 map: &HashMap<String, u64>|
-     -> Result<ResourceProfileConfig, ResourceProfileConfigError> {
+    let build = |name: &str, map: &HashMap<String, u64>| -> Result<ResourceProfileConfig, ResourceProfileConfigError> {
         let get = |field: &'static str| {
-            map.get(field)
-                .copied()
-                .ok_or_else(|| ResourceProfileConfigError::MissingField {
-                    profile: name.to_string(),
-                    field,
-                })
+            map.get(field).copied().ok_or_else(|| ResourceProfileConfigError::MissingField {
+                profile: name.to_string(),
+                field,
+            })
         };
         let max_concurrent_raw = get("max_concurrent")?;
         let config = ResourceProfileConfig {
@@ -571,20 +513,14 @@ pub(super) fn load_resource_profiles(
         Ok(config)
     };
 
-    if let Some(values) = values
-        .get("default")
-        .or_else(|| values.get("profile.default"))
-    {
+    if let Some(values) = values.get("default").or_else(|| values.get("profile.default")) {
         default = build("default", values)?;
     }
     for (section, values) in values {
         if section == "default" || section == "profile.default" {
             continue;
         }
-        let name = section
-            .strip_prefix("profile.")
-            .expect("validated profile section")
-            .to_string();
+        let name = section.strip_prefix("profile.").expect("validated profile section").to_string();
         named.insert(name.clone(), build(&name, &values)?);
     }
     ResourceProfiles::new(default, named).map_err(ResourceProfileConfigError::from)
@@ -596,13 +532,11 @@ pub(super) fn audit_resource_profiles(
 ) -> Result<(), ResourceProfileConfigError> {
     let default = profiles.default_config();
     for use_site in &program.resource_uses {
-        let cfg = profiles.config(&use_site.profile).ok_or_else(|| {
-            ResourceProfileConfigError::UnknownProfileUse {
-                file: use_site.source.file.clone(),
-                line: use_site.source.line,
-                function: use_site.source.function.clone(),
-                profile: use_site.profile.clone(),
-            }
+        let cfg = profiles.config(&use_site.profile).ok_or_else(|| ResourceProfileConfigError::UnknownProfileUse {
+            file: use_site.source.file.clone(),
+            line: use_site.source.line,
+            function: use_site.source.function.clone(),
+            profile: use_site.profile.clone(),
         })?;
         let elevated = cfg.max_instructions > default.max_instructions
             || cfg.max_allocated_bytes > default.max_allocated_bytes;
@@ -637,10 +571,7 @@ pub(super) fn json_log_escape(v: &str) -> String {
 pub(super) fn read_secret_file(path: &str) -> Result<String, SecretFileError> {
     let path_buf = PathBuf::from(path);
     let v = fs::read_to_string(&path_buf)
-        .map_err(|source| SecretFileError::Read {
-            path: path_buf.clone(),
-            source,
-        })?
+        .map_err(|source| SecretFileError::Read { path: path_buf.clone(), source })?
         .trim()
         .to_string();
     if v.is_empty() {
@@ -684,3 +615,4 @@ pub(super) fn parse_u64(
         source,
     })
 }
+

@@ -74,6 +74,7 @@ route home GET "/" public rate perUser => home;
     }
 }
 
+
 #[cfg(test)]
 mod m23_observability_tests {
     use super::*;
@@ -95,11 +96,9 @@ mod m23_observability_tests {
             false,
         );
         assert_eq!(
-            response
-                .headers
-                .iter()
+            response.headers()
                 .find(|(n, _)| n.eq_ignore_ascii_case("x-request-id"))
-                .map(|(_, v)| v.as_str()),
+                .map(|(_, v)| v),
             Some("rw-test")
         );
         let text = metrics.render_prometheus();
@@ -144,3 +143,4 @@ mod m23_observability_tests {
         assert!(local.ip().is_loopback());
     }
 }
+

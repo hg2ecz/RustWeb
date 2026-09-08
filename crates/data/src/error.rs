@@ -44,18 +44,11 @@ impl fmt::Display for DataError {
             Self::UnexpectedBind(name) => write!(f, "unexpected SQL bind :{name}"),
             Self::DuplicateBind(name) => write!(f, "duplicate SQL bind :{name}"),
             Self::InvalidBindName(name) => write!(f, "invalid SQL bind name `{name}`"),
-            Self::MultipleStatements => write!(
-                f,
-                "a query declaration may contain exactly one SQL statement"
-            ),
+            Self::MultipleStatements => write!(f, "a query declaration may contain exactly one SQL statement"),
             Self::MalformedSql => write!(f, "malformed SQL template"),
-            Self::UnsupportedSqlSyntax => {
-                write!(f, "SQL syntax is not supported by the safe bind scanner")
-            }
+            Self::UnsupportedSqlSyntax => write!(f, "SQL syntax is not supported by the safe bind scanner"),
             Self::InvalidRowShape => write!(f, "invalid typed row shape"),
-            Self::RowShapeMismatch => {
-                write!(f, "database row does not match the compiled row shape")
-            }
+            Self::RowShapeMismatch => write!(f, "database row does not match the compiled row shape"),
             Self::RowLimitExceeded => write!(f, "database row limit exceeded"),
             Self::ResultSizeLimitExceeded => write!(f, "database result byte limit exceeded"),
             Self::InvalidRedisUrl => write!(f, "invalid Redis URL"),

@@ -11,9 +11,7 @@ pub(crate) enum ClockError {
 impl fmt::Display for ClockError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::BeforeUnixEpoch(source) => {
-                write!(f, "system clock is before the Unix epoch: {source}")
-            }
+            Self::BeforeUnixEpoch(source) => write!(f, "system clock is before the Unix epoch: {source}"),
         }
     }
 }
@@ -42,12 +40,8 @@ impl fmt::Display for PublicCacheError {
             Self::Clock(source) => write!(f, "cache clock error: {source}"),
             Self::LockPoisoned(name) => write!(f, "cache {name} lock poisoned"),
             Self::Redis(source) => write!(f, "cache backend error: {source}"),
-            Self::GenerationUtf8(source) => {
-                write!(f, "cache generation value is not UTF-8: {source}")
-            }
-            Self::GenerationNumber(source) => {
-                write!(f, "cache generation value is not an integer: {source}")
-            }
+            Self::GenerationUtf8(source) => write!(f, "cache generation value is not UTF-8: {source}"),
+            Self::GenerationNumber(source) => write!(f, "cache generation value is not an integer: {source}"),
             Self::Serialization(source) => write!(f, "cache serialization error: {source}"),
         }
     }
@@ -67,19 +61,13 @@ impl Error for PublicCacheError {
 }
 
 impl From<ClockError> for PublicCacheError {
-    fn from(value: ClockError) -> Self {
-        Self::Clock(value)
-    }
+    fn from(value: ClockError) -> Self { Self::Clock(value) }
 }
 impl From<data::DataError> for PublicCacheError {
-    fn from(value: data::DataError) -> Self {
-        Self::Redis(value)
-    }
+    fn from(value: data::DataError) -> Self { Self::Redis(value) }
 }
 impl From<serde_json::Error> for PublicCacheError {
-    fn from(value: serde_json::Error) -> Self {
-        Self::Serialization(value)
-    }
+    fn from(value: serde_json::Error) -> Self { Self::Serialization(value) }
 }
 
 #[derive(Debug)]
@@ -108,12 +96,8 @@ impl Error for UploadRuntimeError {
     }
 }
 impl From<storage::FsError> for UploadRuntimeError {
-    fn from(value: storage::FsError) -> Self {
-        Self::Storage(value)
-    }
+    fn from(value: storage::FsError) -> Self { Self::Storage(value) }
 }
 impl From<storage::ImageError> for UploadRuntimeError {
-    fn from(value: storage::ImageError) -> Self {
-        Self::Image(value)
-    }
+    fn from(value: storage::ImageError) -> Self { Self::Image(value) }
 }

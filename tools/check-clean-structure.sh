@@ -395,9 +395,10 @@ grep -q '^mod https_client;$' crates/integrations/src/lib.rs || fail 'integratio
 grep -q '^mod secrets;$' crates/integrations/src/lib.rs || fail 'integrations facade must own secrets module'
 grep -q '^pub use egress::{EgressConfig, EgressPolicy, TargetConfig};$' crates/integrations/src/lib.rs || fail 'integrations facade must preserve egress API re-exports'
 grep -q '^pub use error::IntegrationError;$' crates/integrations/src/lib.rs || fail 'integrations facade must preserve IntegrationError re-export'
-grep -q '^pub use https_client::{HttpsResponse, OutboundHttpsClient};$' crates/integrations/src/lib.rs || fail 'integrations facade must preserve HTTPS API re-exports'
+grep -q '^pub use http_response::{HttpsResponse, StatusResponse};$' crates/integrations/src/lib.rs || fail 'integrations facade must preserve bounded HTTPS response API re-exports'
+grep -q '^pub use https_client::OutboundHttpsClient;$' crates/integrations/src/lib.rs || fail 'integrations facade must preserve HTTPS client re-export'
 grep -q '^pub use secrets::{SecretString, SecretsStore};$' crates/integrations/src/lib.rs || fail 'integrations facade must preserve secrets API re-exports'
-if grep -R --include='*.rs' -n '^ *use super::\*;' crates/integrations/src/egress.rs crates/integrations/src/secrets.rs crates/integrations/src/https_client.rs crates/integrations/src/error.rs >/dev/null 2>&1; then
+if grep -R --include='*.rs' -n '^ *use super::\*;' crates/integrations/src/egress.rs crates/integrations/src/secrets.rs crates/integrations/src/https_client.rs crates/integrations/src/http_response.rs crates/integrations/src/error.rs >/dev/null 2>&1; then
   fail 'integrations responsibility modules must keep dependencies explicit'
 fi
 max_lines crates/integrations/src/lib.rs 80
@@ -416,8 +417,8 @@ grep -q '^mod events;$' crates/observability/src/lib.rs || fail 'observability f
 grep -q '^mod logging;$' crates/observability/src/lib.rs || fail 'observability facade must own logging module'
 grep -q '^mod metrics;$' crates/observability/src/lib.rs || fail 'observability facade must own metrics module'
 grep -q '^pub use error::ObsError;$' crates/observability/src/lib.rs || fail 'observability facade must preserve ObsError re-export'
-grep -q '^pub use events::{ActivityEvent, AuditEvent, RequestLog, SystemEvent, json_line, new_request_id, utc_timestamp};$' crates/observability/src/lib.rs || fail 'observability facade must preserve event API re-exports'
-grep -q '^pub use logging::{LogConfig, LogManager, access_log, audit_log, flush_logs, init_logging, reopen_logs, server_event, server_log};$' crates/observability/src/lib.rs || fail 'observability facade must preserve logging API re-exports'
+grep -q '^pub use events::{ActivityEvent, AuditEvent, RequestLog, SecurityEvent, SystemEvent, json_line, new_request_id, utc_timestamp};$' crates/observability/src/lib.rs || fail 'observability facade must preserve event API re-exports'
+grep -q '^pub use logging::{LogConfig, LogManager, access_log, audit_log, flush_logs, init_logging, reopen_logs, security_event, server_event, server_log};$' crates/observability/src/lib.rs || fail 'observability facade must preserve logging API re-exports'
 grep -q '^pub use metrics::{ConnectionGuard, Metrics, RequestTimer};$' crates/observability/src/lib.rs || fail 'observability facade must preserve metrics API re-exports'
 if grep -R --include='*.rs' -n '^ *use super::\*;' crates/observability/src/error.rs crates/observability/src/events.rs crates/observability/src/logging.rs crates/observability/src/metrics.rs >/dev/null 2>&1; then
   fail 'observability responsibility modules must keep production dependencies explicit'
@@ -475,7 +476,7 @@ printf '%s\n' 'R30 language-core foundation responsibility extraction verificati
 # R31: language-core AST/expression/statement layer lives behind the stable facade.
 test -f crates/language-core/src/ast.rs || fail 'missing language-core AST module'
 grep -q '^mod ast;$' crates/language-core/src/lib.rs || fail 'language-core facade must own ast module'
-grep -q '^pub use ast::{ActionBody, ActionFunction, ActionStatement, BinaryOp, BusinessAudit, ComponentFunction, ComputeStatement, Expr, HtmlAttrKind, HtmlPart, HtmlTemplate, LayoutFunction, PageBody, PageFunction, QueryCall, RouteCall, ResourceUse, SourceLocation, Statement, TemplateParam, TemplateParamType, TxStatement};$' crates/language-core/src/lib.rs || fail 'language-core facade must preserve AST API re-exports'
+grep -q '^pub use ast::{ActionBody, ActionFunction, ActionMatchArm, ActionStatement, BinaryOp, BusinessAudit, ComponentFunction, ComputeStatement, Expr, HtmlAttrKind, HtmlPart, HtmlTemplate, LayoutFunction, PageBody, PageFunction, PageMatchArm, OutboundCall, OutboundMethod, QueryCall, RouteCall, ResourceUse, SourceLocation, Statement, TemplateParam, TemplateParamType, TxStatement};$' crates/language-core/src/lib.rs || fail 'language-core facade must preserve AST API re-exports'
 test -f crates/language-core/src/builtin.rs || fail 'missing language-core builtin domain module'
 grep -q '^mod builtin;$' crates/language-core/src/lib.rs || fail 'language-core facade must own builtin module'
 grep -q '^pub use builtin::{BuiltinExecutionKind, BuiltinFunction, BuiltinMetadata};$' crates/language-core/src/lib.rs || fail 'language-core facade must preserve builtin API re-exports'
@@ -595,8 +596,8 @@ printf '%s\n' 'R36 runtime statement execution boundary verification passed'
 
 # R36.2: compiler production modules retain explicit owning-module imports after R35 cleanup.
 grep -q '^use crate::{action_statements, control_flow, declarations, page_statements};$' crates/compiler/src/handler_parser.rs || fail 'handler parser must import compiler collaborators explicitly'
-grep -q '^use crate::{arrays, control_flow, dicts, html_template};$' crates/compiler/src/page_statements.rs || fail 'page statements must import execution/parser collaborators explicitly'
-grep -q '^use crate::{arrays, control_flow, dicts};$' crates/compiler/src/action_statements.rs || fail 'action statements must import execution/parser collaborators explicitly'
+grep -q '^use crate::{arrays, control_flow, dicts, html_template, sum_match};$' crates/compiler/src/page_statements.rs || fail 'page statements must import execution/parser collaborators explicitly'
+grep -q '^use crate::{arrays, control_flow, dicts, sum_match};$' crates/compiler/src/action_statements.rs || fail 'action statements must import execution/parser collaborators explicitly'
 grep -q '^use crate::{arrays, dicts};$' crates/compiler/src/control_flow.rs || fail 'control flow must import collection statement helpers explicitly'
 grep -q '^use crate::regex_types;$' crates/compiler/src/builtin_types.rs || fail 'builtin type inference must import regex type owner explicitly'
 ! grep -q '^use crate::schema_declarations;$' crates/compiler/src/routes.rs || fail 'routes must not depend on schema declaration parser internals'

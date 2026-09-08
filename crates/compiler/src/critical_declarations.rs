@@ -22,14 +22,11 @@ pub(super) fn parse_critical_operations(
         validate_name(&name)?;
         let symbol = qualify(namespace, &name);
         if program.critical_operation(&symbol).is_some() {
-            return Err(CompileError::Syntax(format!(
-                "duplicate critical operation `{name}`"
-            )));
+            return Err(CompileError::Syntax(format!("duplicate critical operation `{name}`")));
         }
         let open = skip_to_brace(source, start + name.len(), &name)?;
-        let close = matching_brace(source, open).ok_or_else(|| {
-            CompileError::Syntax(format!("critical operation `{name}` body is unclosed"))
-        })?;
+        let close = matching_brace(source, open)
+            .ok_or_else(|| CompileError::Syntax(format!("critical operation `{name}` body is unclosed")))?;
         let mut operation = parse_body(&name, &source[open + 1..close], namespace, program)?;
         operation.name = symbol;
         program.critical_operations.push(operation);
@@ -55,10 +52,7 @@ fn parse_body(
     };
     let mut saw_requirement = false;
     for line in body.lines() {
-        let clean = line
-            .split_once("//")
-            .map_or(line, |(before, _)| before)
-            .trim();
+        let clean = line.split_once("//").map_or(line, |(before, _)| before).trim();
         let clean = clean.trim_end_matches(';').trim();
         if clean.is_empty() {
             continue;
@@ -75,9 +69,7 @@ fn parse_body(
                 }
                 let source_name = clean["audit ".len()..].trim();
                 if !is_identifier(source_name) {
-                    return Err(CompileError::Syntax(format!(
-                        "critical operation `{name}` has invalid security event `{source_name}`"
-                    )));
+                    return Err(CompileError::Syntax(format!("critical operation `{name}` has invalid security event `{source_name}`")));
                 }
                 let event_name = resolve(namespace, source_name);
                 if program.security_event(&event_name).is_none() {
@@ -113,7 +105,7 @@ fn parse_body(
             _ => {
                 return Err(CompileError::Syntax(format!(
                     "critical operation `{name}` entries are `permission <Name>`, `mfa`, `transaction`, `idempotency`, `audit`, or `audit <SecurityEvent>`"
-                )));
+                )))
             }
         }
     }
@@ -140,12 +132,7 @@ fn duplicate_requirement(name: &str, requirement: &str) -> CompileError {
 }
 
 fn validate_name(name: &str) -> Result<(), CompileError> {
-    if !is_identifier(name)
-        || !name
-            .chars()
-            .next()
-            .is_some_and(|ch| ch.is_ascii_uppercase())
-    {
+    if !is_identifier(name) || !name.chars().next().is_some_and(|ch| ch.is_ascii_uppercase()) {
         return Err(CompileError::Syntax(format!(
             "critical operation `{name}` must start with an uppercase ASCII letter"
         )));
@@ -154,11 +141,7 @@ fn validate_name(name: &str) -> Result<(), CompileError> {
 }
 
 fn skip_to_brace(source: &str, mut cursor: usize, name: &str) -> Result<usize, CompileError> {
-    while source
-        .as_bytes()
-        .get(cursor)
-        .is_some_and(|byte| byte.is_ascii_whitespace())
-    {
+    while source.as_bytes().get(cursor).is_some_and(|byte| byte.is_ascii_whitespace()) {
         cursor += 1;
     }
     if source.as_bytes().get(cursor) != Some(&b'{') {

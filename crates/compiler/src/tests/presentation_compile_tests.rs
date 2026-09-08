@@ -43,8 +43,7 @@ page fn home(ctx: PageContext, name: String) -> Result<Html, PageError> {
 }
 route home GET "/" query name<String> public => home;
 "#;
-        compile_source(src)
-            .expect("validated request strings should be valid presentation arguments");
+        compile_source(src).expect("validated request strings should be valid presentation arguments");
     }
 
     #[test]
@@ -210,4 +209,5 @@ route save POST "/save" upload file<Upload> to "private" publish auth user => sa
         let err = compile_source(src).expect_err("raw Upload must remain private");
         assert!(err.to_string().contains("SEC-FILE-002"));
     }
+
 }

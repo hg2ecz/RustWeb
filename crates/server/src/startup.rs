@@ -32,22 +32,22 @@ pub(super) async fn run(parsed: StartupArgs) -> Result<(), StartupError> {
         web_cli.trusted_proxy_cidrs.push("127.0.0.0/8".parse()?);
         web_cli.trusted_proxy_cidrs.push("::1/128".parse()?);
     }
+    let production_db_config = db_config.clone();
     let metrics = Arc::new(Metrics::default());
     let hosting_value = build_hosting_runtime(
-        &app,
-        &config,
-        &storage_cli,
-        &static_cli,
-        resource_profiles_file.as_deref(),
-        &lifecycle,
-        &domain_cli,
-        &source_reload,
+        &app, &config, &storage_cli, &static_cli, resource_profiles_file.as_deref(),
+        &lifecycle, &domain_cli, &source_reload,
     )?;
     let hosting = Arc::new(RwLock::new(hosting_value));
-    let hosting_snapshot = hosting
-        .read()
-        .map_err(|_| StartupError::invalid("hosting runtime lock poisoned"))?
-        .clone();
+    let hosting_snapshot = hosting.read().map_err(|_| StartupError::invalid("hosting runtime lock poisoned"))?.clone();
+    crate::production_security::validate_static(
+        &hosting_snapshot,
+        &config,
+        production_db_config.as_ref(),
+        &web_cli,
+        &source_reload,
+    )
+    .map_err(|error| StartupError::invalid(error.to_string()))?;
     let prepared = crate::startup_services::prepare(crate::startup_services::ServicePreparation {
         hosting: &hosting,
         hosting_snapshot: &hosting_snapshot,
@@ -68,74 +68,53 @@ pub(super) async fn run(parsed: StartupArgs) -> Result<(), StartupError> {
         route_rate_limiter,
         public_cache,
         idempotency_redis,
+        outbound,
         source_reload_task,
     } = prepared;
 
     if !hosting_snapshot.domains.is_empty() && tls_cli.public_host.is_some() {
-        return Err(StartupError::invalid(
-            "multi-domain mode derives allowed public hosts from [[domains]]; do not configure tls.public_host/--public-host",
-        ));
+        return Err(StartupError::invalid("multi-domain mode derives allowed public hosts from [[domains]]; do not configure tls.public_host/--public-host"));
     }
     let tls_acceptor = build_tls_acceptor(&tls_cli, &domain_cli)?;
     if behind_proxy && tls_acceptor.is_some() {
-        return Err(StartupError::invalid(
-            "server.behind_proxy/--behind-proxy cannot be combined with backend TLS; terminate TLS at the trusted reverse proxy",
-        ));
+        return Err(StartupError::invalid("server.behind_proxy/--behind-proxy cannot be combined with backend TLS; terminate TLS at the trusted reverse proxy"));
     }
     #[cfg(not(unix))]
     if unix_socket.is_some() {
-        return Err(StartupError::invalid(
-            "server.unix_socket is only supported on Unix platforms",
-        ));
+        return Err(StartupError::invalid("server.unix_socket is only supported on Unix platforms"));
     }
     if unix_socket.is_some() && !behind_proxy {
-        return Err(StartupError::invalid(
-            "server.unix_socket requires server.behind_proxy=true so forwarding headers have explicit proxy semantics",
-        ));
+        return Err(StartupError::invalid("server.unix_socket requires server.behind_proxy=true so forwarding headers have explicit proxy semantics"));
     }
-    if behind_proxy
-        && unix_socket.is_none()
-        && (!config.listen.ip().is_loopback() || web_cli.trusted_proxy_cidrs.is_empty())
-    {
-        return Err(StartupError::invalid(
-            "TCP behind-proxy mode requires a loopback listener and at least one explicit web.trusted_proxy_cidrs entry",
-        ));
+    if behind_proxy && unix_socket.is_none() && (!config.listen.ip().is_loopback() || web_cli.trusted_proxy_cidrs.is_empty()) {
+        return Err(StartupError::invalid("TCP behind-proxy mode requires a loopback listener and at least one explicit web.trusted_proxy_cidrs entry"));
     }
     let reverse_proxy_https = tls_acceptor.is_none()
         && !config.insecure_dev_cookies
         && behind_proxy
-        && (unix_socket.is_some()
-            || (config.listen.ip().is_loopback() && !web_cli.trusted_proxy_cidrs.is_empty()))
+        && (unix_socket.is_some() || (config.listen.ip().is_loopback() && !web_cli.trusted_proxy_cidrs.is_empty()))
         && (tls_cli.public_host.is_some() || !hosting_snapshot.domains.is_empty());
     if tls_acceptor.is_none() && !config.insecure_dev_cookies && !reverse_proxy_https {
-        return Err(StartupError::invalid(
-            "plain HTTP is development-only unless rwlang-server runs in explicit behind-proxy mode with a Unix socket or loopback trusted proxy; otherwise configure TLS or pass --insecure-dev-cookies explicitly",
-        ));
+        return Err(StartupError::invalid("plain HTTP is development-only unless rwlang-server runs in explicit behind-proxy mode with a Unix socket or loopback trusted proxy; otherwise configure TLS or pass --insecure-dev-cookies explicitly"));
     }
     if tls_cli.http_redirect_listen.is_some() && tls_acceptor.is_none() {
-        return Err(StartupError::invalid(
-            "--http-redirect-listen requires HTTPS/TLS configuration",
-        ));
+        return Err(StartupError::invalid("--http-redirect-listen requires HTTPS/TLS configuration"));
     }
     if tls_cli.http_redirect_listen.is_some() && !hosting_snapshot.domains.is_empty() {
-        return Err(StartupError::invalid(
-            "multi-domain mode does not use the single-host HTTP redirect listener; redirect at the reverse proxy or run separate redirects",
-        ));
+        return Err(StartupError::invalid("multi-domain mode does not use the single-host HTTP redirect listener; redirect at the reverse proxy or run separate redirects"));
     }
     if tls_cli.http_redirect_listen.is_some() && tls_cli.public_host.is_none() {
-        return Err(StartupError::invalid(
-            "--http-redirect-listen requires --public-host",
-        ));
+        return Err(StartupError::invalid("--http-redirect-listen requires --public-host"));
     }
-    if tls_acceptor.is_some()
-        && !config.insecure_dev_cookies
-        && tls_cli.public_host.is_none()
-        && hosting_snapshot.domains.is_empty()
-    {
-        return Err(StartupError::invalid(
-            "production HTTPS requires --public-host for Host/Origin pinning",
-        ));
+    if tls_acceptor.is_some() && !config.insecure_dev_cookies && tls_cli.public_host.is_none() && hosting_snapshot.domains.is_empty() {
+        return Err(StartupError::invalid("production HTTPS requires --public-host for Host/Origin pinning"));
     }
+
+    crate::production_security::validate_transport(
+        &hosting_snapshot,
+        tls_acceptor.is_some() || reverse_proxy_https,
+    )
+    .map_err(|error| StartupError::invalid(error.to_string()))?;
 
     crate::startup_transport::serve(crate::startup_transport::TransportRuntime {
         app,
@@ -157,6 +136,7 @@ pub(super) async fn run(parsed: StartupArgs) -> Result<(), StartupError> {
         route_rate_limiter,
         public_cache,
         idempotency_redis,
+        outbound,
         metrics,
         source_reload_task,
         tls_acceptor,

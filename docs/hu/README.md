@@ -147,3 +147,24 @@ A fejezetenként `\\input`-olt, webalkalmazás-fejlesztőknek szóló könyv for
 
 - [Tenant membership authority](81-tenant-membership-authority.md)
 - [Compiler altal kikenyszeritett tenant izolacio](82-compiler-altal-kikenyszeritett-tenant-izolacio.md) - aktiv tenant proof, scoped modellek es SQL tenant guardok.
+
+
+## Aktuális security architektúra
+
+A teljes aktuális állapot canonical összefoglalója: [../../SECURITY-STATUS.md](../../SECURITY-STATUS.md).
+
+A legújabb hardening témák canonical angol referenciái:
+
+- [Production security policy](../87-production-configuration-policy.md)
+- [Typed HTTP metadata](../88-typed-http-metadata.md)
+- [Crypto key purpose/lifecycle](../89-crypto-key-purpose-lifecycle.md)
+- [Generated CSP/security headers](../90-generated-security-headers.md)
+- [Supply-chain capability/provenance](../92-supply-chain-capability-provenance.md)
+- [Authentication abuse protection](../93-authentication-abuse-protection.md)
+- [Closed sum types + exhaustive match](../94-sum-types-and-exhaustive-match.md)
+- [Transaction outcome semantics](../95-transaction-outcome-semantics.md)
+- [Authenticated encryption + key lifecycle](../96-authenticated-encryption-key-lifecycle.md)
+- [Advanced resource safety](../97-advanced-resource-safety.md)
+- [Security monitoring + redaction](../98-security-monitoring-and-redaction.md)
+
+A magyar production/security ellenőrzőlista: [15-security-checklist.md](15-security-checklist.md).

@@ -1,14 +1,18 @@
-use super::scalars::{is_canonical_slug, normalize_email, normalize_url};
 use crate::execution_context::Budget;
 use crate::vm::eval_expr;
+use super::scalars::{is_canonical_slug, normalize_email, normalize_url};
 use chrono::{DateTime, NaiveDate, Utc};
-use data::{BindSet, ColumnSpec, Database, DbScalarType, DbValue, PreparedSql, RowShape};
+use data::{
+    BindSet, ColumnSpec, Database, DbScalarType, DbValue, PreparedSql, RowShape,
+};
 use language_core::{
     AppError, Expr, F32Value, ImageRef, Program, QueryCall, QueryReturn, Value, ValueType,
 };
 use rust_decimal::Decimal;
 use std::collections::HashMap;
 use uuid::Uuid;
+
+const MAX_DB_LIST_ROWS: usize = 1000;
 
 pub(super) async fn execute_read_query(
     program: &Program,
@@ -113,6 +117,9 @@ fn decode_query_rows(
             }
         }
         QueryReturn::List(_) => {
+            if rows.len() > MAX_DB_LIST_ROWS {
+                return Err(AppError::MemoryLimit);
+            }
             let mut out = Vec::with_capacity(rows.len());
             for row in &rows {
                 out.push(record(program, model, row)?);
@@ -135,9 +142,7 @@ fn build_binds(
     let mut binds = BindSet::new();
     for (param, expr) in q.params.iter().zip(args) {
         let value = eval_expr(expr, env, budget)?;
-        let param_type = program
-            .representation_type(param.ty)
-            .ok_or(AppError::Internal)?;
+        let param_type = program.representation_type(param.ty).ok_or(AppError::Internal)?;
         let db_value = match (value, param_type) {
             (Value::String(x), ValueType::String | ValueType::Slug) => DbValue::String(x),
             (Value::Email(x), ValueType::Email) => DbValue::String(x),
@@ -152,9 +157,7 @@ fn build_binds(
             (Value::Uuid(x), ValueType::Uuid) => DbValue::String(x.hyphenated().to_string()),
             (Value::Decimal(x), ValueType::Decimal) => DbValue::String(x.normalize().to_string()),
             (Value::Image(x), ValueType::Image) => DbValue::String(x.canonical()),
-            (Value::Enum { enum_id, variant }, ValueType::Enum(expected))
-                if enum_id == expected =>
-            {
+            (Value::Enum { enum_id, variant }, ValueType::Enum(expected)) if enum_id == expected => {
                 DbValue::String(variant)
             }
             _ => return Err(AppError::Internal),
@@ -192,23 +195,15 @@ fn row_shape(program: &Program, model: &language_core::Model) -> RowShape {
                     | ValueType::Image
                     | ValueType::Enum(_) => DbScalarType::String,
                     ValueType::Upload => unreachable!("Upload cannot be a model field"),
-                    ValueType::Credential(_) => {
-                        unreachable!("credential model fields are represented by String")
-                    }
-                    ValueType::Domain(_) => {
-                        unreachable!("domain model fields are represented by their base type")
-                    }
+                    ValueType::Credential(_) => unreachable!("credential model fields are represented by String"),
+                    ValueType::Domain(_) => unreachable!("domain model fields are represented by their base type"),
                 },
             })
             .collect(),
     }
 }
 
-pub(crate) fn db_to_value(
-    program: &Program,
-    value: &DbValue,
-    ty: ValueType,
-) -> Result<Value, AppError> {
+pub(crate) fn db_to_value(program: &Program, value: &DbValue, ty: ValueType) -> Result<Value, AppError> {
     if matches!(ty, ValueType::Domain(_) | ValueType::Credential(_)) {
         let base = program.representation_type(ty).ok_or(AppError::Internal)?;
         return db_to_value(program, value, base);

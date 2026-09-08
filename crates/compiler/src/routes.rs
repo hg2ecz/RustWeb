@@ -1,27 +1,18 @@
-use crate::cache_safety::{
-    action_has_business_audit, action_has_object_auth, validate_public_cache_statements,
-};
+use crate::cache_safety::{action_has_business_audit, action_has_object_auth, validate_public_cache_statements};
 use crate::diagnostics::CompileError;
+use crate::route_security::{apply_default_external_input_bounds, parse_explicit_access};
 use crate::domain_symbols::internal_domain_symbol;
 use crate::domain_validation;
 use crate::lexer::tokenize;
 use crate::module_namespace::resolve;
-use crate::route_security::{apply_default_external_input_bounds, parse_explicit_access};
 use crate::source_syntax::is_identifier;
 use crate::type_resolution::resolve_value_type;
-use language_core::{
-    ActionBody, FormField, HttpMethod, PageBody, Program, Route, RouteAuth, RouteSegment,
-    Statement, UploadField, ValidationKind, ValueType,
-};
+use language_core::{ActionBody, FormField, HttpMethod, PageBody, Program, Route, RouteAuth, RouteSegment, Statement, UploadField, ValidationKind, ValueType};
 use std::collections::HashMap;
 
 mod route_scanner;
 
-pub(super) fn parse_routes(
-    source: &str,
-    namespace: &str,
-    p: &mut Program,
-) -> Result<(), CompileError> {
+pub(super) fn parse_routes(source: &str, namespace: &str, p: &mut Program) -> Result<(), CompileError> {
     for declaration in route_scanner::top_level_route_declarations(source)? {
         let route_source = declaration.source;
         let t = tokenize(&route_source)?;
@@ -67,10 +58,7 @@ pub(super) fn parse_routes(
                 let raw = t.get(c).unwrap();
                 let field = parse_typed_binding(&name, raw, namespace, p)?;
                 validations.extend(domain_validation::rules_for_binding(
-                    raw,
-                    &field.name,
-                    namespace,
-                    p,
+                    raw, &field.name, namespace, p,
                 ));
                 query_fields.push(field);
                 c += 1;
@@ -112,10 +100,7 @@ pub(super) fn parse_routes(
                         let raw = t.get(c).unwrap();
                         let field = parse_typed_binding(&name, raw, namespace, p)?;
                         validations.extend(domain_validation::rules_for_binding(
-                            raw,
-                            &field.name,
-                            namespace,
-                            p,
+                            raw, &field.name, namespace, p,
                         ));
                         form_fields.push(field);
                         c += 1;
@@ -144,10 +129,7 @@ pub(super) fn parse_routes(
                 let raw = t.get(c).unwrap();
                 let field = parse_typed_binding(&name, raw, namespace, p)?;
                 validations.extend(domain_validation::rules_for_binding(
-                    raw,
-                    &field.name,
-                    namespace,
-                    p,
+                    raw, &field.name, namespace, p,
                 ));
                 json_fields.push(field);
                 c += 1;
@@ -276,11 +258,9 @@ pub(super) fn parse_routes(
                 "route `{name}` must end with `;` immediately after the handler"
             )));
         }
-        let handler = internal_domain_symbol(source_handler)
-            .map(|name| resolve(namespace, &name))
-            .ok_or_else(|| {
-                CompileError::Syntax(format!("route `{name}` invalid handler `{source_handler}`"))
-            })?;
+        let handler = internal_domain_symbol(source_handler).map(|name| resolve(namespace, &name)).ok_or_else(|| {
+            CompileError::Syntax(format!("route `{name}` invalid handler `{source_handler}`"))
+        })?;
         if method == HttpMethod::Get
             && (!form_fields.is_empty() || !json_fields.is_empty() || upload.is_some())
         {
@@ -649,6 +629,7 @@ fn page_canonical_slug_params<'a>(p: &'a Program, handler: &str) -> Vec<&'a str>
             match statement {
                 Statement::CanonicalSlug { param, .. } => out.push(param.as_str()),
                 Statement::Resource { statements, .. } => collect(statements, out),
+                Statement::Match { arms, .. } => { for arm in arms { collect(&arm.statements, out); } },
                 _ => {}
             }
         }
@@ -665,6 +646,7 @@ fn page_has_object_auth(statements: &[Statement]) -> bool {
     statements.iter().any(|s| match s {
         Statement::Authorize(_) => true,
         Statement::Resource { statements, .. } => page_has_object_auth(statements),
+        Statement::Match { arms, .. } => arms.iter().any(|arm| page_has_object_auth(&arm.statements)),
         _ => false,
     })
 }
@@ -735,8 +717,7 @@ page fn index(ctx: PageContext) -> Result<Html, PageError> {
 }
 route index GET "/" public => index;
 "#;
-        let p = compile_source(src)
-            .expect("declaration-like HTML text must be ignored by declaration scanners");
+        let p = compile_source(src).expect("declaration-like HTML text must be ignored by declaration scanners");
         assert!(p.models.is_empty());
         assert_eq!(p.pages.len(), 1);
         assert_eq!(p.pages[0].name, "index");
@@ -767,4 +748,5 @@ public => contact_submit;
         assert_eq!(post.form_fields.len(), 1);
         assert_eq!(post.form_fields[0].name, "name");
     }
+
 }

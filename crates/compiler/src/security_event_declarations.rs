@@ -45,29 +45,16 @@ pub(super) fn parse_security_events(
         }
         let symbol = qualify(namespace, &name);
         if program.security_event(&symbol).is_some() {
-            return Err(CompileError::Syntax(format!(
-                "duplicate security event `{name}`"
-            )));
+            return Err(CompileError::Syntax(format!("duplicate security event `{name}`")));
         }
-        program.security_events.push(SecurityEvent {
-            name: symbol,
-            object_type,
-        });
-        offset = source[keyword..]
-            .find(';')
-            .map(|v| keyword + v + 1)
-            .unwrap_or(source.len());
+        program.security_events.push(SecurityEvent { name: symbol, object_type });
+        offset = source[keyword..].find(';').map(|v| keyword + v + 1).unwrap_or(source.len());
     }
     Ok(())
 }
 
 fn validate_name(name: &str) -> Result<(), CompileError> {
-    if !is_identifier(name)
-        || !name
-            .chars()
-            .next()
-            .is_some_and(|ch| ch.is_ascii_uppercase())
-    {
+    if !is_identifier(name) || !name.chars().next().is_some_and(|ch| ch.is_ascii_uppercase()) {
         return Err(CompileError::Syntax(format!(
             "security event `{name}` must start with an uppercase ASCII letter"
         )));

@@ -101,9 +101,6 @@ mod tests {
 
     #[test]
     fn duplicate_cookie_name_is_rejected() {
-        assert_eq!(
-            parse("a=1; rw_session=one; rw_session=two", "rw_session"),
-            None
-        );
+        assert_eq!(parse("a=1; rw_session=one; rw_session=two", "rw_session"), None);
     }
 }

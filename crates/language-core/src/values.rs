@@ -1,8 +1,8 @@
-use crate::CredentialPurpose;
 use chrono::{DateTime, NaiveDate, Utc};
 use rust_decimal::Decimal;
 use std::collections::{BTreeMap, HashMap};
 use uuid::Uuid;
+use crate::CredentialPurpose;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ValueType {
@@ -50,9 +50,13 @@ impl ValueType {
     }
 }
 
+pub const TRANSACTION_OUTCOME_ENUM_ID: u16 = u16::MAX;
+pub const TRANSACTION_OUTCOME_VARIANTS: [&str; 3] = ["Committed", "RolledBack", "CommitUnknown"];
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum DataSensitivity {
     Public,
+    Redacted,
     Sensitive,
     Secret,
 }

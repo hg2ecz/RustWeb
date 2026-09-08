@@ -13,6 +13,18 @@ mod tests {
         ));
     }
 
+
+    #[test]
+    fn rejects_compressed_request_bodies() {
+        let compressed = "POST / HTTP/1.1\r\nHost: localhost\r\nContent-Length: 4\r\nContent-Encoding: gzip";
+        assert!(matches!(
+            parse_request_head(compressed, 64),
+            Err(HttpReadError::BadRequest)
+        ));
+        let identity = "POST / HTTP/1.1\r\nHost: localhost\r\nContent-Length: 4\r\nContent-Encoding: identity";
+        assert!(parse_request_head(identity, 64).is_ok());
+    }
+
     #[test]
     fn parses_keep_alive_content_length() {
         let head = "POST /greet HTTP/1.1\r\nHost: localhost\r\nContent-Length: 9\r\nContent-Type: application/x-www-form-urlencoded";
@@ -27,6 +39,7 @@ mod tests {
         assert!(!parse_request_head(head, 64).unwrap().keep_alive);
     }
 }
+
 
 #[cfg(test)]
 mod injection_security_tests {
@@ -109,6 +122,7 @@ mod injection_security_tests {
     }
 }
 
+
 #[cfg(test)]
 mod web_security_tests {
     use super::*;
@@ -190,18 +204,12 @@ mod web_security_tests {
         let peer: IpAddr = "127.0.0.1".parse().unwrap();
         assert!(effective_client_ip(&r, peer, &[]).is_err());
         let net: IpNet = "127.0.0.0/8".parse().unwrap();
-        assert_eq!(
-            effective_client_ip(&r, peer, &[net]).unwrap(),
-            "198.51.100.9".parse::<IpAddr>().unwrap()
-        );
+        assert_eq!(effective_client_ip(&r, peer, &[net]).unwrap(), "198.51.100.9".parse::<IpAddr>().unwrap());
     }
 
     #[test]
     fn multiple_client_forwarding_headers_are_rejected() {
-        let r = req(vec![
-            ("x-real-ip", "198.51.100.9"),
-            ("x-forwarded-for", "198.51.100.9"),
-        ]);
+        let r = req(vec![("x-real-ip", "198.51.100.9"), ("x-forwarded-for", "198.51.100.9")]);
         let peer: IpAddr = "127.0.0.1".parse().unwrap();
         let net: IpNet = "127.0.0.0/8".parse().unwrap();
         assert!(effective_client_ip(&r, peer, &[net]).is_err());
@@ -233,6 +241,7 @@ mod web_security_tests {
     }
 }
 
+
 #[cfg(test)]
 mod tls_security_tests {
     use super::*;
@@ -260,6 +269,7 @@ mod tls_security_tests {
         ));
     }
 }
+
 
 #[cfg(test)]
 mod m19_json_cors_tests {
@@ -374,6 +384,7 @@ route api GET "/api" public => api;
     }
 }
 
+
 #[cfg(test)]
 mod m20_static_asset_tests {
     use super::*;
@@ -454,22 +465,18 @@ mod m20_static_asset_tests {
         assert_eq!(r.status, 200);
         assert_eq!(r.body, b"brotli-bytes");
         assert!(
-            r.headers
-                .iter()
+            r.headers()
                 .any(|(k, v)| k == "Content-Encoding" && v == "br")
         );
         assert!(
-            r.headers
-                .iter()
+            r.headers()
                 .any(|(k, v)| k == "Cache-Control" && v.contains("immutable"))
         );
-        let etag = r
-            .headers
-            .iter()
-            .find(|(k, _)| k == "ETag")
+        let etag = r.headers()
+            .find(|(k, _)| *k == "ETag")
             .unwrap()
             .1
-            .clone();
+            .to_string();
 
         let req304 = HttpRequest {
             method: "GET".into(),
@@ -503,17 +510,18 @@ mod m20_static_asset_tests {
     }
 }
 
-#[test]
-fn strict_json_accepts_bounded_string_arrays_and_rejects_unsafe_arrays() {
-    let pairs = decode_json_object_limited(br#"{"tags":["rust","web"]}"#, 8, 128).unwrap();
-    assert_eq!(
-        pairs,
-        vec![
-            ("tags".to_string(), "rust".to_string()),
-            ("tags".to_string(), "web".to_string()),
-        ]
-    );
-    assert!(decode_json_object_limited(br#"{"tags":[]}"#, 8, 128).is_err());
-    assert!(decode_json_object_limited(br#"{"tags":["ok",1]}"#, 8, 128).is_err());
-    assert!(decode_json_object_limited(br#"{"tags":["a","b","c"]}"#, 2, 128).is_err());
-}
+
+    #[test]
+    fn strict_json_accepts_bounded_string_arrays_and_rejects_unsafe_arrays() {
+        let pairs = decode_json_object_limited(br#"{"tags":["rust","web"]}"#, 8, 128).unwrap();
+        assert_eq!(
+            pairs,
+            vec![
+                ("tags".to_string(), "rust".to_string()),
+                ("tags".to_string(), "web".to_string()),
+            ]
+        );
+        assert!(decode_json_object_limited(br#"{"tags":[]}"#, 8, 128).is_err());
+        assert!(decode_json_object_limited(br#"{"tags":["ok",1]}"#, 8, 128).is_err());
+        assert!(decode_json_object_limited(br#"{"tags":["a","b","c"]}"#, 2, 128).is_err());
+    }

@@ -1,7 +1,6 @@
 use crate::{
-    ActionFunction, ComponentFunction, CriticalOperation, DomainType, EnumDef, FormSchema,
-    LayoutFunction, Model, PageFunction, Permission, QueryFunction, ResourceUse, Route,
-    SecurityEvent, Webhook,
+    ActionFunction, ComponentFunction, CriticalOperation, DomainType, EnumDef, FormSchema, LayoutFunction, Model, PageFunction,
+    Integration, Permission, ProductionPolicy, QueryFunction, ResourceUse, Route, SecurityEvent, Webhook,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -13,6 +12,8 @@ pub struct Program {
     pub critical_operations: Vec<CriticalOperation>,
     pub security_events: Vec<SecurityEvent>,
     pub webhooks: Vec<Webhook>,
+    pub integrations: Vec<Integration>,
+    pub production: Option<ProductionPolicy>,
     pub queries: Vec<QueryFunction>,
     pub pages: Vec<PageFunction>,
     pub actions: Vec<ActionFunction>,
@@ -65,10 +66,9 @@ impl Program {
     }
 
     pub fn critical_operation(&self, name: &str) -> Option<&CriticalOperation> {
-        self.critical_operations
-            .iter()
-            .find(|value| value.name == name)
+        self.critical_operations.iter().find(|value| value.name == name)
     }
+
 
     pub fn model(&self, name: &str) -> Option<&Model> {
         self.models.iter().find(|v| v.name == name)

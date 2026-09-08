@@ -1,24 +1,18 @@
-use crate::authorization::parse_and_refine_authorization;
+use crate::{arrays, control_flow, dicts, sum_match};
 use crate::diagnostics::CompileError;
 use crate::domain_refinement;
 use crate::domain_symbols::display_domain_symbol;
 use crate::expression::{infer_static_expr_type, parse_expr_in_namespace, validate_expr};
 use crate::handler_types::{HandlerReturnKind, StaticType};
 use crate::input_security::handler_input_types;
-use crate::public_errors::parse_fail_statement;
+use crate::response_security::{validate_response_expression, ResponseBoundary};
 use crate::public_projection::parse_public_projection;
-use crate::response_security::{ResponseBoundary, validate_response_expression};
+use crate::public_errors::parse_fail_statement;
 use crate::route_calls::parse_redirect_route_call;
-use crate::source_syntax::{
-    consume_return_tail, find_statement_end, is_identifier, matching_brace, matching_paren,
-    preview, read_ident, skip_ws_and_comments,
-};
-use crate::statement_helpers::{parse_business_audit, parse_query_call, parse_security_event};
-use crate::{arrays, control_flow, dicts};
-use language_core::{
-    ActionStatement, Expr, FlashKind, FlashMessage, FunctionParam, Program, QueryCapability,
-    QueryReturn, ResourceUse, SourceLocation, TxStatement, ValueType,
-};
+use crate::source_syntax::{consume_return_tail, find_statement_end, is_identifier, matching_brace, matching_paren, preview, read_ident, skip_ws_and_comments};
+use crate::statement_helpers::{parse_business_audit, parse_security_event, parse_query_call};
+use crate::authorization::parse_and_refine_authorization;
+use language_core::{ActionMatchArm, ActionStatement, Expr, FlashKind, FlashMessage, FunctionParam, Program, QueryCapability, QueryReturn, ResourceUse, SourceLocation, TxStatement, ValueType};
 
 pub(super) fn parse_action_statements(
     name: &str,
@@ -30,7 +24,6 @@ pub(super) fn parse_action_statements(
     base_line: usize,
     allow_resource: bool,
 ) -> Result<Vec<ActionStatement>, CompileError> {
-    let mut out = Vec::new();
     let mut known = handler_input_types(name, params, p);
     known.insert(
         "authPrincipal".into(),
@@ -40,6 +33,20 @@ pub(super) fn parse_action_statements(
         "authMfaVerified".into(),
         StaticType::trusted_scalar(ValueType::Bool),
     );
+    parse_action_statements_known(name, namespace, body, p, source_name, base_line, allow_resource, &mut known)
+}
+
+fn parse_action_statements_known(
+    name: &str,
+    namespace: &str,
+    body: &str,
+    p: &mut Program,
+    source_name: &str,
+    base_line: usize,
+    allow_resource: bool,
+    known: &mut std::collections::HashMap<String, StaticType>,
+) -> Result<Vec<ActionStatement>, CompileError> {
+    let mut out = Vec::new();
     let mut cursor = 0;
     while cursor < body.len() {
         cursor = skip_ws_and_comments(body, cursor);
@@ -79,15 +86,16 @@ pub(super) fn parse_action_statements(
                 source: source.clone(),
             });
             let inner_base = base_line + body[..open + 1].bytes().filter(|b| *b == b'\n').count();
-            let inner = parse_action_statements(
+            let mut inner_known = known.clone();
+            let inner = parse_action_statements_known(
                 name,
                 namespace,
                 &body[open + 1..close],
-                params,
                 p,
                 source_name,
                 inner_base,
                 false,
+                &mut inner_known,
             )?;
             out.push(ActionStatement::Resource {
                 profile,
@@ -142,18 +150,13 @@ pub(super) fn parse_action_statements(
                             "invalid transaction local `{local}`"
                         )));
                     }
-                    let (call, ty) = parse_query_call(
-                        rhs.trim(),
-                        namespace,
-                        p,
-                        &tx_known,
-                        QueryCapability::Transaction,
-                    )?
-                    .ok_or_else(|| {
-                        CompileError::Syntax(format!(
-                            "transaction let requires a mutating query call; got `{line}`"
-                        ))
-                    })?;
+                    let (call, ty) =
+                        parse_query_call(rhs.trim(), namespace, p, &tx_known, QueryCapability::Transaction)?
+                            .ok_or_else(|| {
+                            CompileError::Syntax(format!(
+                                "transaction let requires a mutating query call; got `{line}`"
+                            ))
+                        })?;
                     if matches!(
                         p.query(&call.query).map(|q| &q.return_type),
                         Some(&QueryReturn::Void)
@@ -170,18 +173,13 @@ pub(super) fn parse_action_statements(
                         call,
                     });
                 } else {
-                    let (call, _) = parse_query_call(
-                        line,
-                        namespace,
-                        p,
-                        &tx_known,
-                        QueryCapability::Transaction,
-                    )?
-                    .ok_or_else(|| {
-                        CompileError::Syntax(format!(
-                            "transaction only supports mutating query calls; got `{line}`"
-                        ))
-                    })?;
+                    let (call, _) =
+                        parse_query_call(line, namespace, p, &tx_known, QueryCapability::Transaction)?
+                            .ok_or_else(|| {
+                                CompileError::Syntax(format!(
+                                    "transaction only supports mutating query calls; got `{line}`"
+                                ))
+                            })?;
                     statements.push(TxStatement::Query(call));
                 }
                 tx_cursor = end + 1;
@@ -191,11 +189,62 @@ pub(super) fn parse_action_statements(
                     "action `{name}` empty transaction"
                 )));
             }
-            out.push(ActionStatement::Transaction { statements });
+            out.push(ActionStatement::Transaction { outcome: None, statements });
             cursor = close + 1;
             continue;
         }
         if body[cursor..].starts_with("let ") {
+            let after_let = cursor + 4;
+            if let Some(eq_rel) = body[after_let..].find('=') {
+                let eq = after_let + eq_rel;
+                let local = body[after_let..eq].trim();
+                let rhs_start = skip_ws_and_comments(body, eq + 1);
+                if is_identifier(local) && body[rhs_start..].starts_with("transaction db") {
+                    let open = body[rhs_start + "transaction db".len()..]
+                        .find('{')
+                        .map(|v| rhs_start + "transaction db".len() + v)
+                        .ok_or_else(|| CompileError::Syntax(format!("action `{name}` transaction missing {{")))?;
+                    let close = matching_brace(body, open)
+                        .ok_or_else(|| CompileError::Syntax(format!("action `{name}` transaction unclosed")))?;
+                    let mut tx_known = known.clone();
+                    let mut statements = Vec::new();
+                    let mut tx_cursor = 0;
+                    let tx_body = &body[open + 1..close];
+                    while tx_cursor < tx_body.len() {
+                        tx_cursor = skip_ws_and_comments(tx_body, tx_cursor);
+                        if tx_cursor >= tx_body.len() { break; }
+                        let end = find_statement_end(tx_body, tx_cursor)?;
+                        let line = tx_body[tx_cursor..end].trim().trim_end_matches(';').trim();
+                        if line.starts_with("audit ") {
+                            statements.push(TxStatement::BusinessAudit(parse_business_audit(name, namespace, line, &tx_known, p)?));
+                        } else if line.starts_with("security ") {
+                            statements.push(TxStatement::BusinessAudit(parse_security_event(name, namespace, line, &tx_known, p)?));
+                        } else if line.starts_with("let ") {
+                            let rest = &line[4..];
+                            let (tx_local, rhs) = rest.split_once('=').ok_or_else(|| CompileError::Syntax(format!("transaction let `{line}` missing =")))?;
+                            let tx_local = tx_local.trim();
+                            let (call, ty) = parse_query_call(rhs.trim(), namespace, p, &tx_known, QueryCapability::Transaction)?
+                                .ok_or_else(|| CompileError::Syntax(format!("transaction let requires a mutating query call; got `{line}`")))?;
+                            tx_known.insert(tx_local.into(), ty.clone());
+                            known.insert(tx_local.into(), ty);
+                            statements.push(TxStatement::LetQuery { name: tx_local.into(), call });
+                        } else {
+                            let (call, _) = parse_query_call(line, namespace, p, &tx_known, QueryCapability::Transaction)?
+                                .ok_or_else(|| CompileError::Syntax(format!("transaction only supports mutating query calls; got `{line}`")))?;
+                            statements.push(TxStatement::Query(call));
+                        }
+                        tx_cursor = end + 1;
+                    }
+                    if statements.is_empty() {
+                        return Err(CompileError::Syntax(format!("action `{name}` empty transaction")));
+                    }
+                    known.insert(local.into(), StaticType::trusted_scalar(ValueType::Enum(language_core::TRANSACTION_OUTCOME_ENUM_ID)));
+                    out.push(ActionStatement::Transaction { outcome: Some(local.into()), statements });
+                    cursor = skip_ws_and_comments(body, close + 1);
+                    if body.as_bytes().get(cursor) == Some(&b';') { cursor += 1; }
+                    continue;
+                }
+            }
             let after = cursor + 4;
             let eq = body[after..]
                 .find('=')
@@ -221,9 +270,13 @@ pub(super) fn parse_action_statements(
                     domain: refinement.domain,
                     expr: refinement.expr,
                 });
-            } else if let Some((call, ty)) =
-                parse_query_call(rhs, namespace, p, &known, QueryCapability::Db)?
-            {
+            } else if let Some((call, ty)) = crate::outbound_calls::parse(rhs, namespace, p, &known, true)? {
+                known.insert(local.into(), ty);
+                out.push(ActionStatement::LetOutboundStatus {
+                    name: local.into(),
+                    call,
+                });
+            } else if let Some((call, ty)) = parse_query_call(rhs, namespace, p, &known, QueryCapability::Db)? {
                 known.insert(local.into(), ty);
                 out.push(ActionStatement::LetQuery {
                     name: local.into(),
@@ -241,83 +294,58 @@ pub(super) fn parse_action_statements(
             cursor = end + 1;
             continue;
         }
+        if body[cursor..].starts_with("match ") {
+            let parsed = sum_match::parse_match("action", name, namespace, body, cursor, known, p)?;
+            let mut arms = Vec::new();
+            for arm in parsed.arms {
+                let mut arm_known = known.clone();
+                let arm_base = base_line + body[..arm.body_offset].bytes().filter(|byte| *byte == b'\n').count();
+                let statements = parse_action_statements_known(
+                    name, namespace, &arm.body, p, source_name, arm_base, false, &mut arm_known,
+                )?;
+                arms.push(ActionMatchArm { variant: arm.variant, statements });
+            }
+            out.push(ActionStatement::Match { expr: parsed.expr, enum_id: parsed.enum_id, arms });
+            cursor = parsed.close + 1;
+            continue;
+        }
         if body[cursor..].starts_with("while ") {
-            let (condition, statements, close) = control_flow::parse_while_block(
-                "action", name, namespace, body, cursor, &known, p,
-            )?;
-            out.push(ActionStatement::While {
-                condition,
-                statements,
-            });
+            let (condition, statements, close) = control_flow::parse_while_block("action", name, namespace, body, cursor, &known, p)?;
+            out.push(ActionStatement::While { condition, statements });
             cursor = close + 1;
             continue;
         }
         if body[cursor..].starts_with("if ") {
-            let (condition, statements, close) =
-                control_flow::parse_if_block("action", name, namespace, body, cursor, &known, p)?;
-            out.push(ActionStatement::If {
-                condition,
-                statements,
-            });
+            let (condition, statements, close) = control_flow::parse_if_block("action", name, namespace, body, cursor, &known, p)?;
+            out.push(ActionStatement::If { condition, statements });
             cursor = close + 1;
             continue;
         }
         if body[cursor..].starts_with("set ") {
             let end = find_statement_end(body, cursor)?;
             let text = body[cursor + 4..end].trim().trim_end_matches(';').trim();
-            if text
-                .split_once('=')
-                .map(|(lhs, _)| lhs.contains('['))
-                .unwrap_or(false)
-            {
-                let target = text
-                    .split_once('=')
-                    .map(|(lhs, _)| lhs.trim())
-                    .unwrap_or("");
+            if text.split_once('=').map(|(lhs, _)| lhs.contains('[')).unwrap_or(false) {
+                let target = text.split_once('=').map(|(lhs, _)| lhs.trim()).unwrap_or("");
                 let collection = target.split('[').next().unwrap_or("").trim();
                 match known.get(collection) {
                     Some(value) if value.is_scalar(ValueType::F32Array) => {
-                        let (array, index, value) = arrays::parse_f32_array_set(
-                            "action", name, text, namespace, &known, p,
-                        )?;
-                        out.push(ActionStatement::F32ArraySet {
-                            array,
-                            index,
-                            value,
-                        });
+                        let (array, index, value) = arrays::parse_f32_array_set("action", name, text, namespace, &known, p)?;
+                        out.push(ActionStatement::F32ArraySet { array, index, value });
                     }
                     Some(value) if value.is_scalar(ValueType::StringDict) => {
-                        let (dict, key, value) = dicts::parse_string_dict_set(
-                            "action", name, text, namespace, &known, p,
-                        )?;
+                        let (dict, key, value) = dicts::parse_string_dict_set("action", name, text, namespace, &known, p)?;
                         out.push(ActionStatement::StringDictSet { dict, key, value });
                     }
-                    _ => {
-                        return Err(CompileError::Syntax(format!(
-                            "action `{name}` set target `{collection}` is not a mutable collection"
-                        )));
-                    }
+                    _ => return Err(CompileError::Syntax(format!("action `{name}` set target `{collection}` is not a mutable collection"))),
                 }
             } else {
-                let (target, rhs) = text.split_once('=').ok_or_else(|| {
-                    CompileError::Syntax(format!("action `{name}` set requires ="))
-                })?;
+                let (target, rhs) = text.split_once('=').ok_or_else(|| CompileError::Syntax(format!("action `{name}` set requires =")))?;
                 let target = target.trim();
-                let expected = known
-                    .get(target)
-                    .cloned()
-                    .ok_or_else(|| CompileError::UnknownVariable(target.into()))?;
+                let expected = known.get(target).cloned().ok_or_else(|| CompileError::UnknownVariable(target.into()))?;
                 let expr = parse_expr_in_namespace(rhs.trim(), namespace, p)?;
                 validate_expr(&expr, &known, p)?;
-                if infer_static_expr_type(&expr, &known, p)? != expected {
-                    return Err(CompileError::Syntax(format!(
-                        "action `{name}` set `{target}` type mismatch"
-                    )));
-                }
-                out.push(ActionStatement::Set {
-                    name: target.into(),
-                    expr,
-                });
+                if infer_static_expr_type(&expr, &known, p)? != expected { return Err(CompileError::Syntax(format!("action `{name}` set `{target}` type mismatch"))); }
+                out.push(ActionStatement::Set { name: target.into(), expr });
             }
             cursor = end + 1;
             continue;
@@ -325,8 +353,7 @@ pub(super) fn parse_action_statements(
         if body[cursor..].starts_with("authorize ") {
             let end = find_statement_end(body, cursor)?;
             let text = body[cursor..end].trim().trim_end_matches(';').trim();
-            let rule =
-                parse_and_refine_authorization(text, &mut known, p, &format!("action `{name}`"))?;
+            let rule = parse_and_refine_authorization(text, &mut *known, p, &format!("action `{name}`"))?;
             out.push(ActionStatement::Authorize(rule));
             cursor = end + 1;
             continue;
@@ -392,8 +419,12 @@ pub(super) fn parse_action_statements(
             let close = matching_paren(body, start - 1).ok_or_else(|| {
                 CompileError::Syntax(format!("action `{name}` redirect unclosed"))
             })?;
-            let route_call =
-                parse_redirect_route_call(body[start..close].trim(), namespace, &known, p)?;
+            let route_call = parse_redirect_route_call(
+                body[start..close].trim(),
+                namespace,
+                &known,
+                p,
+            )?;
             out.push(ActionStatement::ReturnRedirect(route_call));
             cursor = consume_return_tail(body, close + 1)?;
             continue;
@@ -415,6 +446,7 @@ pub(super) fn parse_action_statements(
             | Some(ActionStatement::ReturnJsonProjection(_))
             | Some(ActionStatement::Fail(_))
             | Some(ActionStatement::Resource { .. })
+            | Some(ActionStatement::Match { .. })
     ) {
         return Err(CompileError::Syntax(format!(
             "action `{name}` must return Redirect, Json, or fail with a public error"
@@ -426,6 +458,7 @@ pub(super) fn parse_action_statements(
             .map(|s| match s {
                 ActionStatement::Flash(_) => 1,
                 ActionStatement::Resource { statements, .. } => flash_count(statements),
+                ActionStatement::Match { arms, .. } => arms.iter().map(|arm| flash_count(&arm.statements)).sum(),
                 _ => 0,
             })
             .sum()
@@ -436,10 +469,11 @@ pub(super) fn parse_action_statements(
             "action `{name}` may set at most one flash message"
         )));
     }
-    if flashes == 1 && control_flow::action_return_kind(&out) != Some(HandlerReturnKind::Redirect) {
+    if flashes == 1 && !control_flow::action_return_matches(&out, HandlerReturnKind::Redirect) {
         return Err(CompileError::Syntax(format!(
             "action `{name}` flash requires a Redirect return"
         )));
     }
     Ok(out)
 }
+

@@ -1,11 +1,8 @@
-use crate::request_collections::{decode_string_list, group_fields};
 use chrono::{DateTime, NaiveDate, Utc};
-use language_core::{
-    AppError, F32Value, FormFailure, FormField, FormFieldIssue, HttpMethod, ImageRef, Program,
-    Route, RouteSegment, ValidationKind, Value, ValueType,
-};
+use language_core::{AppError, F32Value, FormFailure, FormField, FormFieldIssue, HttpMethod, ImageRef, Program, Route, RouteSegment, ValidationKind, Value, ValueType};
 use rust_decimal::Decimal;
 use std::collections::HashMap;
+use crate::request_collections::{decode_string_list, group_fields};
 use uuid::Uuid;
 
 pub fn route_meta_for_request<'a>(
@@ -126,9 +123,7 @@ pub(crate) fn decode_named_form_into(
     }
     if issues.is_empty() {
         for rule in &route.validations {
-            let Some(value) = env.get(&rule.field) else {
-                continue;
-            };
+            let Some(value) = env.get(&rule.field) else { continue };
             let ok = match (&rule.kind, value) {
                 (ValidationKind::Length { min, max }, Value::String(v)) => {
                     v.chars().count() >= *min && v.chars().count() <= *max
@@ -151,10 +146,7 @@ pub(crate) fn decode_named_form_into(
                     ValidationKind::Pattern { .. } => "pattern",
                     ValidationKind::SameAs { .. } => "same",
                 };
-                issues.push(FormFieldIssue {
-                    field: rule.field.clone(),
-                    code: code.into(),
-                });
+                issues.push(FormFieldIssue { field: rule.field.clone(), code: code.into() });
             }
         }
     }
@@ -189,10 +181,7 @@ pub(crate) fn decode_fields_into(
     }
     Ok(())
 }
-pub(crate) fn validate_route_inputs(
-    route: &Route,
-    env: &HashMap<String, Value>,
-) -> Result<(), AppError> {
+pub(crate) fn validate_route_inputs(route: &Route, env: &HashMap<String, Value>) -> Result<(), AppError> {
     for rule in &route.validations {
         let value = env.get(&rule.field).ok_or(AppError::BadRequest)?;
         match (&rule.kind, value) {
@@ -217,16 +206,9 @@ fn decode_path_param(program: &Program, raw: &str, ty: ValueType) -> Result<Valu
 use crate::scalars::{is_canonical_slug, normalize_email, normalize_url};
 use language_core::CredentialPurpose;
 
-pub(crate) fn decode_scalar(
-    program: &Program,
-    raw: &str,
-    ty: ValueType,
-) -> Result<Value, AppError> {
+pub(crate) fn decode_scalar(program: &Program, raw: &str, ty: ValueType) -> Result<Value, AppError> {
     if let ValueType::Domain(id) = ty {
-        let base = program
-            .domain_type_by_id(id)
-            .ok_or(AppError::Internal)?
-            .base;
+        let base = program.domain_type_by_id(id).ok_or(AppError::Internal)?.base;
         return decode_scalar(program, raw, base);
     }
     if let ValueType::Credential(purpose) = ty {
@@ -251,9 +233,7 @@ pub(crate) fn decode_scalar(
             .parse::<i64>()
             .map(Value::Int)
             .map_err(|_| AppError::BadRequest),
-        ValueType::F32Array | ValueType::StringList | ValueType::StringDict => {
-            Err(AppError::BadRequest)
-        }
+        ValueType::F32Array | ValueType::StringList | ValueType::StringDict => Err(AppError::BadRequest),
         ValueType::F32 => raw
             .parse::<f32>()
             .ok()
@@ -292,9 +272,7 @@ pub(crate) fn decode_scalar(
             }
         }
         ValueType::Upload => Err(AppError::BadRequest),
-        ValueType::Credential(_) => {
-            unreachable!("credential types are decoded before scalar decoding")
-        }
+        ValueType::Credential(_) => unreachable!("credential types are decoded before scalar decoding"),
         ValueType::Domain(_) => unreachable!("domain types are unwrapped before scalar decoding"),
     }
 }
@@ -306,19 +284,22 @@ fn decode_credential(raw: &str, purpose: CredentialPurpose) -> Result<Value, App
         CredentialPurpose::ApiToken => (16..=4096).contains(&raw.len()),
         CredentialPurpose::SessionToken
         | CredentialPurpose::PasswordResetToken
-        | CredentialPurpose::CsrfToken => {
-            raw.len() == 64 && raw.bytes().all(|byte| byte.is_ascii_hexdigit())
-        }
+        | CredentialPurpose::CsrfToken => raw.len() == 64 && raw.bytes().all(|byte| byte.is_ascii_hexdigit()),
         CredentialPurpose::SessionTokenHash
         | CredentialPurpose::PasswordResetTokenHash
         | CredentialPurpose::CsrfTokenHash => false,
         CredentialPurpose::CryptoKey => (16..=4096).contains(&raw.len()),
+        CredentialPurpose::SigningKeyWebhook
+        | CredentialPurpose::RetiringSigningKeyWebhook
+        | CredentialPurpose::RetiredSigningKeyWebhook
+        | CredentialPurpose::VerificationKeyWebhook
+        | CredentialPurpose::RetiringVerificationKeyWebhook
+        | CredentialPurpose::RetiredVerificationKeyWebhook
+        | CredentialPurpose::EncryptionKeyUserData
+        | CredentialPurpose::RetiringEncryptionKeyUserData
+        | CredentialPurpose::RetiredEncryptionKeyUserData => false,
     };
-    if !valid_length
-        || raw
-            .bytes()
-            .any(|byte| byte == 0 || byte == b'\r' || byte == b'\n')
-    {
+    if !valid_length || raw.bytes().any(|byte| byte == 0 || byte == b'\r' || byte == b'\n') {
         return Err(AppError::BadRequest);
     }
     Ok(Value::String(raw.into()))

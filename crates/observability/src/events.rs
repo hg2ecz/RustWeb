@@ -41,6 +41,22 @@ pub struct AuditEvent<'a> {
     pub detail: &'a str,
 }
 
+
+#[derive(Debug, Clone, Serialize)]
+pub struct SecurityEvent<'a> {
+    pub schema_version: u8,
+    pub timestamp: String,
+    pub event: &'static str,
+    pub level: &'a str,
+    pub category: &'a str,
+    pub action: &'a str,
+    pub outcome: &'a str,
+    pub request_id: &'a str,
+    pub route: &'a str,
+    pub subject: &'a str,
+    pub source: &'a str,
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct ActivityEvent<'a> {
     pub schema_version: u8,
@@ -72,9 +88,10 @@ pub fn new_request_id() -> String {
     format!("rw-{nanos:032x}-{counter:016x}")
 }
 
+
 #[cfg(test)]
 mod tests {
-    use super::{ActivityEvent, RequestLog, json_line, new_request_id, utc_timestamp};
+    use super::{ActivityEvent, RequestLog, SecurityEvent, json_line, new_request_id, utc_timestamp};
 
     #[test]
     fn request_id_is_server_generated_and_unique() {
@@ -122,4 +139,26 @@ mod tests {
         assert!(!line.contains("password"));
         assert!(!line.contains("request_body"));
     }
+    #[test]
+    fn security_event_schema_is_structured_and_redacted() {
+        let line = json_line(&SecurityEvent {
+            schema_version: 1,
+            timestamp: utc_timestamp(),
+            event: "security_event",
+            level: "warn",
+            category: "auth",
+            action: "authenticate",
+            outcome: "invalid_credentials",
+            request_id: "rw-test",
+            route: "/__rw/auth/login",
+            subject: "[redacted]",
+            source: "[redacted]",
+        })
+        .unwrap();
+        assert!(line.contains("\"subject\":\"[redacted]\""));
+        assert!(line.contains("\"source\":\"[redacted]\""));
+        assert!(!line.contains("alice@example.com"));
+        assert!(!line.contains("127.0.0.1"));
+    }
+
 }

@@ -63,17 +63,20 @@ On Debian/Ubuntu build hosts, `make deb` creates an installable `rwlang_1.0.0-1_
 
 ## V1 capability overview
 
-- typed routing, forms, and JSON APIs;
-- typed SQL bind/decode, migrations, and optimistic locking;
-- local/LDAP authentication, TOTP, roles/permissions, and object authorization;
-- first-class `Date`, `DateTime`, `Uuid`, `Decimal`, `Slug`, `Email`, `Url`, and enums;
-- domain objects and modules;
-- safe HTML, components/layouts, Markdown, and image/media handling;
-- CSRF, Host/Origin/Fetch Metadata checks, HTTPS, and static/media confinement;
-- AppFs and IPv4/IPv6 outbound-network policy;
-- rate limiting, public cache, and resource profiles;
-- structured server/access/audit logs and business audit trails;
-- canonical slug redirects, PRG/flash, and 409 conflict UX;
+- typed routing, forms, JSON APIs, domain/nominal types and exhaustive enum matching;
+- typed SQL bind/decode, static DB row bounds, migrations, optimistic locking and explicit transaction outcomes;
+- local/LDAP authentication, TOTP/MFA, permissions, object/mutation authorization and multi-dimensional abuse protection;
+- platform-owned sessions plus purpose-safe token issuance, hash-at-rest, expiry, revocation and rotation;
+- `Secret<T>` / `Sensitive<T>` flow control, explicit public projections and trusted redaction;
+- critical-operation contracts with audit, transaction and idempotency requirements;
+- tenant membership authority and compiler-enforced tenant isolation;
+- verified/replay-protected webhooks and staged/verified file publication;
+- effect/capability tracking and named SSRF-hardened outbound integrations;
+- typed HTTP metadata, generated least-privilege CSP/security headers and strict production deployment policy;
+- purpose/lifecycle-specific cryptographic keys and AES-256-GCM authenticated user-data encryption;
+- request/DB/file/outbound resource ceilings, hard request deadlines and cumulative external-I/O budgets;
+- structured security events, redaction and burst-alerting foundation;
+- supply-chain capability/provenance lock plus reproducible release evidence;
 - config-first deployment plus backup/restore/upgrade/rollback workflows.
 
 ## Deliberate V1 non-goals
@@ -86,7 +89,7 @@ RWLang does not expose a general Rust-like `pub`/`mut` language surface in V1. M
 
 RWLang uses explicit statement boundaries. Simple statements end with `;`; newlines are whitespace only and there is no automatic semicolon insertion. Non-block top-level declarations such as `mod path;` and `route ... => handler;` also end with `;`, while block declarations and control-flow blocks end with `}` and do not take a trailing semicolon. See [`docs/56-statement-terminators.md`](docs/56-statement-terminators.md).
 
-Routes also require an explicit access decision: use `public` for intentionally public endpoints or `auth user` / `auth mfa` / `auth role ...` for protected endpoints. Dynamic String redirects are rejected; normal redirects use compiler-checked typed route calls. Raw external String inputs receive an automatic 4096-character upper bound unless a narrower route or domain-type validation is declared. Reusable `type Name = String|Int { ... }` contracts and `splitBounded(...)` make common validation/resource limits concise. See [`docs/57-secure-by-construction-foundation.md`](docs/57-secure-by-construction-foundation.md) and [`docs/62-domain-types-and-bounded-collections.md`](docs/62-domain-types-and-bounded-collections.md).
+Routes also require an explicit access decision: use `public` for intentionally public endpoints or `auth user` / `auth mfa` / `auth role ...` for protected endpoints. Dynamic String redirects are rejected; normal redirects use compiler-checked typed route calls. Raw external String inputs receive an automatic 4096-character upper bound unless a narrower route or domain-type validation is declared. Reusable `type Name = String|Int { ... }` contracts and `splitBounded(...)` make common validation/resource limits concise. See [`docs/57-secure-by-construction-foundation.md`](docs/57-secure-by-construction-foundation.md), [`docs/62-domain-types-and-bounded-collections.md`](docs/62-domain-types-and-bounded-collections.md), and the canonical [security status](SECURITY-STATUS.md).
 
 The numeric core includes checked `+`, `-`, `*`, `/`, `%`, integer shifts `<<`/`>>`, integer bitwise `&`/`^`/`|`, boolean `!`/`&&`/`||` with short-circuit evaluation, and F32 math builtins including `ln`, `log10`, `log`, `exp`, `pow`, `round`, `floor`, and `ceil`. See [`docs/44-math-and-timing.md`](docs/44-math-and-timing.md).
 

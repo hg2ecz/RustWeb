@@ -7,15 +7,15 @@ pub(crate) enum SourceReloadError {
     RatePolicy(super::RatePolicyConfigError),
     Cache(super::PublicCacheError),
     HostingLockPoisoned,
-    CacheTtlExceeded {
-        domain: Option<String>,
-        route: String,
-    },
+    CacheTtlExceeded { domain: Option<String>, route: String },
     CacheUnavailable,
     DatabaseUnavailable,
     AuthenticationUnavailable,
     IdempotencyUnavailable,
     WebhookSecretsUnavailable,
+    OutboundUnavailable,
+    OutboundTargetUnavailable(String),
+    ProductionPolicyChanged,
 }
 
 impl fmt::Display for SourceReloadError {
@@ -49,6 +49,18 @@ impl fmt::Display for SourceReloadError {
                 f,
                 "reloaded application declares verified webhook routes but web.webhook_secrets_dir is unavailable"
             ),
+            Self::OutboundUnavailable => write!(
+                f,
+                "reloaded application declares outbound integration effects but no egress policy client is active"
+            ),
+            Self::OutboundTargetUnavailable(target) => write!(
+                f,
+                "reloaded application requires outbound target `{target}` that is unavailable or ambiguous in the active egress policy"
+            ),
+            Self::ProductionPolicyChanged => write!(
+                f,
+                "reloaded application changed its production deployment policy; restart with an explicitly reviewed server configuration"
+            ),
         }
     }
 }
@@ -65,17 +77,11 @@ impl Error for SourceReloadError {
 }
 
 impl From<super::BackendSupportError> for SourceReloadError {
-    fn from(value: super::BackendSupportError) -> Self {
-        Self::Backend(value)
-    }
+    fn from(value: super::BackendSupportError) -> Self { Self::Backend(value) }
 }
 impl From<super::RatePolicyConfigError> for SourceReloadError {
-    fn from(value: super::RatePolicyConfigError) -> Self {
-        Self::RatePolicy(value)
-    }
+    fn from(value: super::RatePolicyConfigError) -> Self { Self::RatePolicy(value) }
 }
 impl From<super::PublicCacheError> for SourceReloadError {
-    fn from(value: super::PublicCacheError) -> Self {
-        Self::Cache(value)
-    }
+    fn from(value: super::PublicCacheError) -> Self { Self::Cache(value) }
 }

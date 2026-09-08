@@ -30,8 +30,9 @@ pub(super) fn validate_replay_guard_requirements(
                 "application declares verified webhook routes but web.webhook_secrets_dir is not configured",
             ));
         };
-        let meta = std::fs::symlink_metadata(root)
-            .map_err(|_| StartupError::invalid("web.webhook_secrets_dir is unavailable"))?;
+        let meta = std::fs::symlink_metadata(root).map_err(|_| {
+            StartupError::invalid("web.webhook_secrets_dir is unavailable")
+        })?;
         if !meta.is_dir() || meta.file_type().is_symlink() {
             return Err(StartupError::invalid(
                 "web.webhook_secrets_dir must be a real directory, not a symlink",

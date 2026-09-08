@@ -1,8 +1,6 @@
 use crate::handler_types::StaticType;
 use crate::scalar_security::ScalarType;
-use language_core::{
-    CredentialPurpose, FunctionParam, Program, Route, RouteSegment, ValidationKind, ValueType,
-};
+use language_core::{CredentialPurpose, FunctionParam, Program, Route, RouteSegment, ValidationKind, ValueType};
 use std::collections::HashMap;
 
 pub(super) fn handler_input_types(

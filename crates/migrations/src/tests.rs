@@ -1,10 +1,10 @@
+use crate::{apply, load_migrations, split_sql_statements, status, verify};
 use crate::error::MigrationError;
 use crate::history::validate_history;
 use crate::types::{AppliedMigration, Migration, MigrationState};
-use crate::{apply, load_migrations, split_sql_statements, status, verify};
-use std::fs;
 use std::path::PathBuf;
 use std::time::Duration;
+use std::fs;
 
 #[test]
 fn loader_orders_and_hashes() {

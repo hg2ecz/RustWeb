@@ -56,18 +56,20 @@ Debian/Ubuntu build gépen a `make deb` telepíthető `rwlang_1.0.0-1_<arch>.deb
 
 ## V1 fő capabilityk
 
-- typed routing, forms és JSON API;
-- typed SQL bind/decode, migrations és optimistic locking;
-- local/LDAP auth, TOTP, role/permission és object authorization;
-- first-class `Date`, `DateTime`, `Uuid`, `Decimal`, `Slug`, `Email`, `Url` és enum;
-- domain objectek és modulrendszer;
-- safe HTML/components/layout/Markdown/Image;
-- CSRF, Host/Origin/Fetch Metadata, HTTPS és static/media confinement;
-- AppFs és IPv4/IPv6 outbound-network capability policy;
-- rate limiting, public cache és resource profile-ok;
-- structured server/access/audit log és business audit trail;
-- canonical slug redirect, PRG/flash és 409 conflict UX;
-- config-first deployment, backup/restore/upgrade/rollback operator flow.
+- typed routing/forms/JSON, domain és nominális típusok, exhaustive enum `match`;
+- typed SQL, statikus DB row-bound, optimistic locking és explicit transaction outcome;
+- local/LDAP auth, TOTP/MFA, permission, object/mutation authorization és auth abuse protection;
+- platform-owned session + purpose-safe token hash/expiry/revoke/rotation lifecycle;
+- `Secret<T>` / `Sensitive<T>` flow, explicit public projection és trusted `redact(...)`;
+- critical-operation contract audit/transaction/idempotency garanciákkal;
+- tenant authority és compiler-enforced tenant isolation;
+- verified webhook replay protection és staged/verified file publish;
+- effect/capability modell és named SSRF-hardened outbound integration;
+- typed HTTP metadata, generált CSP/security headerek és strict production policy;
+- purpose/lifecycle typed crypto keyek és AES-256-GCM authenticated encryption;
+- request/DB/file/outbound resource cap, hard deadline és cumulative I/O budget;
+- structured security event/redaction/burst alerting alap;
+- supply-chain capability/provenance lock és release evidence.
 
 ## Tudatos V1 non-goalok
 
@@ -89,7 +91,7 @@ Különösen: RWLangban továbbra sincs Rust-szerű általános `pub`/`mut` nyel
 
 ## Security
 
-A webes security ellenőrzőlista: [docs/hu/15-security-checklist.md](docs/hu/15-security-checklist.md). A projekt fail-closed elve: ismeretlen vagy nem bizonyítható állapotnál ne legyen implicit permissive fallback.
+A canonical aktuális állapot: [SECURITY-STATUS.md](SECURITY-STATUS.md). A webes/production ellenőrzőlista: [docs/hu/15-security-checklist.md](docs/hu/15-security-checklist.md). A projekt fail-closed elve: ismeretlen vagy nem bizonyítható állapotnál ne legyen implicit permissive fallback.
 
 
 Végrehajtás: az alkalmazáskifejezéseket korlátos stack-alapú bytecode VM futtatja; natív JIT még nincs. Lásd: `docs/hu/39-bytecode-vegrehajtas.md`.

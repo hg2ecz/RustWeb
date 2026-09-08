@@ -24,6 +24,7 @@ impl Html {
     }
 }
 
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LocalUrl(String);
 
@@ -96,32 +97,18 @@ pub struct Redirect {
 }
 impl Redirect {
     pub fn new(location: LocalUrl) -> Self {
-        Self {
-            location,
-            status: RedirectStatus::SeeOther,
-            flash: None,
-        }
+        Self { location, status: RedirectStatus::SeeOther, flash: None }
     }
     pub fn permanent(location: LocalUrl) -> Self {
-        Self {
-            location,
-            status: RedirectStatus::MovedPermanently,
-            flash: None,
-        }
+        Self { location, status: RedirectStatus::MovedPermanently, flash: None }
     }
     pub fn with_flash(mut self, flash: FlashMessage) -> Self {
         self.flash = Some(flash);
         self
     }
-    pub fn flash(&self) -> Option<&FlashMessage> {
-        self.flash.as_ref()
-    }
-    pub fn location(&self) -> &str {
-        self.location.as_str()
-    }
-    pub fn status(&self) -> RedirectStatus {
-        self.status
-    }
+    pub fn flash(&self) -> Option<&FlashMessage> { self.flash.as_ref() }
+    pub fn location(&self) -> &str { self.location.as_str() }
+    pub fn status(&self) -> RedirectStatus { self.status }
 }
 
 #[cfg(test)]

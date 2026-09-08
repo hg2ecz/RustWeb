@@ -1,6 +1,6 @@
+use crate::{BuiltinFunction, ObjectAuthorization, PublicError, PublicProjection};
 use crate::values::{F32Value, FunctionParam, ValueType};
 use crate::web_types::FlashMessage;
-use crate::{BuiltinFunction, ObjectAuthorization, PublicError, PublicProjection};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum BinaryOp {
     Add,
@@ -27,17 +27,9 @@ pub enum Expr {
     String(String),
     Int(i64),
     F32(F32Value),
-    F32ArrayNew {
-        len: Box<Expr>,
-        fill: Box<Expr>,
-    },
-    CollectionIndex {
-        collection: String,
-        index: Box<Expr>,
-    },
-    CollectionLen {
-        collection: String,
-    },
+    F32ArrayNew { len: Box<Expr>, fill: Box<Expr> },
+    CollectionIndex { collection: String, index: Box<Expr> },
+    CollectionLen { collection: String },
     Bool(bool),
     EnumLiteral {
         enum_id: u16,
@@ -147,34 +139,41 @@ pub struct RouteCall {
     pub args: Vec<Expr>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OutboundMethod {
+    Get,
+    PostJson,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OutboundCall {
+    pub integration: String,
+    pub egress_target: String,
+    pub method: OutboundMethod,
+    pub path: String,
+    pub body: Option<Expr>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ComputeStatement {
-    Let {
-        name: String,
-        expr: Expr,
-    },
-    Set {
-        name: String,
-        expr: Expr,
-    },
-    F32ArraySet {
-        array: String,
-        index: Expr,
-        value: Expr,
-    },
-    StringDictSet {
-        dict: String,
-        key: Expr,
-        value: Expr,
-    },
-    While {
-        condition: Expr,
-        statements: Vec<ComputeStatement>,
-    },
-    If {
-        condition: Expr,
-        statements: Vec<ComputeStatement>,
-    },
+    Let { name: String, expr: Expr },
+    Set { name: String, expr: Expr },
+    F32ArraySet { array: String, index: Expr, value: Expr },
+    StringDictSet { dict: String, key: Expr, value: Expr },
+    While { condition: Expr, statements: Vec<ComputeStatement> },
+    If { condition: Expr, statements: Vec<ComputeStatement> },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PageMatchArm {
+    pub variant: String,
+    pub statements: Vec<Statement>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ActionMatchArm {
+    pub variant: String,
+    pub statements: Vec<ActionStatement>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -183,36 +182,24 @@ pub enum Statement {
         name: String,
         expr: Expr,
     },
-    LetValidated {
-        name: String,
-        domain: u16,
-        expr: Expr,
-    },
-    Set {
-        name: String,
-        expr: Expr,
-    },
-    While {
-        condition: Expr,
-        statements: Vec<ComputeStatement>,
-    },
-    If {
-        condition: Expr,
-        statements: Vec<ComputeStatement>,
-    },
+    LetValidated { name: String, domain: u16, expr: Expr },
+    Set { name: String, expr: Expr },
+    While { condition: Expr, statements: Vec<ComputeStatement> },
+    If { condition: Expr, statements: Vec<ComputeStatement> },
+    Match { expr: Expr, enum_id: u16, arms: Vec<PageMatchArm> },
     F32ArraySet {
         array: String,
         index: Expr,
         value: Expr,
     },
-    StringDictSet {
-        dict: String,
-        key: Expr,
-        value: Expr,
-    },
+    StringDictSet { dict: String, key: Expr, value: Expr },
     LetQuery {
         name: String,
         call: QueryCall,
+    },
+    LetOutboundStatus {
+        name: String,
+        call: OutboundCall,
     },
     Authorize(ObjectAuthorization),
     Resource {
@@ -253,39 +240,28 @@ pub enum ActionStatement {
         name: String,
         expr: Expr,
     },
-    LetValidated {
-        name: String,
-        domain: u16,
-        expr: Expr,
-    },
-    Set {
-        name: String,
-        expr: Expr,
-    },
-    While {
-        condition: Expr,
-        statements: Vec<ComputeStatement>,
-    },
-    If {
-        condition: Expr,
-        statements: Vec<ComputeStatement>,
-    },
+    LetValidated { name: String, domain: u16, expr: Expr },
+    Set { name: String, expr: Expr },
+    While { condition: Expr, statements: Vec<ComputeStatement> },
+    If { condition: Expr, statements: Vec<ComputeStatement> },
+    Match { expr: Expr, enum_id: u16, arms: Vec<ActionMatchArm> },
     F32ArraySet {
         array: String,
         index: Expr,
         value: Expr,
     },
-    StringDictSet {
-        dict: String,
-        key: Expr,
-        value: Expr,
-    },
+    StringDictSet { dict: String, key: Expr, value: Expr },
     LetQuery {
         name: String,
         call: QueryCall,
     },
+    LetOutboundStatus {
+        name: String,
+        call: OutboundCall,
+    },
     Authorize(ObjectAuthorization),
     Transaction {
+        outcome: Option<String>,
         statements: Vec<TxStatement>,
     },
     Resource {
@@ -327,6 +303,7 @@ pub struct PageFunction {
     pub name: String,
     pub params: Vec<FunctionParam>,
     pub needs_db: bool,
+    pub effects: Vec<crate::Effect>,
     pub security: crate::HandlerSecurityContract,
     pub body: PageBody,
 }
@@ -335,6 +312,7 @@ pub struct ActionFunction {
     pub name: String,
     pub params: Vec<FunctionParam>,
     pub needs_db: bool,
+    pub effects: Vec<crate::Effect>,
     pub security: crate::HandlerSecurityContract,
     pub body: ActionBody,
 }

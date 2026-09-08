@@ -1,22 +1,22 @@
+use crate::public_projection::evaluate_public_projection;
 use crate::control_flow;
-use crate::db_execution::{execute_read_query, execute_tx_query};
+use crate::db_execution::execute_read_query;
 use crate::domain_values;
 use crate::execution_context::Budget;
-use crate::public_projection::evaluate_public_projection;
 use crate::rendering::build_current_route_url;
 use crate::request_binding::validate_redirect_location;
-use crate::response::AppResponse;
 use crate::scalars::is_canonical_slug;
 use crate::templates;
 use crate::vm::eval_expr;
 use chrono::Utc;
 use data::{BindSet, Database, DbTransaction, DbValue, PreparedSql};
 use language_core::{
-    ActionStatement, AppError, AuthorizationMode, FlashKind, FlashMessage, LocalUrl, Program,
-    Redirect, Route, Statement, TxStatement, Value,
+    ActionStatement, AppError, AuthorizationMode, FlashKind, FlashMessage, LocalUrl, Program, Redirect,
+    Route, Statement, Value,
 };
 use std::collections::HashMap;
 use uuid::Uuid;
+use crate::response::AppResponse;
 
 pub(crate) fn authorize_object(
     rule: &language_core::ObjectAuthorization,
@@ -59,12 +59,13 @@ pub(crate) async fn execute_page_plain(
     env: &mut HashMap<String, Value>,
     budget: &mut Budget,
     db: Option<&Database>,
+    outbound: Option<&dyn crate::OutboundRuntime>,
 ) -> Result<AppResponse, AppError> {
     for s in statements {
         if matches!(s, Statement::Resource { .. }) {
             return Err(AppError::Internal);
         }
-        if let Some(r) = execute_page_statement(program, route, s, env, budget, db).await? {
+        if let Some(r) = execute_page_statement(program, route, s, env, budget, db, outbound).await? {
             return Ok(r);
         }
     }
@@ -77,6 +78,7 @@ pub(crate) async fn execute_page_statement(
     env: &mut HashMap<String, Value>,
     budget: &mut Budget,
     db: Option<&Database>,
+    outbound: Option<&dyn crate::OutboundRuntime>,
 ) -> Result<Option<AppResponse>, AppError> {
     budget.charge(1)?;
     match s {
@@ -93,30 +95,35 @@ pub(crate) async fn execute_page_statement(
             env.insert(name.clone(), value);
             Ok(None)
         }
-        Statement::Set { name, expr } => {
-            control_flow::assign(name, expr, env, budget).map(|_| None)
+        Statement::Set { name, expr } => control_flow::assign(name, expr, env, budget).map(|_| None),
+        Statement::While { condition, statements } => control_flow::execute_while(condition, statements, env, budget).map(|_| None),
+        Statement::If { condition, statements } => control_flow::execute_if(condition, statements, env, budget).map(|_| None),
+        Statement::Match { expr, enum_id, arms } => {
+            let value = eval_expr(expr, env, budget)?;
+            let variant = match value {
+                Value::Enum { enum_id: actual, variant } if actual == *enum_id => variant,
+                _ => return Err(AppError::Internal),
+            };
+            let arm = arms.iter().find(|arm| arm.variant == variant).ok_or(AppError::Internal)?;
+            for statement in &arm.statements {
+                if let Some(response) = Box::pin(execute_page_statement(program, route, statement, env, budget, db, outbound)).await? {
+                    return Ok(Some(response));
+                }
+            }
+            Ok(None)
         }
-        Statement::While {
-            condition,
-            statements,
-        } => control_flow::execute_while(condition, statements, env, budget).map(|_| None),
-        Statement::If {
-            condition,
-            statements,
-        } => control_flow::execute_if(condition, statements, env, budget).map(|_| None),
-        Statement::F32ArraySet {
-            array,
-            index,
-            value,
-        } => control_flow::set_f32_array(array, index, value, env, budget).map(|_| None),
-        Statement::StringDictSet { dict, key, value } => {
-            control_flow::set_string_dict(dict, key, value, env, budget).map(|_| None)
-        }
+        Statement::F32ArraySet { array, index, value } => control_flow::set_f32_array(array, index, value, env, budget).map(|_| None),
+        Statement::StringDictSet { dict, key, value } => control_flow::set_string_dict(dict, key, value, env, budget).map(|_| None),
         Statement::LetQuery { name, call } => {
             let database = db.ok_or(AppError::Database)?;
             let v = execute_read_query(program, call, env, budget, database).await?;
             budget.charge_value(&v)?;
             env.insert(name.clone(), v);
+            Ok(None)
+        }
+        Statement::LetOutboundStatus { name, call } => {
+            let value = crate::outbound_execution::execute(call, env, budget, outbound).await?;
+            env.insert(name.clone(), value);
             Ok(None)
         }
         Statement::Authorize(rule) => {
@@ -150,13 +157,13 @@ pub(crate) async fn execute_page_statement(
         }
         Statement::ReturnJson(expr) => {
             let value = eval_expr(expr, env, budget)?;
-            let json = serialize_json_value(&value)?;
+            let json = crate::json_values::serialize_json_value(&value)?;
             budget.charge_alloc(json.len() as u64)?;
             Ok(Some(AppResponse::Json(json)))
         }
         Statement::ReturnJsonProjection(projection) => {
             let value = evaluate_public_projection(projection, env, budget)?;
-            let json = serialize_json_value(&value)?;
+            let json = crate::json_values::serialize_json_value(&value)?;
             budget.charge_alloc(json.len() as u64)?;
             Ok(Some(AppResponse::Json(json)))
         }
@@ -170,18 +177,18 @@ pub(crate) async fn execute_action_plain(
     env: &mut HashMap<String, Value>,
     budget: &mut Budget,
     db: Option<&Database>,
+    outbound: Option<&dyn crate::OutboundRuntime>,
 ) -> Result<AppResponse, AppError> {
     for s in statements {
         if matches!(s, ActionStatement::Resource { .. }) {
             return Err(AppError::Internal);
         }
-        if let Some(r) = execute_action_statement(program, s, env, budget, db).await? {
+        if let Some(r) = execute_action_statement(program, s, env, budget, db, outbound).await? {
             return Ok(r);
         }
     }
     Err(AppError::Internal)
 }
-
 fn audit_value_text(value: &Value) -> Result<String, AppError> {
     let text = value.display_text().ok_or(AppError::Internal)?;
     if text.len() > 255 {
@@ -190,7 +197,7 @@ fn audit_value_text(value: &Value) -> Result<String, AppError> {
     Ok(text)
 }
 
-async fn write_business_audit(
+pub(crate) async fn write_business_audit(
     audit: &language_core::BusinessAudit,
     env: &HashMap<String, Value>,
     budget: &mut Budget,
@@ -282,6 +289,7 @@ pub(crate) async fn execute_action_statement(
     env: &mut HashMap<String, Value>,
     budget: &mut Budget,
     db: Option<&Database>,
+    outbound: Option<&dyn crate::OutboundRuntime>,
 ) -> Result<Option<AppResponse>, AppError> {
     budget.charge(1)?;
     match s {
@@ -298,30 +306,35 @@ pub(crate) async fn execute_action_statement(
             env.insert(name.clone(), value);
             Ok(None)
         }
-        ActionStatement::Set { name, expr } => {
-            control_flow::assign(name, expr, env, budget).map(|_| None)
+        ActionStatement::Set { name, expr } => control_flow::assign(name, expr, env, budget).map(|_| None),
+        ActionStatement::While { condition, statements } => control_flow::execute_while(condition, statements, env, budget).map(|_| None),
+        ActionStatement::If { condition, statements } => control_flow::execute_if(condition, statements, env, budget).map(|_| None),
+        ActionStatement::Match { expr, enum_id, arms } => {
+            let value = eval_expr(expr, env, budget)?;
+            let variant = match value {
+                Value::Enum { enum_id: actual, variant } if actual == *enum_id => variant,
+                _ => return Err(AppError::Internal),
+            };
+            let arm = arms.iter().find(|arm| arm.variant == variant).ok_or(AppError::Internal)?;
+            for statement in &arm.statements {
+                if let Some(response) = Box::pin(execute_action_statement(program, statement, env, budget, db, outbound)).await? {
+                    return Ok(Some(response));
+                }
+            }
+            Ok(None)
         }
-        ActionStatement::While {
-            condition,
-            statements,
-        } => control_flow::execute_while(condition, statements, env, budget).map(|_| None),
-        ActionStatement::If {
-            condition,
-            statements,
-        } => control_flow::execute_if(condition, statements, env, budget).map(|_| None),
-        ActionStatement::F32ArraySet {
-            array,
-            index,
-            value,
-        } => control_flow::set_f32_array(array, index, value, env, budget).map(|_| None),
-        ActionStatement::StringDictSet { dict, key, value } => {
-            control_flow::set_string_dict(dict, key, value, env, budget).map(|_| None)
-        }
+        ActionStatement::F32ArraySet { array, index, value } => control_flow::set_f32_array(array, index, value, env, budget).map(|_| None),
+        ActionStatement::StringDictSet { dict, key, value } => control_flow::set_string_dict(dict, key, value, env, budget).map(|_| None),
         ActionStatement::LetQuery { name, call } => {
             let database = db.ok_or(AppError::Database)?;
             let v = execute_read_query(program, call, env, budget, database).await?;
             budget.charge_value(&v)?;
             env.insert(name.clone(), v);
+            Ok(None)
+        }
+        ActionStatement::LetOutboundStatus { name, call } => {
+            let value = crate::outbound_execution::execute(call, env, budget, outbound).await?;
+            env.insert(name.clone(), value);
             Ok(None)
         }
         ActionStatement::Authorize(rule) => {
@@ -339,40 +352,9 @@ pub(crate) async fn execute_action_statement(
             );
             Ok(None)
         }
-        ActionStatement::Transaction { statements } => {
+        ActionStatement::Transaction { outcome, statements } => {
             let database = db.ok_or(AppError::Database)?;
-            let mut tx = database.begin().await.map_err(|_| AppError::Database)?;
-            let mut failed = None;
-            for statement in statements {
-                let result = match statement {
-                    TxStatement::LetQuery { name, call } => {
-                        execute_tx_query(program, call, env, budget, &mut tx)
-                            .await
-                            .and_then(|v| {
-                                budget.charge_value(&v)?;
-                                env.insert(name.clone(), v);
-                                Ok(())
-                            })
-                    }
-                    TxStatement::Query(call) => {
-                        execute_tx_query(program, call, env, budget, &mut tx)
-                            .await
-                            .map(|_| ())
-                    }
-                    TxStatement::BusinessAudit(audit) => {
-                        write_business_audit(audit, env, budget, &mut tx).await
-                    }
-                };
-                if let Err(e) = result {
-                    failed = Some(e);
-                    break;
-                }
-            }
-            if let Some(e) = failed {
-                let _ = tx.rollback().await;
-                return Err(e);
-            }
-            tx.commit().await.map_err(|_| AppError::Database)?;
+            crate::transaction_execution::execute(program, outcome, statements, env, budget, database).await?;
             Ok(None)
         }
         ActionStatement::ReturnRedirect(call) => {
@@ -381,8 +363,14 @@ pub(crate) async fn execute_action_statement(
                 .iter()
                 .find(|route| route.name == call.route)
                 .ok_or(AppError::Internal)?;
-            let location =
-                crate::rendering::build_route_url(program, route, &call.args, env, budget, true)?;
+            let location = crate::rendering::build_route_url(
+                program,
+                route,
+                &call.args,
+                env,
+                budget,
+                true,
+            )?;
             validate_redirect_location(&location)?;
             let redirect = match (env.get("__flashKind"), env.get("__flashMessage")) {
                 (Some(Value::String(kind)), Some(Value::String(message))) => {
@@ -393,12 +381,10 @@ pub(crate) async fn execute_action_statement(
                         "error" => FlashKind::Error,
                         _ => return Err(AppError::Internal),
                     };
-                    Redirect::new(LocalUrl::parse(location).ok_or(AppError::Internal)?).with_flash(
-                        FlashMessage {
-                            kind,
-                            message: message.clone(),
-                        },
-                    )
+                    Redirect::new(LocalUrl::parse(location).ok_or(AppError::Internal)?).with_flash(FlashMessage {
+                        kind,
+                        message: message.clone(),
+                    })
                 }
                 (None, None) => Redirect::new(LocalUrl::parse(location).ok_or(AppError::Internal)?),
                 _ => return Err(AppError::Internal),
@@ -407,69 +393,17 @@ pub(crate) async fn execute_action_statement(
         }
         ActionStatement::ReturnJson(expr) => {
             let value = eval_expr(expr, env, budget)?;
-            let json = serialize_json_value(&value)?;
+            let json = crate::json_values::serialize_json_value(&value)?;
             budget.charge_alloc(json.len() as u64)?;
             Ok(Some(AppResponse::Json(json)))
         }
         ActionStatement::ReturnJsonProjection(projection) => {
             let value = evaluate_public_projection(projection, env, budget)?;
-            let json = serialize_json_value(&value)?;
+            let json = crate::json_values::serialize_json_value(&value)?;
             budget.charge_alloc(json.len() as u64)?;
             Ok(Some(AppResponse::Json(json)))
         }
         ActionStatement::Fail(error) => Err((*error).into()),
         ActionStatement::Resource { .. } => Err(AppError::Internal),
     }
-}
-
-pub(crate) fn serialize_json_value(value: &Value) -> Result<String, AppError> {
-    fn convert(value: &Value) -> serde_json::Value {
-        match value {
-            Value::String(v) => serde_json::Value::String(v.clone()),
-            Value::Email(v) => serde_json::Value::String(v.clone()),
-            Value::Url(v) => serde_json::Value::String(v.clone()),
-            Value::Int(v) => serde_json::Value::Number((*v).into()),
-            Value::F32(v) => serde_json::json!(v.get()),
-            Value::F32Array(items) => {
-                serde_json::Value::Array(items.iter().map(|v| serde_json::json!(v.get())).collect())
-            }
-            Value::StringList(items) => serde_json::Value::Array(
-                items
-                    .iter()
-                    .cloned()
-                    .map(serde_json::Value::String)
-                    .collect(),
-            ),
-            Value::StringDict(items) => serde_json::Value::Object(
-                items
-                    .iter()
-                    .map(|(k, v)| (k.clone(), serde_json::Value::String(v.clone())))
-                    .collect(),
-            ),
-            Value::Bool(v) => serde_json::Value::Bool(*v),
-            Value::Date(v) => serde_json::Value::String(v.format("%Y-%m-%d").to_string()),
-            Value::DateTime(v) => {
-                serde_json::Value::String(v.to_rfc3339_opts(chrono::SecondsFormat::AutoSi, true))
-            }
-            Value::Uuid(v) => serde_json::Value::String(v.hyphenated().to_string()),
-            Value::Decimal(v) => serde_json::Value::String(v.normalize().to_string()),
-            Value::Image(v) => serde_json::Value::String(v.canonical()),
-            Value::Enum { variant, .. } => serde_json::Value::String(variant.clone()),
-            Value::Null => serde_json::Value::Null,
-            Value::Record(fields) => {
-                let mut map = serde_json::Map::new();
-                let mut keys: Vec<_> = fields.keys().collect();
-                keys.sort();
-                for key in keys {
-                    map.insert(
-                        (*key).clone(),
-                        convert(fields.get(key).expect("record key exists")),
-                    );
-                }
-                serde_json::Value::Object(map)
-            }
-            Value::List(values) => serde_json::Value::Array(values.iter().map(convert).collect()),
-        }
-    }
-    serde_json::to_string(&convert(value)).map_err(|_| AppError::Internal)
 }

@@ -169,9 +169,6 @@ pub(super) fn apply_default_external_input_bounds(
             },
             _ => continue,
         };
-        validations.push(ValidationRule {
-            field: field.name,
-            kind,
-        });
+        validations.push(ValidationRule { field: field.name, kind });
     }
 }

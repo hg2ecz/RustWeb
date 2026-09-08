@@ -84,10 +84,7 @@ fn logical_and_short_circuits_rhs() {
         right: Box::new(rhs),
     };
     let mut b = budget();
-    assert_eq!(
-        eval_expr(&expr, &HashMap::new(), &mut b).unwrap(),
-        Value::Bool(false)
-    );
+    assert_eq!(eval_expr(&expr, &HashMap::new(), &mut b).unwrap(), Value::Bool(false));
 }
 
 #[test]
@@ -107,22 +104,14 @@ fn logical_or_short_circuits_rhs() {
         right: Box::new(rhs),
     };
     let mut b = budget();
-    assert_eq!(
-        eval_expr(&expr, &HashMap::new(), &mut b).unwrap(),
-        Value::Bool(true)
-    );
+    assert_eq!(eval_expr(&expr, &HashMap::new(), &mut b).unwrap(), Value::Bool(true));
 }
 
 #[test]
 fn logical_not_executes_in_bytecode() {
     let mut b = budget();
     assert_eq!(
-        eval_expr(
-            &Expr::Not(Box::new(Expr::Bool(false))),
-            &HashMap::new(),
-            &mut b
-        )
-        .unwrap(),
+        eval_expr(&Expr::Not(Box::new(Expr::Bool(false))), &HashMap::new(), &mut b).unwrap(),
         Value::Bool(true)
     );
 }

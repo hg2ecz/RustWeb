@@ -12,10 +12,7 @@ budget interactive
 => home;
 "#;
     let program = compile_source(src).expect("route budget should compile");
-    assert_eq!(
-        program.routes[0].budget_profile.as_deref(),
-        Some("interactive")
-    );
+    assert_eq!(program.routes[0].budget_profile.as_deref(), Some("interactive"));
     assert!(program.resource_uses.iter().any(|use_site| {
         use_site.profile == "interactive" && use_site.source.function == "home"
     }));

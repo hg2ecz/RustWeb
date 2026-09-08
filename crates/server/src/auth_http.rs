@@ -1,27 +1,31 @@
-use auth::{AuthError, SessionBackend, SessionSnapshot, authenticate_ldap, verify_totp_redis};
+use crate::response_headers::HeaderName;
+use auth::{
+    AuthAbuseStage, AuthError, SessionBackend, SessionSnapshot, authenticate_ldap, verify_totp_redis,
+};
 use language_core::ServerConfig;
-use observability::{ActivityEvent, audit_log, json_line, utc_timestamp};
 use runtime::decode_urlencoded_limited;
 use std::collections::HashMap;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use super::{AuthRuntime, WebSecurityCliConfig};
+use super::auth_observability::{audit_auth_activity, audit_auth_activity_action, observe_auth_security};
 use super::auth_setup::canonical_username;
 use super::http_io::{HttpRequest, Response};
-use super::{AuthRuntime, WebSecurityCliConfig};
 
-fn audit_auth_activity(request_id: &str, actor: &str, outcome: &str, client_ip: &str) {
-    if let Ok(line) = json_line(&ActivityEvent {
-        schema_version: 1,
-        timestamp: utc_timestamp(),
-        event: "user_activity",
-        request_id,
-        actor,
-        action: "login",
-        target: "authentication",
-        outcome,
-        client_ip,
-    }) {
-        audit_log(&line);
+async fn record_auth_failure(
+    auth: &AuthRuntime,
+    stage: AuthAbuseStage,
+    source: &str,
+    principal: &str,
+) -> Response {
+    match auth.limiter.record_failure(stage, source, principal).await {
+        Ok(()) => Response::text(401, "Unauthorized", b"invalid credentials\n"),
+        Err(AuthError::RateLimited) => Response::text(
+            429,
+            "Too Many Requests",
+            b"too many authentication attempts\n",
+        ),
+        Err(_) => Response::text(503, "Service Unavailable", b"authentication unavailable\n"),
     }
 }
 
@@ -92,67 +96,93 @@ pub(super) async fn auth_login(
     if password.len() > 4096 || code.len() > 64 {
         return Response::text(400, "Bad Request", b"invalid login form\n");
     }
-    let rate_key = format!("{}:{}", peer_key, username);
-    match auth.limiter.hit(&rate_key).await {
+    match auth
+        .limiter
+        .check(AuthAbuseStage::Password, peer_key, &username)
+        .await
+    {
         Ok(()) => {}
         Err(AuthError::RateLimited) => {
             audit_auth_activity(request_id, &username, "rate_limited", peer_key);
-            return Response::text(
-                429,
-                "Too Many Requests",
-                b"too many authentication attempts\n",
-            );
+            observe_auth_security("auth", "rate_limited", request_id, peer_key, &username);
+            return Response::text(429, "Too Many Requests", b"too many authentication attempts\n");
         }
         Err(_) => {
             return Response::text(503, "Service Unavailable", b"authentication unavailable\n");
         }
     }
-    let (canonical_principal, roles, memberships, secret, auth_generation, local_backend) =
-        if let Some(local) = auth.local.as_ref() {
-            match local.authenticate(&username, password).await {
-                Ok(user) => (
-                    user.username,
-                    user.roles,
-                    user.memberships,
-                    user.totp_secret,
-                    user.auth_generation,
-                    true,
-                ),
-                Err(AuthError::StoreUnavailable) => {
-                    return Response::text(
-                        503,
-                        "Service Unavailable",
-                        b"authentication unavailable\n",
-                    );
-                }
-                Err(_) => {
-                    audit_auth_activity(request_id, &username, "invalid_credentials", peer_key);
-                    return Response::text(401, "Unauthorized", b"invalid credentials\n");
-                }
+    let (canonical_principal, roles, memberships, secret, auth_generation, local_backend) = if let Some(local) =
+        auth.local.as_ref()
+    {
+        match local.authenticate(&username, password).await {
+            Ok(user) => (
+                user.username,
+                user.roles,
+                user.memberships,
+                user.totp_secret,
+                user.auth_generation,
+                true,
+            ),
+            Err(AuthError::StoreUnavailable) => {
+                return Response::text(503, "Service Unavailable", b"authentication unavailable\n");
             }
-        } else {
-            let ldap = auth.ldap.as_ref().expect("checked above");
-            if authenticate_ldap(ldap, &username, password).await.is_err() {
+            Err(_) => {
                 audit_auth_activity(request_id, &username, "invalid_credentials", peer_key);
-                return Response::text(401, "Unauthorized", b"invalid credentials\n");
+                observe_auth_security("auth", "invalid_credentials", request_id, peer_key, &username);
+                return record_auth_failure(
+                    auth,
+                    AuthAbuseStage::Password,
+                    peer_key,
+                    &username,
+                )
+                .await;
             }
-            let roles = auth
-                .roles
-                .get(&username)
-                .cloned()
-                .unwrap_or_else(|| vec!["User".into()]);
-            let memberships = auth.memberships.get(&username).cloned().unwrap_or_default();
-            let auth_generation = auth.mapped_claims_generation(&username);
-            (
-                username.clone(),
-                roles,
-                memberships,
-                auth.totp_secrets.get(&username).cloned(),
-                auth_generation,
-                false,
+        }
+    } else {
+        let ldap = auth.ldap.as_ref().expect("checked above");
+        if authenticate_ldap(ldap, &username, password).await.is_err() {
+            audit_auth_activity(request_id, &username, "invalid_credentials", peer_key);
+            observe_auth_security("auth", "invalid_credentials", request_id, peer_key, &username);
+            return record_auth_failure(
+                auth,
+                AuthAbuseStage::Password,
+                peer_key,
+                &username,
             )
-        };
+            .await;
+        }
+        let roles = auth
+            .roles
+            .get(&username)
+            .cloned()
+            .unwrap_or_else(|| vec!["User".into()]);
+        let memberships = auth.memberships.get(&username).cloned().unwrap_or_default();
+        let auth_generation = auth.mapped_claims_generation(&username);
+        (
+            username.clone(),
+            roles,
+            memberships,
+            auth.totp_secrets.get(&username).cloned(),
+            auth_generation,
+            false,
+        )
+    };
     let mfa = if let Some(secret) = secret.as_deref() {
+        match auth
+            .limiter
+            .check(AuthAbuseStage::Mfa, peer_key, &canonical_principal)
+            .await
+        {
+            Ok(()) => {}
+            Err(AuthError::RateLimited) => {
+                audit_auth_activity(request_id, &canonical_principal, "mfa_rate_limited", peer_key);
+                observe_auth_security("mfa", "rate_limited", request_id, peer_key, &canonical_principal);
+                return Response::text(429, "Too Many Requests", b"too many authentication attempts\n");
+            }
+            Err(_) => {
+                return Response::text(503, "Service Unavailable", b"authentication unavailable\n");
+            }
+        }
         let unix = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map(|v| v.as_secs())
@@ -195,8 +225,25 @@ pub(super) async fn auth_login(
                 "invalid_second_factor",
                 peer_key,
             );
-            return Response::text(401, "Unauthorized", b"invalid credentials\n");
+            observe_auth_security(
+                "mfa",
+                "invalid_second_factor",
+                request_id,
+                peer_key,
+                &canonical_principal,
+            );
+            return record_auth_failure(
+                auth,
+                AuthAbuseStage::Mfa,
+                peer_key,
+                &canonical_principal,
+            )
+            .await;
         }
+        let _ = auth
+            .limiter
+            .clear_pair(AuthAbuseStage::Mfa, peer_key, &canonical_principal)
+            .await;
         true
     } else if auth.require_totp {
         audit_auth_activity(
@@ -205,11 +252,21 @@ pub(super) async fn auth_login(
             "second_factor_required",
             peer_key,
         );
+        observe_auth_security(
+            "mfa",
+            "required",
+            request_id,
+            peer_key,
+            &canonical_principal,
+        );
         return Response::text(401, "Unauthorized", b"invalid credentials\n");
     } else {
         false
     };
-    let _ = auth.limiter.clear(&rate_key).await;
+    let _ = auth
+        .limiter
+        .clear_pair(AuthAbuseStage::Password, peer_key, &canonical_principal)
+        .await;
     let rotated = match sessions
         .rotate_authenticated(
             &session.id,
@@ -227,10 +284,10 @@ pub(super) async fn auth_login(
         }
     };
     let mut response = Response::redirect(303, "See Other", "/");
-    response.headers.push((
-        "Set-Cookie".into(),
+    response.push_header(
+        HeaderName::SetCookie,
         crate::session_cookie::render(config, &rotated.id, web.cors_allow_credentials),
-    ));
+    );
     audit_auth_activity(request_id, &canonical_principal, "success", peer_key);
     response
 }
@@ -273,24 +330,12 @@ pub(super) async fn auth_logout(
         }
     };
     let mut response = Response::redirect(303, "See Other", "/");
-    response.headers.push((
-        "Set-Cookie".into(),
+    response.push_header(
+        HeaderName::SetCookie,
         crate::session_cookie::render(config, &fresh.id, web.cors_allow_credentials),
-    ));
+    );
     let actor = session.principal.as_deref().unwrap_or("anonymous");
-    if let Ok(line) = json_line(&ActivityEvent {
-        schema_version: 1,
-        timestamp: utc_timestamp(),
-        event: "user_activity",
-        request_id,
-        actor,
-        action: "logout",
-        target: "authentication",
-        outcome: "success",
-        client_ip: peer_key,
-    }) {
-        audit_log(&line);
-    }
+    audit_auth_activity_action(request_id, actor, "logout", "success", peer_key);
     response
 }
 

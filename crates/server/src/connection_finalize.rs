@@ -1,8 +1,9 @@
-use crate::http_io::Response;
+use crate::response_headers::HeaderName;
 use crate::observe_response;
-use crate::session_cookie::render as session_cookie;
-use crate::web_security::apply_cors_headers;
 use crate::{ObservabilityCliConfig, WebSecurityCliConfig};
+use crate::session_cookie::render as session_cookie;
+use crate::http_io::Response;
+use crate::web_security::apply_cors_headers;
 use auth::SessionSnapshot;
 use language_core::ServerConfig;
 use observability::{ActivityEvent, Metrics, RequestTimer, audit_log, json_line, utc_timestamp};
@@ -43,17 +44,18 @@ pub(super) fn finalize_response(mut response: Response, ctx: &ResponseContext<'_
 
 fn attach_session_cookie(response: &mut Response, ctx: &ResponseContext<'_>) {
     if !ctx.is_new_session
-        || response
-            .headers
-            .iter()
-            .any(|(name, _)| name.eq_ignore_ascii_case("set-cookie"))
+        || response.has_header(HeaderName::SetCookie)
     {
         return;
     }
-    response.headers.push((
-        "Set-Cookie".into(),
-        session_cookie(ctx.config, &ctx.session.id, ctx.web.cors_allow_credentials),
-    ));
+    response.push_header(
+        HeaderName::SetCookie,
+        session_cookie(
+            ctx.config,
+            &ctx.session.id,
+            ctx.web.cors_allow_credentials,
+        ),
+    );
 }
 
 fn audit_user_activity(response: &Response, ctx: &ResponseContext<'_>) {

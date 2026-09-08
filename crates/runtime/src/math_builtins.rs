@@ -26,12 +26,7 @@ pub(crate) fn eval(function: BuiltinFunction, stack: &mut Vec<Value>) -> Result<
     match function {
         BuiltinFunction::Sin => unary_f32(stack, f32::sin),
         BuiltinFunction::Cos => unary_f32(stack, f32::cos),
-        BuiltinFunction::Sqrt => {
-            unary_f32(
-                stack,
-                |value| if value < 0.0 { f32::NAN } else { value.sqrt() },
-            )
-        }
+        BuiltinFunction::Sqrt => unary_f32(stack, |value| if value < 0.0 { f32::NAN } else { value.sqrt() }),
         BuiltinFunction::Ln => unary_f32(stack, f32::ln),
         BuiltinFunction::Log10 => unary_f32(stack, f32::log10),
         BuiltinFunction::Exp => unary_f32(stack, f32::exp),
@@ -54,19 +49,13 @@ pub(crate) fn eval(function: BuiltinFunction, stack: &mut Vec<Value>) -> Result<
 
 fn abs(stack: &mut Vec<Value>) -> Result<Value, AppError> {
     match stack.pop().ok_or(AppError::Internal)? {
-        Value::Int(value) => value
-            .checked_abs()
-            .map(Value::Int)
-            .ok_or(AppError::Internal),
+        Value::Int(value) => value.checked_abs().map(Value::Int).ok_or(AppError::Internal),
         Value::F32(value) => finite_f32(value.get().abs()),
         _ => Err(AppError::Internal),
     }
 }
 
-fn unary_f32(
-    stack: &mut Vec<Value>,
-    operation: impl FnOnce(f32) -> f32,
-) -> Result<Value, AppError> {
+fn unary_f32(stack: &mut Vec<Value>, operation: impl FnOnce(f32) -> f32) -> Result<Value, AppError> {
     let Value::F32(value) = stack.pop().ok_or(AppError::Internal)? else {
         return Err(AppError::Internal);
     };
@@ -87,9 +76,7 @@ fn binary_f32(
 }
 
 fn finite_f32(value: f32) -> Result<Value, AppError> {
-    F32Value::new(value)
-        .map(Value::F32)
-        .ok_or(AppError::Internal)
+    F32Value::new(value).map(Value::F32).ok_or(AppError::Internal)
 }
 
 fn monotonic_nanos() -> i64 {
@@ -109,30 +96,21 @@ mod tests {
     #[test]
     fn logarithm_exponential_and_rounding_are_finite() {
         let mut stack = vec![f32_value(8.0), f32_value(2.0)];
-        let Value::F32(result) = eval(BuiltinFunction::Log, &mut stack).unwrap() else {
-            panic!("F32 expected")
-        };
+        let Value::F32(result) = eval(BuiltinFunction::Log, &mut stack).unwrap() else { panic!("F32 expected") };
         assert_eq!(result.get(), 3.0);
 
         let mut stack = vec![f32_value(2.0), f32_value(3.0)];
-        let Value::F32(result) = eval(BuiltinFunction::Pow, &mut stack).unwrap() else {
-            panic!("F32 expected")
-        };
+        let Value::F32(result) = eval(BuiltinFunction::Pow, &mut stack).unwrap() else { panic!("F32 expected") };
         assert_eq!(result.get(), 8.0);
 
         let mut stack = vec![f32_value(2.6)];
-        let Value::F32(result) = eval(BuiltinFunction::Round, &mut stack).unwrap() else {
-            panic!("F32 expected")
-        };
+        let Value::F32(result) = eval(BuiltinFunction::Round, &mut stack).unwrap() else { panic!("F32 expected") };
         assert_eq!(result.get(), 3.0);
     }
 
     #[test]
     fn invalid_logarithm_is_rejected() {
         let mut stack = vec![f32_value(-1.0)];
-        assert_eq!(
-            eval(BuiltinFunction::Ln, &mut stack),
-            Err(AppError::Internal)
-        );
+        assert_eq!(eval(BuiltinFunction::Ln, &mut stack), Err(AppError::Internal));
     }
 }

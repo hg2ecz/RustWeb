@@ -21,17 +21,12 @@ pub(super) fn validate_mutation_call(
         .params
         .iter()
         .position(|param| param.name == target.key)
-        .ok_or_else(|| {
-            CompileError::Syntax(format!(
-                "query `{}` mutation key `{}` is not a parameter",
-                query.name, target.key
-            ))
-        })?;
+        .ok_or_else(|| CompileError::Syntax(format!(
+            "query `{}` mutation key `{}` is not a parameter",
+            query.name, target.key
+        )))?;
     let argument = args.get(parameter_index).ok_or_else(|| {
-        CompileError::Syntax(format!(
-            "query `{}` mutation key argument is missing",
-            query.name
-        ))
+        CompileError::Syntax(format!("query `{}` mutation key argument is missing", query.name))
     })?;
     let evidence = infer_static_expr_type(argument, known, program)?
         .scalar()
@@ -68,12 +63,10 @@ fn validate_lifecycle_call(
         .params
         .iter()
         .position(|param| param.name == target.hash_field)
-        .ok_or_else(|| {
-            CompileError::Syntax(format!(
-                "query `{}` lifecycle hash parameter `{}` is missing",
-                query.name, target.hash_field
-            ))
-        })?;
+        .ok_or_else(|| CompileError::Syntax(format!(
+            "query `{}` lifecycle hash parameter `{}` is missing",
+            query.name, target.hash_field
+        )))?;
     let argument = args.get(parameter_index).ok_or_else(|| {
         CompileError::Syntax(format!(
             "query `{}` lifecycle hash argument is missing",
@@ -82,12 +75,10 @@ fn validate_lifecycle_call(
     })?;
     let scalar = infer_static_expr_type(argument, known, program)?
         .scalar()
-        .ok_or_else(|| {
-            CompileError::Syntax(format!(
-                "query `{}` lifecycle hash argument must be scalar",
-                query.name
-            ))
-        })?;
+        .ok_or_else(|| CompileError::Syntax(format!(
+            "query `{}` lifecycle hash argument must be scalar",
+            query.name
+        )))?;
     if scalar.lifecycle != Some(LifecycleEvidence::PresentedTokenHash(target.hash_purpose)) {
         return Err(CompileError::security(
             "SEC-A07-015",
@@ -115,34 +106,24 @@ fn validate_rotation_replacement(
     program: &Program,
 ) -> Result<(), CompileError> {
     let replacement = target.replacement_hash_param.as_ref().ok_or_else(|| {
-        CompileError::Syntax(
-            "internal: rotation contract missing replacement hash parameter".into(),
-        )
+        CompileError::Syntax("internal: rotation contract missing replacement hash parameter".into())
     })?;
-    let index = query
-        .params
-        .iter()
-        .position(|param| &param.name == replacement)
-        .ok_or_else(|| {
-            CompileError::Syntax(format!(
-                "query `{}` replacement hash parameter `{replacement}` is missing",
-                query.name
-            ))
-        })?;
+    let index = query.params.iter().position(|param| &param.name == replacement).ok_or_else(|| {
+        CompileError::Syntax(format!(
+            "query `{}` replacement hash parameter `{replacement}` is missing", query.name
+        ))
+    })?;
     let argument = args.get(index).ok_or_else(|| {
         CompileError::Syntax(format!(
-            "query `{}` replacement hash argument is missing",
-            query.name
+            "query `{}` replacement hash argument is missing", query.name
         ))
     })?;
     let lifecycle = infer_static_expr_type(argument, known, program)?
         .scalar()
         .and_then(|scalar| scalar.lifecycle);
-    if lifecycle
-        == Some(LifecycleEvidence::IssuedTokenHash(
-            CredentialPurpose::SessionTokenHash,
-        ))
-    {
+    if lifecycle == Some(LifecycleEvidence::IssuedTokenHash(
+        CredentialPurpose::SessionTokenHash,
+    )) {
         return Ok(());
     }
     Err(CompileError::security(

@@ -4,11 +4,11 @@ model Product {
     price: Int
 }
 
-query fn listProducts(db: Db, limit: Int, offset: Int) -> Result<List<Product>, DbError> sql {
+query fn listProducts(db: Db, offset: Int) -> Result<List<Product>, DbError> sql {
     SELECT id, name, price
     FROM products
     ORDER BY id
-    LIMIT :limit OFFSET :offset
+    LIMIT 100 OFFSET :offset
 }
 
 query fn findProduct(db: Db, id: Int) -> Result<Product?, DbError> sql {
@@ -41,7 +41,7 @@ query fn deleteProduct(tx: Transaction, id: Int) -> Result<Void, DbError> mutate
 
 page fn products(ctx: PageContext, db: Db, page: Int, pageSize: Int) -> Result<Html, PageError> {
     let offset = (page - 1) * pageSize;
-    let products = listProducts(db, pageSize, offset)?;
+    let products = listProducts(db, offset)?;
 
     return Ok(html {
         <main>

@@ -1,6 +1,6 @@
 use crate::diagnostics::CompileError;
-use crate::expression::infer_expr_type;
 use crate::handler_types::StaticType;
+use crate::expression::infer_expr_type;
 use language_core::{BuiltinFunction, Expr, Program, ValueType};
 use std::collections::HashMap;
 
@@ -23,29 +23,18 @@ pub(super) fn infer_regex_builtin_type(
 
     match function {
         BuiltinFunction::RegexMatch => {
-            require_strings(
-                2,
-                "regexMatch(text, pattern) requires exactly two String arguments",
-            )?;
+            require_strings(2, "regexMatch(text, pattern) requires exactly two String arguments")?;
             Ok(ValueType::Bool)
         }
         BuiltinFunction::RegexReplace => {
-            require_strings(
-                3,
-                "regexReplace(text, pattern, replacement) requires exactly three String arguments",
-            )?;
+            require_strings(3, "regexReplace(text, pattern, replacement) requires exactly three String arguments")?;
             Ok(ValueType::String)
         }
         BuiltinFunction::RegexCaptures => {
-            require_strings(
-                2,
-                "regexCaptures(text, pattern) requires exactly two String arguments",
-            )?;
+            require_strings(2, "regexCaptures(text, pattern) requires exactly two String arguments")?;
             Ok(ValueType::StringDict)
         }
-        _ => Err(CompileError::Syntax(
-            "internal: non-regex builtin passed to regex type checker".into(),
-        )),
+        _ => Err(CompileError::Syntax("internal: non-regex builtin passed to regex type checker".into())),
     }
 }
 

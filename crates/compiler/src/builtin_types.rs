@@ -1,10 +1,10 @@
-use crate::credential_builtin_types;
 use crate::diagnostics::CompileError;
 use crate::handler_types::StaticType;
+use crate::type_semantics::represented_as;
 use crate::math_builtin_types;
+use crate::credential_builtin_types;
 use crate::regex_types;
 use crate::string_builtin_types;
-use crate::type_semantics::represented_as;
 use language_core::{BuiltinFunction, Expr, Program, ValueType};
 use std::collections::HashMap;
 
@@ -41,29 +41,26 @@ pub(super) fn infer_builtin_type(
     match function {
         BuiltinFunction::DictNew => Ok(ValueType::StringDict),
         BuiltinFunction::ContainsKey => {
-            require_types(
-                function,
-                args,
-                &[ValueType::StringDict, ValueType::String],
-                known,
-                program,
-            )?;
+            require_types(function, args, &[ValueType::StringDict, ValueType::String], known, program)?;
             Ok(ValueType::Bool)
         }
         BuiltinFunction::RemoveKey => {
-            require_types(
-                function,
-                args,
-                &[ValueType::StringDict, ValueType::String],
-                known,
-                program,
-            )?;
+            require_types(function, args, &[ValueType::StringDict, ValueType::String], known, program)?;
             Ok(ValueType::StringDict)
         }
-        BuiltinFunction::RegexMatch
-        | BuiltinFunction::RegexReplace
-        | BuiltinFunction::RegexCaptures => {
+        BuiltinFunction::RegexMatch | BuiltinFunction::RegexReplace | BuiltinFunction::RegexCaptures => {
             regex_types::infer_regex_builtin_type(function, args, known, program)
+        }
+        BuiltinFunction::Redact => {
+            let ty = crate::expression::infer_expr_type(&args[0], known, program)?;
+            if matches!(ty, ValueType::Upload | ValueType::Image) {
+                return Err(CompileError::security(
+                    "SEC-DATA-012",
+                    "redact(...) requires a scalar data value",
+                    Some("redact a scalar field or identifier representation, not an Upload/Image capability".into()),
+                ));
+            }
+            Ok(ValueType::String)
         }
         _ => Err(CompileError::Syntax(format!(
             "internal: builtin `{}` has no type checker",

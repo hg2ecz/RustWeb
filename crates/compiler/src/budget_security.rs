@@ -25,15 +25,27 @@ fn handler_has_resource_scope(route: &Route, program: &Program) -> bool {
     match route.method {
         HttpMethod::Get => program.page(&route.handler).is_some_and(|page| {
             let PageBody::Statements(statements) = &page.body;
-            statements
-                .iter()
-                .any(|statement| matches!(statement, Statement::Resource { .. }))
+            page_has_resource(statements)
         }),
         HttpMethod::Post => program.action(&route.handler).is_some_and(|action| {
             let ActionBody::Statements(statements) = &action.body;
-            statements
-                .iter()
-                .any(|statement| matches!(statement, ActionStatement::Resource { .. }))
+            action_has_resource(statements)
         }),
     }
+}
+
+fn page_has_resource(statements: &[Statement]) -> bool {
+    statements.iter().any(|statement| match statement {
+        Statement::Resource { .. } => true,
+        Statement::Match { arms, .. } => arms.iter().any(|arm| page_has_resource(&arm.statements)),
+        _ => false,
+    })
+}
+
+fn action_has_resource(statements: &[ActionStatement]) -> bool {
+    statements.iter().any(|statement| match statement {
+        ActionStatement::Resource { .. } => true,
+        ActionStatement::Match { arms, .. } => arms.iter().any(|arm| action_has_resource(&arm.statements)),
+        _ => false,
+    })
 }

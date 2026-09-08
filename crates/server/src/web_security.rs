@@ -1,5 +1,6 @@
-use crate::http_io::HttpRequest;
+use crate::response_headers::HeaderName;
 use crate::{Response, WebSecurityCliConfig};
+use crate::http_io::HttpRequest;
 use ipnet::IpNet;
 use language_core::{AppError, HttpMethod, Program};
 use runtime::route_meta_for_request;
@@ -13,8 +14,9 @@ pub(super) fn effective_client_ip(
     let forwarded = request.header("forwarded");
     let xff = request.header("x-forwarded-for");
     let xri = request.header("x-real-ip");
-    let supplied =
-        usize::from(forwarded.is_some()) + usize::from(xff.is_some()) + usize::from(xri.is_some());
+    let supplied = usize::from(forwarded.is_some())
+        + usize::from(xff.is_some())
+        + usize::from(xri.is_some());
     if supplied > 1 {
         return Err(());
     }
@@ -204,25 +206,16 @@ pub(super) fn cors_preflight(
         }
     }
     let mut response = Response::new(204, "No Content", "text/plain; charset=utf-8", b"");
-    response
-        .headers
-        .push(("Access-Control-Allow-Origin".into(), origin.into()));
-    response.headers.push((
-        "Access-Control-Allow-Methods".into(),
-        "GET, POST, OPTIONS".into(),
-    ));
-    response.headers.push((
-        "Access-Control-Allow-Headers".into(),
-        "Content-Type, X-CSRF-Token, Accept".into(),
-    ));
-    response
-        .headers
-        .push(("Access-Control-Max-Age".into(), "600".into()));
-    response.headers.push(("Vary".into(), "Origin".into()));
+    response.push_header(HeaderName::AccessControlAllowOrigin, origin);
+    response.push_header(HeaderName::AccessControlAllowMethods, "GET, POST, OPTIONS");
+    response.push_header(
+        HeaderName::AccessControlAllowHeaders,
+        "Content-Type, X-CSRF-Token, Accept",
+    );
+    response.push_header(HeaderName::AccessControlMaxAge, "600");
+    response.push_header(HeaderName::Vary, "Origin");
     if web.cors_allow_credentials {
-        response
-            .headers
-            .push(("Access-Control-Allow-Credentials".into(), "true".into()));
+        response.push_header(HeaderName::AccessControlAllowCredentials, "true");
     }
     response
 }
@@ -232,10 +225,7 @@ pub(super) fn apply_cors_headers(
     origin: Option<&str>,
     web: &WebSecurityCliConfig,
 ) {
-    if response
-        .headers
-        .iter()
-        .any(|(n, _)| n.eq_ignore_ascii_case("access-control-allow-origin"))
+    if response.has_header(HeaderName::AccessControlAllowOrigin)
     {
         return;
     }
@@ -243,13 +233,9 @@ pub(super) fn apply_cors_headers(
     if !web.cors_origins.iter().any(|v| v == origin) {
         return;
     };
-    response
-        .headers
-        .push(("Access-Control-Allow-Origin".into(), origin.into()));
-    response.headers.push(("Vary".into(), "Origin".into()));
+    response.push_header(HeaderName::AccessControlAllowOrigin, origin);
+    response.push_header(HeaderName::Vary, "Origin");
     if web.cors_allow_credentials {
-        response
-            .headers
-            .push(("Access-Control-Allow-Credentials".into(), "true".into()));
+        response.push_header(HeaderName::AccessControlAllowCredentials, "true");
     }
 }

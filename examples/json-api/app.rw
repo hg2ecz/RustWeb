@@ -6,13 +6,12 @@ model Product {
 
 query fn listProducts(
     db: Db,
-    limit: Int,
     offset: Int
 ) -> Result<List<Product>, DbError> sql {
     SELECT id, name, price
     FROM products
     ORDER BY id
-    LIMIT :limit OFFSET :offset
+    LIMIT 100 OFFSET :offset
 }
 
 page fn productsApi(
@@ -21,7 +20,7 @@ page fn productsApi(
     limit: Int,
     offset: Int
 ) -> Result<Json, PageError> {
-    let products = listProducts(db, limit, offset)?;
+    let products = listProducts(db, offset)?;
     return Ok(json(expose(products, id, name, price)));
 }
 

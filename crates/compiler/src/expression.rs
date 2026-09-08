@@ -1,7 +1,7 @@
+use crate::{builtin_types, CompileError};
 use crate::expression_parser;
 use crate::handler_types::StaticType;
 use crate::type_semantics::represented_as;
-use crate::{CompileError, builtin_types};
 use language_core::{BinaryOp, Expr, Program, ValueType};
 use std::collections::HashMap;
 
@@ -36,8 +36,7 @@ pub(super) fn validate_expr(
                     .ok_or_else(|| CompileError::UnknownModel(model_type.name.clone()))?;
                 if !model.fields.iter().any(|f| f.name == *field) {
                     return Err(CompileError::Syntax(format!(
-                        "model `{}` has no field `{field}`",
-                        model_type.name
+                        "model `{}` has no field `{field}`", model_type.name
                     )));
                 }
             }
@@ -92,50 +91,41 @@ pub(super) fn infer_expr_type(
         Expr::Int(_) => Ok(ValueType::Int),
         Expr::F32(_) => Ok(ValueType::F32),
         Expr::F32ArrayNew { len, fill } => {
-            if infer_expr_type(len, k, p)? != ValueType::Int
-                || infer_expr_type(fill, k, p)? != ValueType::F32
-            {
-                return Err(CompileError::Syntax(
-                    "arrayF32(len, fill) requires Int and F32".into(),
-                ));
+            if infer_expr_type(len, k, p)? != ValueType::Int || infer_expr_type(fill, k, p)? != ValueType::F32 {
+                return Err(CompileError::Syntax("arrayF32(len, fill) requires Int and F32".into()));
             }
             Ok(ValueType::F32Array)
         }
-        Expr::CollectionIndex { collection, index } => match k.get(collection) {
-            Some(value) if value.is_scalar(ValueType::F32Array) => {
-                if infer_expr_type(index, k, p)? != ValueType::Int {
-                    return Err(CompileError::Syntax("Array<F32> index must be Int".into()));
+        Expr::CollectionIndex { collection, index } => {
+            match k.get(collection) {
+                Some(value) if value.is_scalar(ValueType::F32Array) => {
+                    if infer_expr_type(index, k, p)? != ValueType::Int {
+                        return Err(CompileError::Syntax("Array<F32> index must be Int".into()));
+                    }
+                    Ok(ValueType::F32)
                 }
-                Ok(ValueType::F32)
-            }
-            Some(value) if value.is_scalar(ValueType::StringList) => {
-                if infer_expr_type(index, k, p)? != ValueType::Int {
-                    return Err(CompileError::Syntax(
-                        "List<String> index must be Int".into(),
-                    ));
+                Some(value) if value.is_scalar(ValueType::StringList) => {
+                    if infer_expr_type(index, k, p)? != ValueType::Int {
+                        return Err(CompileError::Syntax("List<String> index must be Int".into()));
+                    }
+                    Ok(ValueType::String)
                 }
-                Ok(ValueType::String)
-            }
-            Some(value) if value.is_scalar(ValueType::StringDict) => {
-                if infer_expr_type(index, k, p)? != ValueType::String {
-                    return Err(CompileError::Syntax(
-                        "Dict<String,String> key must be String".into(),
-                    ));
+                Some(value) if value.is_scalar(ValueType::StringDict) => {
+                    if infer_expr_type(index, k, p)? != ValueType::String {
+                        return Err(CompileError::Syntax("Dict<String,String> key must be String".into()));
+                    }
+                    Ok(ValueType::String)
                 }
-                Ok(ValueType::String)
+                _ => Err(CompileError::Syntax(format!("`{collection}` is not an indexable collection"))),
             }
-            _ => Err(CompileError::Syntax(format!(
-                "`{collection}` is not an indexable collection"
-            ))),
-        },
+        }
         Expr::CollectionLen { collection } => {
             let supports_len = k
                 .get(collection)
                 .and_then(StaticType::scalar)
                 .map(|scalar| {
                     matches!(
-                        p.representation_type(scalar.value_type)
-                            .unwrap_or(scalar.value_type),
+                        p.representation_type(scalar.value_type).unwrap_or(scalar.value_type),
                         ValueType::String
                             | ValueType::F32Array
                             | ValueType::StringList
@@ -151,9 +141,7 @@ pub(super) fn infer_expr_type(
                 )))
             }
         }
-        Expr::Builtin { function, args } => {
-            builtin_types::infer_builtin_type(*function, args, k, p)
-        }
+        Expr::Builtin { function, args } => builtin_types::infer_builtin_type(*function, args, k, p),
         Expr::Bool(_) => Ok(ValueType::Bool),
         Expr::EnumLiteral { enum_id, .. } => Ok(ValueType::Enum(*enum_id)),
         Expr::Slugify(inner) => {
@@ -226,11 +214,7 @@ pub(super) fn infer_expr_type(
                 {
                     Ok(ValueType::Decimal)
                 }
-                BinaryOp::ShiftLeft
-                | BinaryOp::ShiftRight
-                | BinaryOp::BitAnd
-                | BinaryOp::BitXor
-                | BinaryOp::BitOr
+                BinaryOp::ShiftLeft | BinaryOp::ShiftRight | BinaryOp::BitAnd | BinaryOp::BitXor | BinaryOp::BitOr
                     if l == ValueType::Int && r == ValueType::Int =>
                 {
                     Ok(ValueType::Int)
@@ -267,3 +251,4 @@ pub(super) fn infer_expr_type(
         }
     }
 }
+

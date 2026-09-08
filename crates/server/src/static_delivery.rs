@@ -1,10 +1,11 @@
+use crate::response_headers::HeaderName;
 use crate::StaticAssets;
 use crate::http_io::{HttpRequest, Response};
 use crate::server_errors::StaticPrefixError;
 use language_core::{Route, RouteSegment};
 use sha2::{Digest, Sha256};
-use std::path::Path;
 use storage::{AppFs, inspect_image};
+use std::path::Path;
 
 pub(super) fn validate_static_prefix(raw: &str) -> Result<String, StaticPrefixError> {
     if !raw.starts_with('/')
@@ -89,21 +90,20 @@ pub(super) async fn serve_media_image(
     etag.push('"');
     if request.header("if-none-match") == Some(etag.as_str()) {
         let mut r = Response::new(304, "Not Modified", image.content_type, b"");
-        r.headers.push((
-            "Cache-Control".into(),
-            "public, max-age=31536000, immutable".into(),
-        ));
-        r.headers.push(("ETag".into(), etag));
+        r.push_header(
+            HeaderName::CacheControl,
+            "public, max-age=31536000, immutable",
+        );
+        r.push_header(HeaderName::Etag, etag);
         return r;
     }
     let mut r = Response::new(200, "OK", image.content_type, &bytes);
-    r.headers.push((
-        "Cache-Control".into(),
-        "public, max-age=31536000, immutable".into(),
-    ));
-    r.headers.push(("ETag".into(), etag));
-    r.headers
-        .push(("Content-Disposition".into(), "inline".into()));
+    r.push_header(
+        HeaderName::CacheControl,
+        "public, max-age=31536000, immutable",
+    );
+    r.push_header(HeaderName::Etag, etag);
+    r.push_header(HeaderName::ContentDisposition, language_core::ContentDisposition::Inline.to_string());
     if method == "HEAD" {
         r.content_length_override = Some(bytes.len());
         r.body.clear();
@@ -112,18 +112,14 @@ pub(super) async fn serve_media_image(
     r
 }
 
-pub(super) async fn serve_static_asset(
-    assets: &StaticAssets,
-    request: &HttpRequest,
-    path: &str,
-) -> Response {
+pub(super) async fn serve_static_asset(assets: &StaticAssets, request: &HttpRequest, path: &str) -> Response {
     if request.method != "GET" && request.method != "HEAD" {
         let mut r = Response::text(
             405,
             "Method Not Allowed",
             b"static assets support GET and HEAD only\n",
         );
-        r.headers.push(("Allow".into(), "GET, HEAD".into()));
+        r.push_header(HeaderName::Allow, "GET, HEAD");
         return r;
     }
     let Some(relative) = path.strip_prefix(&assets.url_prefix) else {
@@ -159,32 +155,32 @@ pub(super) async fn serve_static_asset(
     let etag = static_etag(&bytes);
     if if_none_match(request.header("if-none-match"), &etag) {
         let mut r = Response::new(304, "Not Modified", static_content_type(relative), b"");
-        r.headers.push(("ETag".into(), etag));
-        r.headers.push((
-            "Cache-Control".into(),
+        r.push_header(HeaderName::Etag, etag);
+        r.push_header(
+            HeaderName::CacheControl,
             static_cache_control(assets, relative),
-        ));
+        );
         if assets.precompressed {
-            r.headers.push(("Vary".into(), "Accept-Encoding".into()));
+            r.push_header(HeaderName::Vary, "Accept-Encoding");
         }
         if let Some(enc) = encoding {
-            r.headers.push(("Content-Encoding".into(), enc.into()));
+            r.push_header(HeaderName::ContentEncoding, enc);
         }
         return r;
     }
     let original_len = bytes.len();
     let mut r = Response::new(200, "OK", static_content_type(relative), &bytes);
-    r.headers.push(("ETag".into(), etag));
-    r.headers.push((
-        "Cache-Control".into(),
+    r.push_header(HeaderName::Etag, etag);
+    r.push_header(
+        HeaderName::CacheControl,
         static_cache_control(assets, relative),
-    ));
-    r.headers.push(("X-Static-Asset".into(), "1".into()));
+    );
+    r.push_header(HeaderName::XStaticAsset, "1");
     if assets.precompressed {
-        r.headers.push(("Vary".into(), "Accept-Encoding".into()));
+        r.push_header(HeaderName::Vary, "Accept-Encoding");
     }
     if let Some(enc) = encoding {
-        r.headers.push(("Content-Encoding".into(), enc.into()));
+        r.push_header(HeaderName::ContentEncoding, enc);
     }
     if request.method == "HEAD" {
         r.content_length_override = Some(original_len);
@@ -315,3 +311,4 @@ pub(super) fn encoding_accepted(header: &str, wanted: &str) -> bool {
     }
     wildcard.unwrap_or(0.0) > 0.0
 }
+

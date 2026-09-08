@@ -12,10 +12,7 @@ pub(super) fn validate_handler_permission(
     let permission = program.permission(required).ok_or_else(|| {
         CompileError::security(
             "SEC-A01-020",
-            format!(
-                "handler `{}` requires unknown permission `{required}`",
-                route.handler
-            ),
+            format!("handler `{}` requires unknown permission `{required}`", route.handler),
             None,
         )
     })?;
@@ -49,9 +46,7 @@ fn required_permission<'a>(route: &Route, program: &'a Program) -> Option<&'a st
 
 fn route_auth_satisfies_permission(auth: &RouteAuth, permission: &Permission) -> bool {
     match auth {
-        RouteAuth::Permission { name, .. } | RouteAuth::PermissionMfa { name, .. } => {
-            name == &permission.name
-        }
+        RouteAuth::Permission { name, .. } | RouteAuth::PermissionMfa { name, .. } => name == &permission.name,
         RouteAuth::Role(role) => permission.roles.iter().any(|allowed| allowed == role),
         RouteAuth::Public | RouteAuth::Webhook(_) | RouteAuth::User | RouteAuth::Mfa => false,
     }

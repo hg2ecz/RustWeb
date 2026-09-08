@@ -1,4 +1,4 @@
-use crate::events::{SystemEvent, json_line, utc_timestamp};
+use crate::events::{SecurityEvent, SystemEvent, json_line, utc_timestamp};
 use crate::metrics::increment_log_fallback;
 use std::fs::{File, OpenOptions};
 use std::io::{self, Write};
@@ -196,6 +196,35 @@ pub fn server_event(level: &str, event: &str, component: &str, message: &str) {
         eprintln!("{line}")
     }
 }
+pub fn security_event(
+    level: &str,
+    category: &str,
+    action: &str,
+    outcome: &str,
+    request_id: &str,
+    route: &str,
+) {
+    let line = json_line(&SecurityEvent {
+        schema_version: 1,
+        timestamp: utc_timestamp(),
+        event: "security_event",
+        level,
+        category,
+        action,
+        outcome,
+        request_id,
+        route,
+        subject: "[redacted]",
+        source: "[redacted]",
+    })
+    .unwrap_or_else(|_| format!(r#"{{"event":"log_serialization_failed","level":"error"}}"#));
+    if let Some(l) = GLOBAL_LOGGER.get() {
+        l.audit(&line)
+    } else {
+        eprintln!("{line}")
+    }
+}
+
 pub fn server_log(line: &str) {
     server_event("info", "server_message", "server", line)
 }
@@ -261,3 +290,4 @@ mod log_reopen_tests {
         let _ = std::fs::remove_dir_all(base);
     }
 }
+

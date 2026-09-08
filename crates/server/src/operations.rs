@@ -1,5 +1,6 @@
-use super::http_io::{read_request, read_request_head, write_response_with_timeout};
 use super::{LifecycleCliConfig, Response};
+use crate::response_headers::HeaderName;
+use super::http_io::{read_request, read_request_head, write_response_with_timeout};
 use data::{Database, RedisStore};
 use language_core::ServerConfig;
 use observability::{Metrics, server_event};
@@ -95,9 +96,7 @@ pub(super) async fn serve_health_endpoint(
             ),
         }
     };
-    response
-        .headers
-        .push(("Cache-Control".into(), "no-store".into()));
+    response.push_header(HeaderName::CacheControl, "no-store");
     if method == "HEAD" {
         response.content_length_override = Some(response.body.len());
         response.body.clear();

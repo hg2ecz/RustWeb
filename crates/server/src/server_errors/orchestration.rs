@@ -2,10 +2,7 @@ use std::error::Error;
 use std::fmt;
 use std::io;
 
-use super::{
-    AuthSetupError, BackendSupportError, RatePolicyConfigError, ResourceProfileConfigError,
-    TlsConfigError,
-};
+use super::{AuthSetupError, BackendSupportError, RatePolicyConfigError, ResourceProfileConfigError, TlsConfigError};
 
 #[derive(Debug)]
 pub(crate) enum ConnectionError {
@@ -32,16 +29,8 @@ impl Error for ConnectionError {
         }
     }
 }
-impl From<io::Error> for ConnectionError {
-    fn from(value: io::Error) -> Self {
-        Self::Io(value)
-    }
-}
-impl From<auth::AuthError> for ConnectionError {
-    fn from(value: auth::AuthError) -> Self {
-        Self::Auth(value)
-    }
-}
+impl From<io::Error> for ConnectionError { fn from(value: io::Error) -> Self { Self::Io(value) } }
+impl From<auth::AuthError> for ConnectionError { fn from(value: auth::AuthError) -> Self { Self::Auth(value) } }
 
 #[derive(Debug)]
 pub(crate) enum StartupError {
@@ -56,11 +45,7 @@ pub(crate) enum StartupError {
     Auth(auth::AuthError),
     Tls(TlsConfigError),
 }
-impl StartupError {
-    pub(crate) fn invalid(message: impl Into<String>) -> Self {
-        Self::Invalid(message.into())
-    }
-}
+impl StartupError { pub(crate) fn invalid(message: impl Into<String>) -> Self { Self::Invalid(message.into()) } }
 impl fmt::Display for StartupError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -81,60 +66,19 @@ impl Error for StartupError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
             Self::Invalid(_) => None,
-            Self::Io(source) => Some(source),
-            Self::Address(source) => Some(source),
-            Self::Backend(source) => Some(source),
-            Self::Data(source) => Some(source),
-            Self::RatePolicy(source) => Some(source),
-            Self::ResourceProfile(source) => Some(source),
-            Self::AuthSetup(source) => Some(source),
-            Self::Auth(source) => Some(source),
-            Self::Tls(source) => Some(source),
+            Self::Io(source) => Some(source), Self::Address(source) => Some(source),
+            Self::Backend(source) => Some(source), Self::Data(source) => Some(source),
+            Self::RatePolicy(source) => Some(source), Self::ResourceProfile(source) => Some(source),
+            Self::AuthSetup(source) => Some(source), Self::Auth(source) => Some(source), Self::Tls(source) => Some(source),
         }
     }
 }
-impl From<io::Error> for StartupError {
-    fn from(v: io::Error) -> Self {
-        Self::Io(v)
-    }
-}
-impl From<ipnet::AddrParseError> for StartupError {
-    fn from(v: ipnet::AddrParseError) -> Self {
-        Self::Address(v)
-    }
-}
-impl From<BackendSupportError> for StartupError {
-    fn from(v: BackendSupportError) -> Self {
-        Self::Backend(v)
-    }
-}
-impl From<data::DataError> for StartupError {
-    fn from(v: data::DataError) -> Self {
-        Self::Data(v)
-    }
-}
-impl From<RatePolicyConfigError> for StartupError {
-    fn from(v: RatePolicyConfigError) -> Self {
-        Self::RatePolicy(v)
-    }
-}
-impl From<ResourceProfileConfigError> for StartupError {
-    fn from(v: ResourceProfileConfigError) -> Self {
-        Self::ResourceProfile(v)
-    }
-}
-impl From<AuthSetupError> for StartupError {
-    fn from(v: AuthSetupError) -> Self {
-        Self::AuthSetup(v)
-    }
-}
-impl From<auth::AuthError> for StartupError {
-    fn from(v: auth::AuthError) -> Self {
-        Self::Auth(v)
-    }
-}
-impl From<TlsConfigError> for StartupError {
-    fn from(v: TlsConfigError) -> Self {
-        Self::Tls(v)
-    }
-}
+impl From<io::Error> for StartupError { fn from(v: io::Error)->Self{Self::Io(v)} }
+impl From<ipnet::AddrParseError> for StartupError { fn from(v: ipnet::AddrParseError)->Self{Self::Address(v)} }
+impl From<BackendSupportError> for StartupError { fn from(v: BackendSupportError)->Self{Self::Backend(v)} }
+impl From<data::DataError> for StartupError { fn from(v: data::DataError)->Self{Self::Data(v)} }
+impl From<RatePolicyConfigError> for StartupError { fn from(v: RatePolicyConfigError)->Self{Self::RatePolicy(v)} }
+impl From<ResourceProfileConfigError> for StartupError { fn from(v: ResourceProfileConfigError)->Self{Self::ResourceProfile(v)} }
+impl From<AuthSetupError> for StartupError { fn from(v: AuthSetupError)->Self{Self::AuthSetup(v)} }
+impl From<auth::AuthError> for StartupError { fn from(v: auth::AuthError)->Self{Self::Auth(v)} }
+impl From<TlsConfigError> for StartupError { fn from(v: TlsConfigError)->Self{Self::Tls(v)} }

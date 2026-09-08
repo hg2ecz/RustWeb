@@ -39,9 +39,13 @@ allow_insecure = false
 # local_auth_db_url_file = "/run/secrets/rwlang/local-auth-db-url"
 require_totp = false
 login_max_attempts = 8
+login_principal_max_attempts = 16
+login_source_max_attempts = 64
+mfa_max_attempts = 5
 login_window_secs = 300
 
 [web]
+# egress_policy_file = "/etc/rwlang/egress.toml"
 trusted_proxy_cidrs = []
 allow_missing_origin = false
 cors_origins = []

@@ -1,3 +1,4 @@
+use crate::{AuthRuntime, LifecycleCliConfig, Response, StaticAssets, WebSecurityCliConfig};
 use crate::auth_http::{parse_cookie, session_cookie_name};
 use crate::http_io::HttpRequest;
 use crate::operations::serve_health_endpoint;
@@ -5,7 +6,6 @@ use crate::server_config_file::{DomainRuntime, HostingRuntime};
 use crate::static_delivery::{serve_media_image, serve_static_asset};
 use crate::tls_support::request_public_host;
 use crate::web_security::apply_cors_headers;
-use crate::{AuthRuntime, LifecycleCliConfig, Response, StaticAssets, WebSecurityCliConfig};
 use auth::{AuthError, SessionBackend, SessionSnapshot};
 use data::{Database, RedisStore};
 use language_core::Program;
@@ -71,6 +71,7 @@ pub(super) async fn dispatch_early_request(
     None
 }
 
+
 pub(super) async fn resolve_session(
     request: &HttpRequest,
     config: &language_core::ServerConfig,
@@ -125,9 +126,7 @@ pub(super) fn select_domain(
     host_header: Option<&str>,
 ) -> Result<Option<SelectedDomain>, &'static str> {
     let matched_host = request_public_host(host_header);
-    let hosting = hosting
-        .read()
-        .map_err(|_| "hosting runtime lock poisoned")?;
+    let hosting = hosting.read().map_err(|_| "hosting runtime lock poisoned")?;
     let multi_domain = !hosting.domains.is_empty();
     let domain = if multi_domain {
         matched_host

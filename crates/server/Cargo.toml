@@ -11,6 +11,7 @@ language-core = { path = "../language-core" }
 runtime = { path = "../runtime" }
 storage = { path = "../storage" }
 observability = { path = "../observability" }
+integrations = { path = "../integrations" }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "io-util", "time", "signal", "sync"] }
 
 rustls = "0.23"

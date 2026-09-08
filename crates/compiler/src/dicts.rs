@@ -1,6 +1,6 @@
+use crate::handler_types::StaticType;
 use crate::diagnostics::CompileError;
 use crate::expression::{infer_expr_type, parse_expr_in_namespace, validate_expr};
-use crate::handler_types::StaticType;
 use crate::source_syntax::is_identifier;
 use language_core::{Expr, Program, ValueType};
 use std::collections::HashMap;
@@ -13,20 +13,16 @@ pub(super) fn parse_string_dict_set(
     known: &HashMap<String, StaticType>,
     program: &Program,
 ) -> Result<(String, Expr, Expr), CompileError> {
-    let (lhs, rhs) = text.split_once('=').ok_or_else(|| {
-        CompileError::Syntax(format!("{handler_kind} `{handler_name}` set requires ="))
-    })?;
+    let (lhs, rhs) = text
+        .split_once('=')
+        .ok_or_else(|| CompileError::Syntax(format!("{handler_kind} `{handler_name}` set requires =")))?;
     let lhs = lhs.trim();
-    let open = lhs.find('[').ok_or_else(|| {
-        CompileError::Syntax(format!(
-            "{handler_kind} `{handler_name}` dictionary set target must be dict[key]"
-        ))
-    })?;
-    let close = lhs.rfind(']').ok_or_else(|| {
-        CompileError::Syntax(format!(
-            "{handler_kind} `{handler_name}` dictionary set target missing ]"
-        ))
-    })?;
+    let open = lhs.find('[').ok_or_else(|| CompileError::Syntax(format!(
+        "{handler_kind} `{handler_name}` dictionary set target must be dict[key]"
+    )))?;
+    let close = lhs.rfind(']').ok_or_else(|| CompileError::Syntax(format!(
+        "{handler_kind} `{handler_name}` dictionary set target missing ]"
+    )))?;
     if close != lhs.len() - 1 {
         return Err(CompileError::Syntax(format!(
             "{handler_kind} `{handler_name}` invalid Dict<String,String> set target"
@@ -34,10 +30,7 @@ pub(super) fn parse_string_dict_set(
     }
     let dict = lhs[..open].trim();
     if !is_identifier(dict)
-        || !known
-            .get(dict)
-            .map(|value| value.is_scalar(ValueType::StringDict))
-            .unwrap_or(false)
+        || !known.get(dict).map(|value| value.is_scalar(ValueType::StringDict)).unwrap_or(false)
     {
         return Err(CompileError::Syntax(format!(
             "{handler_kind} `{handler_name}` set target `{dict}` is not Dict<String,String>"

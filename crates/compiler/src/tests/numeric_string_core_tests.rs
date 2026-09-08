@@ -6,23 +6,25 @@ fn arithmetic_bitwise_and_logical_operators_are_typed() {
     let known = HashMap::new();
 
     for source in [
-        "17 % 5", "3 << 2", "12 >> 1", "12 & 10", "12 ^ 10", "12 | 10",
+        "17 % 5",
+        "3 << 2",
+        "12 >> 1",
+        "12 & 10",
+        "12 ^ 10",
+        "12 | 10",
     ] {
         let expr = parse_expr(source, &program).unwrap();
-        assert_eq!(
-            infer_expr_type(&expr, &known, &program).unwrap(),
-            ValueType::Int,
-            "{source}"
-        );
+        assert_eq!(infer_expr_type(&expr, &known, &program).unwrap(), ValueType::Int, "{source}");
     }
 
-    for source in ["true && false", "true || false", "!false", "1 < 2 && 3 < 4"] {
+    for source in [
+        "true && false",
+        "true || false",
+        "!false",
+        "1 < 2 && 3 < 4",
+    ] {
         let expr = parse_expr(source, &program).unwrap();
-        assert_eq!(
-            infer_expr_type(&expr, &known, &program).unwrap(),
-            ValueType::Bool,
-            "{source}"
-        );
+        assert_eq!(infer_expr_type(&expr, &known, &program).unwrap(), ValueType::Bool, "{source}");
     }
 }
 
@@ -30,21 +32,10 @@ fn arithmetic_bitwise_and_logical_operators_are_typed() {
 fn operator_precedence_keeps_arithmetic_shift_comparison_and_logic_layers() {
     let program = Program::default();
     let expr = parse_expr("1 + 2 * 3 << 1 == 14 && true", &program).unwrap();
-    let Expr::Binary {
-        op: BinaryOp::LogicalAnd,
-        left,
-        ..
-    } = expr
-    else {
+    let Expr::Binary { op: BinaryOp::LogicalAnd, left, .. } = expr else {
         panic!("logical and expected at root");
     };
-    assert!(matches!(
-        *left,
-        Expr::Binary {
-            op: BinaryOp::Eq,
-            ..
-        }
-    ));
+    assert!(matches!(*left, Expr::Binary { op: BinaryOp::Eq, .. }));
 }
 
 #[test]
@@ -63,11 +54,7 @@ fn extended_math_builtins_are_strictly_f32() {
         "ceil(2.5f32)",
     ] {
         let expr = parse_expr(source, &program).unwrap();
-        assert_eq!(
-            infer_expr_type(&expr, &known, &program).unwrap(),
-            ValueType::F32,
-            "{source}"
-        );
+        assert_eq!(infer_expr_type(&expr, &known, &program).unwrap(), ValueType::F32, "{source}");
     }
 
     let bad = parse_expr("pow(2, 8)", &program).unwrap();
@@ -88,20 +75,12 @@ fn extended_string_builtins_have_explicit_types() {
         "repeat(\"ab\", 3)",
     ] {
         let expr = parse_expr(source, &program).unwrap();
-        assert_eq!(
-            infer_expr_type(&expr, &known, &program).unwrap(),
-            ValueType::String,
-            "{source}"
-        );
+        assert_eq!(infer_expr_type(&expr, &known, &program).unwrap(), ValueType::String, "{source}");
     }
 
     for source in ["indexOf(\"árvíz\", \"ví\")", "lastIndexOf(\"aba\", \"a\")"] {
         let expr = parse_expr(source, &program).unwrap();
-        assert_eq!(
-            infer_expr_type(&expr, &known, &program).unwrap(),
-            ValueType::Int,
-            "{source}"
-        );
+        assert_eq!(infer_expr_type(&expr, &known, &program).unwrap(), ValueType::Int, "{source}");
     }
 }
 
@@ -118,9 +97,6 @@ fn invalid_operator_types_are_rejected_at_compile_time() {
         "!1",
     ] {
         let expr = parse_expr(source, &program).unwrap();
-        assert!(
-            infer_expr_type(&expr, &known, &program).is_err(),
-            "{source}"
-        );
+        assert!(infer_expr_type(&expr, &known, &program).is_err(), "{source}");
     }
 }

@@ -1,25 +1,17 @@
-use crate::egress::{EgressPolicy, Target, ip_allowed};
+use crate::egress::{ip_allowed, EgressPolicy, Target};
 use crate::egress_capability::{EgressCapability, EgressEndpoint, HttpsPath};
 use crate::error::IntegrationError;
+use crate::http_response::{read_http_response, HttpsResponse, StatusResponse};
 use crate::secrets::SecretString;
 use rustls::pki_types::ServerName;
 use rustls::{ClientConfig, RootCertStore};
-use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::{TcpStream, lookup_host};
+use tokio::io::AsyncWriteExt;
+use tokio::net::{lookup_host, TcpStream};
 use tokio_rustls::TlsConnector;
 
-const MAX_HEADER_BYTES: usize = 32 * 1024;
-const MAX_HEADER_COUNT: usize = 128;
-
-#[derive(Debug, Clone)]
-pub struct HttpsResponse {
-    pub status: u16,
-    pub headers: HashMap<String, String>,
-    pub body: Vec<u8>,
-}
+const MAX_RWLANG_STATUS_BODY_BYTES: usize = 256 * 1024;
 
 #[derive(Clone)]
 pub struct OutboundHttpsClient {
@@ -33,14 +25,89 @@ impl OutboundHttpsClient {
         let cfg = ClientConfig::builder()
             .with_root_certificates(roots)
             .with_no_client_auth();
-        Self {
-            policy,
-            tls: TlsConnector::from(Arc::new(cfg)),
-        }
+        Self { policy, tls: TlsConnector::from(Arc::new(cfg)) }
     }
 
     pub fn capability(&self, name: &str) -> Result<EgressCapability, IntegrationError> {
         self.policy.capability(name)
+    }
+
+    pub fn validate_rwlang_target(&self, target_name: &str) -> Result<(), IntegrationError> {
+        self.sole_endpoint(target_name).map(|_| ())
+    }
+
+    pub async fn get_status_with_usage(
+        &self,
+        target_name: &str,
+        path_and_query: &str,
+    ) -> Result<StatusResponse, IntegrationError> {
+        let endpoint = self.sole_endpoint(target_name)?;
+        let path = HttpsPath::new(path_and_query.to_string())?;
+        self.request_status(&endpoint, "GET", &path, &[], &[]).await
+    }
+
+    pub async fn post_json_status_with_usage(
+        &self,
+        target_name: &str,
+        path_and_query: &str,
+        body: &[u8],
+    ) -> Result<StatusResponse, IntegrationError> {
+        let endpoint = self.sole_endpoint(target_name)?;
+        let path = HttpsPath::new(path_and_query.to_string())?;
+        self.request_status(
+            &endpoint,
+            "POST",
+            &path,
+            body,
+            &[("Content-Type", "application/json")],
+        )
+        .await
+    }
+
+    async fn request_status(
+        &self,
+        endpoint: &EgressEndpoint,
+        method: &str,
+        path: &HttpsPath,
+        body: &[u8],
+        headers: &[(&str, &str)],
+    ) -> Result<StatusResponse, IntegrationError> {
+        let target = endpoint.target.clone();
+        if body.len() > target.max_sent_bytes {
+            return Err(IntegrationError::SendTooLarge);
+        }
+        for (key, value) in headers {
+            validate_header(key, value)?;
+        }
+        let response = tokio::time::timeout(
+            target.total_timeout,
+            self.request_inner_with_body_cap(
+                &target,
+                &endpoint.host,
+                endpoint.port,
+                method,
+                path.as_str(),
+                body,
+                headers,
+                target.max_received_bytes.min(MAX_RWLANG_STATUS_BODY_BYTES),
+            ),
+        )
+        .await
+        .map_err(|_| IntegrationError::Timeout)??;
+        Ok(StatusResponse {
+            status: response.status,
+            transferred_bytes: response.body.len() as u64,
+        })
+    }
+
+    fn sole_endpoint(&self, target_name: &str) -> Result<EgressEndpoint, IntegrationError> {
+        let target = self.policy.target(target_name)?;
+        if target.hosts.len() != 1 || target.ports.len() != 1 {
+            return Err(IntegrationError::Policy(
+                "RWLang outbound call target must resolve to exactly one configured host and port".into(),
+            ));
+        }
+        self.capability(target_name)?.endpoint(&target.hosts[0], target.ports[0])
     }
 
     pub async fn get(
@@ -48,8 +115,7 @@ impl OutboundHttpsClient {
         endpoint: &EgressEndpoint,
         path_and_query: &HttpsPath,
     ) -> Result<HttpsResponse, IntegrationError> {
-        self.request(endpoint, "GET", path_and_query, &[], &[])
-            .await
+        self.request(endpoint, "GET", path_and_query, &[], &[]).await
     }
 
     pub async fn post_json(
@@ -115,6 +181,23 @@ impl OutboundHttpsClient {
         body: &[u8],
         headers: &[(&str, &str)],
     ) -> Result<HttpsResponse, IntegrationError> {
+        self.request_inner_with_body_cap(
+            target, host, port, method, path, body, headers, target.max_received_bytes,
+        )
+        .await
+    }
+
+    async fn request_inner_with_body_cap(
+        &self,
+        target: &Target,
+        host: &str,
+        port: u16,
+        method: &str,
+        path: &str,
+        body: &[u8],
+        headers: &[(&str, &str)],
+        response_body_cap: usize,
+    ) -> Result<HttpsResponse, IntegrationError> {
         let answers: Vec<SocketAddr> = lookup_host((host, port))
             .await
             .map_err(|_| IntegrationError::Dns)?
@@ -125,9 +208,7 @@ impl OutboundHttpsClient {
         let mut approved = Vec::new();
         for addr in answers {
             if !ip_allowed(&target.cidrs, addr.ip()) {
-                return Err(IntegrationError::Policy(
-                    "DNS answer outside target CIDR".into(),
-                ));
+                return Err(IntegrationError::Policy("DNS answer outside target CIDR".into()));
             }
             if !approved.contains(&addr) {
                 approved.push(addr);
@@ -141,9 +222,7 @@ impl OutboundHttpsClient {
                     if peer.ip() != addr.ip() || !ip_allowed(&target.cidrs, peer.ip()) {
                         return Err(IntegrationError::Policy("connected peer IP denied".into()));
                     }
-                    return self
-                        .tls_http(target, host, port, stream, method, path, body, headers)
-                        .await;
+                    return self.tls_http(target, host, port, stream, method, path, body, headers, response_body_cap).await;
                 }
                 _ => last_connect_err = Some(IntegrationError::Connect),
             }
@@ -161,14 +240,10 @@ impl OutboundHttpsClient {
         path: &str,
         body: &[u8],
         headers: &[(&str, &str)],
+        response_body_cap: usize,
     ) -> Result<HttpsResponse, IntegrationError> {
-        let server_name =
-            ServerName::try_from(host.to_owned()).map_err(|_| IntegrationError::Tls)?;
-        let mut stream = self
-            .tls
-            .connect(server_name, stream)
-            .await
-            .map_err(|_| IntegrationError::Tls)?;
+        let server_name = ServerName::try_from(host.to_owned()).map_err(|_| IntegrationError::Tls)?;
+        let mut stream = self.tls.connect(server_name, stream).await.map_err(|_| IntegrationError::Tls)?;
         let mut request = Vec::new();
         request.extend_from_slice(
             format!(
@@ -188,24 +263,14 @@ impl OutboundHttpsClient {
         if request.len() > target.max_sent_bytes {
             return Err(IntegrationError::SendTooLarge);
         }
-        stream
-            .write_all(&request)
-            .await
-            .map_err(|_| IntegrationError::Connect)?;
-        stream
-            .flush()
-            .await
-            .map_err(|_| IntegrationError::Connect)?;
-        read_http_response(&mut stream, target.max_received_bytes).await
+        stream.write_all(&request).await.map_err(|_| IntegrationError::Connect)?;
+        stream.flush().await.map_err(|_| IntegrationError::Connect)?;
+        read_http_response(&mut stream, response_body_cap).await
     }
 }
 
 fn host_header(host: &str, port: u16) -> String {
-    if port == 443 {
-        host.to_string()
-    } else {
-        format!("{host}:{port}")
-    }
+    if port == 443 { host.to_string() } else { format!("{host}:{port}") }
 }
 
 fn validate_header(k: &str, v: &str) -> Result<(), IntegrationError> {
@@ -216,100 +281,4 @@ fn validate_header(k: &str, v: &str) -> Result<(), IntegrationError> {
         return Err(IntegrationError::Policy("invalid HTTP header".into()));
     }
     Ok(())
-}
-
-async fn read_http_response<S: tokio::io::AsyncRead + Unpin>(
-    stream: &mut S,
-    max_body: usize,
-) -> Result<HttpsResponse, IntegrationError> {
-    let mut data = Vec::new();
-    let mut buf = [0u8; 4096];
-    let head_end;
-    loop {
-        let n = stream
-            .read(&mut buf)
-            .await
-            .map_err(|_| IntegrationError::Protocol)?;
-        if n == 0 {
-            return Err(IntegrationError::Protocol);
-        }
-        data.extend_from_slice(&buf[..n]);
-        if data.len() > MAX_HEADER_BYTES {
-            return Err(IntegrationError::Protocol);
-        }
-        if let Some(pos) = find_double_crlf(&data) {
-            head_end = pos + 4;
-            break;
-        }
-    }
-    let head = std::str::from_utf8(&data[..head_end]).map_err(|_| IntegrationError::Protocol)?;
-    let mut lines = head[..head.len() - 4].split("\r\n");
-    let status_line = lines.next().ok_or(IntegrationError::Protocol)?;
-    let mut parts = status_line.split_whitespace();
-    if parts.next() != Some("HTTP/1.1") {
-        return Err(IntegrationError::Protocol);
-    }
-    let status: u16 = parts
-        .next()
-        .ok_or(IntegrationError::Protocol)?
-        .parse()
-        .map_err(|_| IntegrationError::Protocol)?;
-    let mut headers = HashMap::new();
-    let mut content_length = None;
-    let mut count = 0usize;
-    for line in lines {
-        count += 1;
-        if count > MAX_HEADER_COUNT {
-            return Err(IntegrationError::Protocol);
-        }
-        let (name, value) = line.split_once(':').ok_or(IntegrationError::Protocol)?;
-        let name = name.trim().to_ascii_lowercase();
-        let value = value.trim();
-        validate_header(&name, value)?;
-        if headers.contains_key(&name) {
-            return Err(IntegrationError::Protocol);
-        }
-        if name == "transfer-encoding" {
-            return Err(IntegrationError::Protocol);
-        }
-        if name == "content-length" {
-            content_length = Some(
-                value
-                    .parse::<usize>()
-                    .map_err(|_| IntegrationError::Protocol)?,
-            );
-        }
-        headers.insert(name, value.to_string());
-    }
-    let expected = content_length.unwrap_or(0);
-    if expected > max_body {
-        return Err(IntegrationError::ResponseTooLarge);
-    }
-    let mut body = data[head_end..].to_vec();
-    if body.len() > expected {
-        return Err(IntegrationError::Protocol);
-    }
-    while body.len() < expected {
-        let want = (expected - body.len()).min(buf.len());
-        let n = stream
-            .read(&mut buf[..want])
-            .await
-            .map_err(|_| IntegrationError::Protocol)?;
-        if n == 0 {
-            return Err(IntegrationError::Protocol);
-        }
-        body.extend_from_slice(&buf[..n]);
-        if body.len() > max_body {
-            return Err(IntegrationError::ResponseTooLarge);
-        }
-    }
-    Ok(HttpsResponse {
-        status,
-        headers,
-        body,
-    })
-}
-
-fn find_double_crlf(v: &[u8]) -> Option<usize> {
-    v.windows(4).position(|w| w == b"\r\n\r\n")
 }

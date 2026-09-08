@@ -31,14 +31,14 @@ pub(super) fn parse_domain_types(
             .ok_or_else(|| CompileError::Syntax(format!("type `{name}` base type expected")))?;
         let open = skip_ascii_whitespace(source, base_start + base_name.len());
         if source.as_bytes().get(open) != Some(&b'{') {
-            return Err(CompileError::Syntax(format!(
-                "type `{name}` requires `{{` after its base type"
-            )));
+            return Err(CompileError::Syntax(format!("type `{name}` requires `{{` after its base type")));
         }
         let close = matching_brace(source, open)
             .ok_or_else(|| CompileError::Syntax(format!("type `{name}` body is unclosed")))?;
         let base = ValueType::parse(&base_name).ok_or_else(|| {
-            CompileError::Syntax(format!("type `{name}` base must be a built-in scalar type"))
+            CompileError::Syntax(format!(
+                "type `{name}` base must be a built-in scalar type"
+            ))
         })?;
         if !matches!(base, ValueType::String | ValueType::Int) {
             return Err(CompileError::Syntax(format!(
@@ -62,11 +62,7 @@ pub(super) fn parse_domain_types(
 }
 
 fn require_type_name(name: &str) -> Result<(), CompileError> {
-    if name
-        .chars()
-        .next()
-        .is_some_and(|value| value.is_ascii_uppercase())
-    {
+    if name.chars().next().is_some_and(|value| value.is_ascii_uppercase()) {
         Ok(())
     } else {
         Err(CompileError::Syntax(format!(

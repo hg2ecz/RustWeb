@@ -8,10 +8,7 @@ pub(super) fn enforce_route_tenant(
     let Some(field) = route.tenant_field.as_deref() else {
         return Ok(());
     };
-    let tenant = env
-        .get(field)
-        .and_then(string_value)
-        .ok_or(AppError::Forbidden)?;
+    let tenant = env.get(field).and_then(string_value).ok_or(AppError::Forbidden)?;
     let memberships = match env.get("__authMemberships") {
         Some(Value::StringList(values)) => values,
         _ => return Err(AppError::Forbidden),
@@ -62,15 +59,9 @@ mod tests {
     fn active_tenant_must_be_a_membership() {
         let mut env = HashMap::new();
         env.insert("tenant".into(), Value::String("acme".into()));
-        env.insert(
-            "__authMemberships".into(),
-            Value::StringList(vec!["acme".into()]),
-        );
+        env.insert("__authMemberships".into(), Value::StringList(vec!["acme".into()]));
         assert_eq!(enforce_route_tenant(&route(), &env), Ok(()));
         env.insert("tenant".into(), Value::String("other".into()));
-        assert_eq!(
-            enforce_route_tenant(&route(), &env),
-            Err(AppError::Forbidden)
-        );
+        assert_eq!(enforce_route_tenant(&route(), &env), Err(AppError::Forbidden));
     }
 }

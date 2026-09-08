@@ -1,19 +1,17 @@
-use crate::check_route_rate_limit;
+use crate::{check_route_rate_limit};
 use crate::connection::ConnectionServices;
 use crate::http_dispatch;
 use crate::http_io::{HttpRequest, ParsedHead, Response, read_buffered_body};
-use crate::presentation::{
-    accepts_media, app_error_response, authorize_route, read_error_response, route_returns_json,
-};
+use crate::presentation::{accepts_media, app_error_response, authorize_route, read_error_response, route_returns_json};
 use crate::request_input::build_upload_runtime_value;
 use crate::web_security::validate_browser_state_change;
 use auth::SessionSnapshot;
 use language_core::{HttpMethod, Program, Route, ServerConfig, UploadField, Value};
 use observability::server_log;
-use runtime::{AppResponse, ExecutionLimits, ResourceProfiles, execute_request_with_profiles};
+use runtime::{AppResponse, ExecutionLimits, ResourceProfiles, execute_request_with_profiles_and_outbound};
+use storage::{AppFs, UploadError, multipart_boundary, store_single_multipart_file};
 use std::io::Cursor;
 use std::time::Duration;
-use storage::{AppFs, UploadError, multipart_boundary, store_single_multipart_file};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite};
 use tokio::time::timeout;
 
@@ -24,17 +22,11 @@ pub(super) struct DispatchOutcome {
 
 impl DispatchOutcome {
     fn keep_connection(response: Response) -> Self {
-        Self {
-            response,
-            force_close: false,
-        }
+        Self { response, force_close: false }
     }
 
     fn close_connection(response: Response) -> Self {
-        Self {
-            response,
-            force_close: true,
-        }
+        Self { response, force_close: true }
     }
 }
 
@@ -238,7 +230,7 @@ where
             ];
             let execution = timeout(
                 Duration::from_millis(ctx.config.request_timeout_ms),
-                execute_request_with_profiles(
+                execute_request_with_profiles_and_outbound(
                     ctx.program,
                     HttpMethod::Post,
                     ctx.path,
@@ -251,6 +243,7 @@ where
                     ctx.resource_profiles,
                     &system_values,
                     ctx.services.database,
+                    ctx.services.outbound,
                 ),
             )
             .await;
@@ -276,7 +269,11 @@ where
                     if !upload.image {
                         let _ = fs.remove(&destination);
                     }
-                    Response::text(503, "Service Unavailable", b"request execution timeout\n")
+                    Response::text(
+                        503,
+                        "Service Unavailable",
+                        b"request execution timeout\n",
+                    )
                 }
                 Ok(Ok(AppResponse::Html(html))) => {
                     if accepts_media(ctx.request_accept, "text/html") {
@@ -287,7 +284,11 @@ where
                             html.as_str().as_bytes(),
                         )
                     } else {
-                        Response::text(406, "Not Acceptable", b"text/html is not acceptable\n")
+                        Response::text(
+                            406,
+                            "Not Acceptable",
+                            b"text/html is not acceptable\n",
+                        )
                     }
                 }
                 Ok(Ok(AppResponse::Json(json))) => {
@@ -390,6 +391,7 @@ where
             ctx.services.route_rate_limiter,
             ctx.services.public_cache,
             ctx.services.idempotency_redis,
+            ctx.services.outbound,
             ctx.services.metrics,
             ctx.request_id,
             ctx.effective_peer,
@@ -402,7 +404,11 @@ where
     .await
     {
         Ok(response) => response,
-        Err(_) => Response::text(503, "Service Unavailable", b"request execution timeout\n"),
+        Err(_) => Response::text(
+            503,
+            "Service Unavailable",
+            b"request execution timeout\n",
+        ),
     };
     DispatchOutcome::keep_connection(response)
 }

@@ -1,110 +1,60 @@
 # Secure-by-construction language foundation
 
-RWLang treats common web-security requirements as language semantics wherever they can be enforced reliably. The design goal is not to make developers memorize a security checklist. The safe path should be the shortest path.
+RWLang treats common web-security requirements as language/compiler/runtime semantics wherever they can be enforced reliably. The safe path should be the shortest path, and unsafe authority should be explicit or unrepresentable.
 
-This change introduces the first breaking secure-by-construction language layer.
+## Core rules
 
-## 1. Route access is never implicit
+### Route access is never implicit
 
-Every route must now state its access policy explicitly:
+Every route states its access policy explicitly. Public, authenticated, permission/MFA, critical, tenant-bound and verified-webhook routes are distinct authorities; omission is a compile-time security error.
 
-```rwlang
-route home GET "/" public => home;
-route account GET "/account" auth user => account;
-route billing POST "/billing" auth mfa => billing;
-route admin GET "/admin" auth role Admin => admin;
-```
+### Internal navigation is typed
 
-A route without `public` or `auth ...` is rejected with `SEC-A01-001`.
+Redirects use compiler-checked route calls rather than dynamic URL strings. The compiler validates target existence, GET semantics, argument count/types and constructs a `LocalUrl` at runtime. This removes the old string-based redirect surface from normal RWLang code.
 
-This removes ambient public exposure. Adding a new endpoint always requires an explicit security decision, while the syntax remains one short token for the common public case.
+### External input starts untrusted and bounded
 
-## 2. Redirects are local and compiler-owned by default
+Request values carry trust state and boundary validation. Raw request strings have a safe upper bound unless a narrower domain rule is declared. Domain types centralize length/pattern/range invariants, and nominal types prevent identity-sensitive values such as different ID domains from being interchanged.
 
-Action redirects accept only safe local string literals:
+### Secrets and sensitive values keep their classification
 
-```rwlang
-return Ok(redirect("/account"));
-```
+`Secret<T>` cannot flow to generic output/audit sinks. `Sensitive<T>` disclosure requires the relevant authorization evidence. Public model output is an explicit field projection, so adding a model field cannot silently expand an API response.
 
-These are rejected:
+### Authorization is proof-bearing
 
-```rwlang
-return Ok(redirect(target));
-return Ok(redirect("//example.org"));
-return Ok(redirect("https://example.org"));
-```
+Object authorization, mutation authorization, named permissions, MFA elevation and tenant isolation produce or require compiler evidence. Validation proof never substitutes for authorization proof.
 
-Dynamic string redirects fail with `SEC-A01-003`; unsafe literal redirects fail with `SEC-A01-002`.
+### Critical operations are contracts
 
-The compiler accepts a local path only when it starts with exactly one `/`, contains no backslash, NUL, CR, or LF, and cannot be interpreted as a protocol-relative URL.
+Critical operations can require permission, MFA, transaction, typed audit and idempotency as one domain-level contract. Idempotent critical transactions also model explicit transaction outcomes (`Committed`, `RolledBack`, `CommitUnknown`) so unknown commit state is not silently retried.
 
-Future typed route-target syntax can make dynamic internal redirects ergonomic without reopening string-based redirect vulnerabilities.
+### Ambient authority is minimized
 
-## 3. External raw strings are automatically bounded
+Database and outbound-network effects are compiler-tracked. Named integrations bind RWLang code to trusted egress targets without exposing arbitrary host/IP/port authority. File publication, webhook verification and browser/session authority are platform-owned boundaries.
 
-Every route-supplied `String` from query, form, or JSON input receives an implicit maximum length of 4096 when no explicit `length` rule exists.
+### Resource exhaustion is a security condition
 
-This:
+Request strings/collections, DB row sets, uploads, image dimensions, outbound responses, cumulative external I/O, instructions/allocations and whole-request execution time are bounded. Transparent untrusted decompression is intentionally absent.
 
-```rwlang
-route search GET "/search" query q<String> public => search;
-```
+### Security telemetry is structured and redacted
 
-is compiled as if the route also contained:
+Typed security events and platform auto-events avoid arbitrary request payload logging. `Redacted<T>` is produced only by the trusted `redact(...)` operation, and burst detection provides an alerting foundation without exposing raw principal/source values.
 
-```rwlang
-validate q length 0 4096
-```
+## Stable diagnostics
 
-Developers can narrow the contract normally:
+Security diagnostics use stable `SEC-*` identifiers. OWASP-family fragments in diagnostic names are navigation aids for the relevant risk class, not a compliance claim.
 
-```rwlang
-route search GET "/search"
-    query q<String>
-    validate q length 1 120
-    public => search;
-```
+## Design order
 
-An explicit length rule replaces the default rather than adding a duplicate check.
-
-This gives every raw textual request value a language-level resource bound without forcing repetitive validation boilerplate.
-
-## 4. Security diagnostics
-
-Compiler security errors now have stable identifiers. The first set is:
-
-| Code | Meaning |
-| --- | --- |
-| `SEC-A01-001` | route has no explicit access policy |
-| `SEC-A01-002` | redirect literal is not a safe local path |
-| `SEC-A01-003` | dynamic String redirect is forbidden |
-| `SEC-A05-001` | unsafe SQL construct |
-| `SEC-A05-002` | unsafe HTML construct |
-
-The `A01` and `A05` portions intentionally map to the corresponding OWASP Top 10 risk families. The identifiers are compiler diagnostics, not a claim of complete OWASP compliance.
-
-## Design rule
-
-RWLang should prefer the following order:
+RWLang prefers:
 
 1. make the unsafe state unrepresentable;
-2. otherwise enforce a secure default automatically;
-3. otherwise require an explicit capability or policy;
-4. use warnings only when compilation cannot prove enough to fail closed.
+2. otherwise prove the invariant at compile time;
+3. otherwise enforce a secure platform/runtime default;
+4. otherwise require an explicit capability/policy and fail closed when it is absent.
 
-Developer ergonomics are part of the security model. Security features that require repeated opt-in are easy to forget, so RWLang should generally make safe behavior implicit and unsafe exceptions explicit.
+Developer ergonomics are part of the security model. Repeated security plumbing is avoided when the compiler/runtime can derive the same invariant from domain intent.
 
-## Next language layers
+## Current status and detailed references
 
-The next planned secure-by-construction work should build on this foundation rather than adding unrelated lints:
-
-- typed trust flow (`Untrusted<T>` / validated domain values);
-- `Secret<T>` and `Sensitive<T>` information-flow restrictions;
-- authorization proof types such as `Authorized<T, Permission>`;
-- typed route targets replacing string-built dynamic redirects;
-- explicit outbound-network capabilities and SSRF-safe egress types;
-- explicit public API projection instead of implicit model serialization;
-- bounded collection/input types;
-- typed browser/API route semantics with automatic CSRF/session rules;
-- security audit requirements for privilege-changing mutations.
+The canonical current status is [`../SECURITY-STATUS.md`](../SECURITY-STATUS.md). Detailed security chapters continue from this foundation through the numbered documents in this directory, including tenant isolation, idempotency, webhook integrity, safe uploads, capabilities/egress, production policy, typed HTTP metadata, cryptographic lifecycle, supply-chain provenance, exhaustive matching, transaction outcomes, resource safety and monitoring/redaction.

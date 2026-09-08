@@ -71,18 +71,10 @@ fn emit(expr: &Expr, out: &mut Vec<Op>) {
             emit(inner, out);
             out.push(Op::Not);
         }
-        Expr::Binary {
-            left,
-            op: BinaryOp::LogicalAnd,
-            right,
-        } => {
+        Expr::Binary { left, op: BinaryOp::LogicalAnd, right } => {
             emit_short_circuit(left, right, out, false);
         }
-        Expr::Binary {
-            left,
-            op: BinaryOp::LogicalOr,
-            right,
-        } => {
+        Expr::Binary { left, op: BinaryOp::LogicalOr, right } => {
             emit_short_circuit(left, right, out, true);
         }
         Expr::Binary { left, op, right } => {
@@ -96,19 +88,11 @@ fn emit(expr: &Expr, out: &mut Vec<Op>) {
 fn emit_short_circuit(left: &Expr, right: &Expr, out: &mut Vec<Op>, jump_on: bool) {
     emit(left, out);
     let jump_index = out.len();
-    out.push(if jump_on {
-        Op::JumpIfTrue(usize::MAX)
-    } else {
-        Op::JumpIfFalse(usize::MAX)
-    });
+    out.push(if jump_on { Op::JumpIfTrue(usize::MAX) } else { Op::JumpIfFalse(usize::MAX) });
     out.push(Op::Pop);
     emit(right, out);
     let target = out.len();
-    out[jump_index] = if jump_on {
-        Op::JumpIfTrue(target)
-    } else {
-        Op::JumpIfFalse(target)
-    };
+    out[jump_index] = if jump_on { Op::JumpIfTrue(target) } else { Op::JumpIfFalse(target) };
 }
 
 #[cfg(test)]

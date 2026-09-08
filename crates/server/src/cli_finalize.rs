@@ -1,3 +1,4 @@
+use crate::startup_args::StartupArgs;
 use crate::bootstrap_config::{
     load_rate_policies, load_resource_profiles, print_effective_config,
     validate_route_rate_policies,
@@ -7,7 +8,6 @@ use crate::cli_overrides::AppliedCli;
 use crate::cli_scan::CliBootstrap;
 use crate::server_config_file::{build_domain_configs, validate_log_config};
 use crate::server_errors::CliParseError;
-use crate::startup_args::StartupArgs;
 use crate::static_delivery::validate_static_prefix;
 use crate::tls_support::build_tls_acceptor;
 use compiler::compile_file;
@@ -52,8 +52,13 @@ pub(super) fn finalize(
         check_config,
         print_effective,
     } = bootstrap;
-    if auth.login_max_attempts == 0 || auth.login_window_secs == 0 {
-        return Err("login rate limits must be greater than zero".into());
+    if auth.login_max_attempts == 0
+        || auth.login_principal_max_attempts == 0
+        || auth.login_source_max_attempts == 0
+        || auth.mfa_max_attempts == 0
+        || auth.login_window_secs == 0
+    {
+        return Err("authentication abuse limits must be greater than zero".into());
     }
     if tls.handshake_timeout_ms == 0 {
         return Err("--tls-handshake-timeout-ms must be greater than zero".into());
@@ -142,9 +147,7 @@ pub(super) fn finalize(
         return Err("`server.app`/--app cannot be combined with [[domains]]".into());
     }
     let app = if domains.is_empty() {
-        app.ok_or(
-            "missing application: configure `server.app`, --app, or at least one [[domains]] entry",
-        )?
+        app.ok_or("missing application: configure `server.app`, --app, or at least one [[domains]] entry")?
     } else {
         PathBuf::new()
     };
@@ -168,19 +171,13 @@ pub(super) fn finalize(
                     return Err(format!(
                         "{}:{} requests unknown resource profile `{}`",
                         use_site.source.file, use_site.source.line, use_site.profile
-                    )
-                    .into());
+                    ).into());
                 }
             }
-            for root in [static_assets.root.as_deref(), storage.data_root.as_deref()]
-                .into_iter()
-                .flatten()
-            {
+            for root in [static_assets.root.as_deref(), storage.data_root.as_deref()].into_iter().flatten() {
                 let meta = fs::metadata(root)?;
                 if !meta.is_dir() {
-                    return Err(
-                        format!("configured root `{}` is not a directory", root.display()).into(),
-                    );
+                    return Err(format!("configured root `{}` is not a directory", root.display()).into());
                 }
             }
         } else {
@@ -200,29 +197,14 @@ pub(super) fn finalize(
                     if profiles.config(&use_site.profile).is_none() {
                         return Err(format!(
                             "domain `{}` {}:{} requests unknown resource profile `{}`",
-                            domain.host,
-                            use_site.source.file,
-                            use_site.source.line,
-                            use_site.profile
-                        )
-                        .into());
+                            domain.host, use_site.source.file, use_site.source.line, use_site.profile
+                        ).into());
                     }
                 }
-                for root in [
-                    domain.static_assets.root.as_deref(),
-                    domain.storage.data_root.as_deref(),
-                ]
-                .into_iter()
-                .flatten()
-                {
+                for root in [domain.static_assets.root.as_deref(), domain.storage.data_root.as_deref()].into_iter().flatten() {
                     let meta = fs::metadata(root)?;
                     if !meta.is_dir() {
-                        return Err(format!(
-                            "domain `{}` root `{}` is not a directory",
-                            domain.host,
-                            root.display()
-                        )
-                        .into());
+                        return Err(format!("domain `{}` root `{}` is not a directory", domain.host, root.display()).into());
                     }
                 }
             }
@@ -270,42 +252,18 @@ pub(super) fn finalize(
             println!("max_body_bytes = {}", domain.config.max_body_bytes);
             println!("request_timeout_ms = {}", domain.config.request_timeout_ms);
             println!("max_instructions = {}", domain.config.max_instructions);
-            println!(
-                "max_runtime_alloc_bytes = {}",
-                domain.config.max_runtime_alloc_bytes
-            );
-            println!(
-                "max_concurrent_requests = {}",
-                domain.max_concurrent_requests
-            );
+            println!("max_runtime_alloc_bytes = {}", domain.config.max_runtime_alloc_bytes);
+            println!("max_concurrent_requests = {}", domain.max_concurrent_requests);
             println!("max_queued_requests = {}", domain.max_queued_requests);
             println!("queue_timeout_ms = {}", domain.queue_timeout_ms);
             println!("reload_enabled = {}", domain.reload.enabled);
-            println!(
-                "reload_poll_interval_ms = {}",
-                domain.reload.poll_interval_ms
-            );
+            println!("reload_poll_interval_ms = {}", domain.reload.poll_interval_ms);
             println!("reload_debounce_ms = {}", domain.reload.debounce_ms);
-            println!(
-                "tls_cert_file = {:?}",
-                domain
-                    .tls
-                    .as_ref()
-                    .map(|v| v.cert_file.display().to_string())
-            );
-            println!(
-                "tls_key_file = {:?}",
-                domain
-                    .tls
-                    .as_ref()
-                    .map(|v| v.key_file.display().to_string())
-            );
+            println!("tls_cert_file = {:?}", domain.tls.as_ref().map(|v| v.cert_file.display().to_string()));
+            println!("tls_key_file = {:?}", domain.tls.as_ref().map(|v| v.key_file.display().to_string()));
             println!(
                 "resource_profiles_file = {:?}",
-                domain
-                    .resource_profiles_file
-                    .as_ref()
-                    .map(|p| p.display().to_string())
+                domain.resource_profiles_file.as_ref().map(|p| p.display().to_string())
             );
         }
         std::process::exit(0);

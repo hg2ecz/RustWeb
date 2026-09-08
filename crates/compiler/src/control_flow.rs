@@ -1,15 +1,11 @@
+use crate::{arrays, dicts};
 use crate::cache_safety::expr_uses_request_state;
 use crate::diagnostics::CompileError;
+use crate::expression::{infer_expr_type, infer_static_expr_type, parse_expr_in_namespace, validate_expr};
 #[cfg(test)]
 use crate::expression::parse_expr;
-use crate::expression::{
-    infer_expr_type, infer_static_expr_type, parse_expr_in_namespace, validate_expr,
-};
 use crate::handler_types::{HandlerReturnKind, StaticType};
-use crate::source_syntax::{
-    find_statement_end, is_identifier, matching_brace, preview, skip_ws_and_comments,
-};
-use crate::{arrays, dicts};
+use crate::source_syntax::{find_statement_end, is_identifier, matching_brace, preview, skip_ws_and_comments};
 use language_core::{ActionStatement, ComputeStatement, Expr, Program, Statement, ValueType};
 use std::collections::HashMap;
 
@@ -26,9 +22,7 @@ pub(super) fn parse_while_block(
     let open = body[cond_start..]
         .find('{')
         .map(|v| cond_start + v)
-        .ok_or_else(|| {
-            CompileError::Syntax(format!("{handler_kind} `{handler_name}` while missing {{"))
-        })?;
+        .ok_or_else(|| CompileError::Syntax(format!("{handler_kind} `{handler_name}` while missing {{")))?;
     let condition = parse_expr_in_namespace(body[cond_start..open].trim(), namespace, p)?;
     validate_expr(&condition, known, p)?;
     if infer_expr_type(&condition, known, p)? != ValueType::Bool {
@@ -37,9 +31,7 @@ pub(super) fn parse_while_block(
         )));
     }
     let close = matching_brace(body, open).ok_or_else(|| {
-        CompileError::Syntax(format!(
-            "{handler_kind} `{handler_name}` while block unclosed"
-        ))
+        CompileError::Syntax(format!("{handler_kind} `{handler_name}` while block unclosed"))
     })?;
     let mut inner_known = known.clone();
     let statements = parse_compute_statements(
@@ -52,6 +44,7 @@ pub(super) fn parse_while_block(
     )?;
     Ok((condition, statements, close))
 }
+
 
 pub(super) fn parse_if_block(
     handler_kind: &str,
@@ -66,9 +59,7 @@ pub(super) fn parse_if_block(
     let open = body[cond_start..]
         .find('{')
         .map(|v| cond_start + v)
-        .ok_or_else(|| {
-            CompileError::Syntax(format!("{handler_kind} `{handler_name}` if missing {{"))
-        })?;
+        .ok_or_else(|| CompileError::Syntax(format!("{handler_kind} `{handler_name}` if missing {{")))?;
     let condition = parse_expr_in_namespace(body[cond_start..open].trim(), namespace, p)?;
     validate_expr(&condition, known, p)?;
     if infer_expr_type(&condition, known, p)? != ValueType::Bool {
@@ -108,9 +99,10 @@ fn parse_compute_statements(
         }
         if body[cursor..].starts_with("let ") {
             let after = cursor + 4;
-            let eq = body[after..].find('=').map(|v| after + v).ok_or_else(|| {
-                CompileError::Syntax(format!("{handler_kind} `{handler_name}` let has no ="))
-            })?;
+            let eq = body[after..]
+                .find('=')
+                .map(|v| after + v)
+                .ok_or_else(|| CompileError::Syntax(format!("{handler_kind} `{handler_name}` let has no =")))?;
             let local = body[after..eq].trim();
             if !is_identifier(local) {
                 return Err(CompileError::Syntax(format!(
@@ -121,58 +113,28 @@ fn parse_compute_statements(
             let expr = parse_expr_in_namespace(body[eq + 1..end].trim(), namespace, p)?;
             validate_expr(&expr, known, p)?;
             known.insert(local.into(), infer_static_expr_type(&expr, known, p)?);
-            out.push(ComputeStatement::Let {
-                name: local.into(),
-                expr,
-            });
+            out.push(ComputeStatement::Let { name: local.into(), expr });
             cursor = end + 1;
             continue;
         }
         if body[cursor..].starts_with("set ") {
             let end = find_statement_end(body, cursor)?;
             let text = body[cursor + 4..end].trim().trim_end_matches(';').trim();
-            if text
-                .split_once('=')
-                .map(|(lhs, _)| lhs.contains('['))
-                .unwrap_or(false)
-            {
-                let target = text
-                    .split_once('=')
-                    .map(|(lhs, _)| lhs.trim())
-                    .unwrap_or("");
+            if text.split_once('=').map(|(lhs, _)| lhs.contains('[')).unwrap_or(false) {
+                let target = text.split_once('=').map(|(lhs, _)| lhs.trim()).unwrap_or("");
                 let collection = target.split('[').next().unwrap_or("").trim();
                 match known.get(collection) {
                     Some(value) if value.is_scalar(ValueType::F32Array) => {
-                        let (array, index, value) = arrays::parse_f32_array_set(
-                            handler_kind,
-                            handler_name,
-                            text,
-                            namespace,
-                            known,
-                            p,
-                        )?;
-                        out.push(ComputeStatement::F32ArraySet {
-                            array,
-                            index,
-                            value,
-                        });
+                        let (array, index, value) = arrays::parse_f32_array_set(handler_kind, handler_name, text, namespace, known, p)?;
+                        out.push(ComputeStatement::F32ArraySet { array, index, value });
                     }
                     Some(value) if value.is_scalar(ValueType::StringDict) => {
-                        let (dict, key, value) = dicts::parse_string_dict_set(
-                            handler_kind,
-                            handler_name,
-                            text,
-                            namespace,
-                            known,
-                            p,
-                        )?;
+                        let (dict, key, value) = dicts::parse_string_dict_set(handler_kind, handler_name, text, namespace, known, p)?;
                         out.push(ComputeStatement::StringDictSet { dict, key, value });
                     }
-                    _ => {
-                        return Err(CompileError::Syntax(format!(
-                            "{handler_kind} `{handler_name}` set target `{collection}` is not a mutable collection"
-                        )));
-                    }
+                    _ => return Err(CompileError::Syntax(format!(
+                        "{handler_kind} `{handler_name}` set target `{collection}` is not a mutable collection"
+                    ))),
                 }
             } else {
                 let (name, rhs) = text.split_once('=').ok_or_else(|| {
@@ -196,45 +158,22 @@ fn parse_compute_statements(
                         "{handler_kind} `{handler_name}` set `{name}` type mismatch"
                     )));
                 }
-                out.push(ComputeStatement::Set {
-                    name: name.into(),
-                    expr,
-                });
+                out.push(ComputeStatement::Set { name: name.into(), expr });
             }
             cursor = end + 1;
             continue;
         }
         if body[cursor..].starts_with("while ") {
-            let (condition, statements, close) = parse_while_block(
-                handler_kind,
-                handler_name,
-                namespace,
-                body,
-                cursor,
-                known,
-                p,
-            )?;
-            out.push(ComputeStatement::While {
-                condition,
-                statements,
-            });
+            let (condition, statements, close) =
+                parse_while_block(handler_kind, handler_name, namespace, body, cursor, known, p)?;
+            out.push(ComputeStatement::While { condition, statements });
             cursor = close + 1;
             continue;
         }
         if body[cursor..].starts_with("if ") {
-            let (condition, statements, close) = parse_if_block(
-                handler_kind,
-                handler_name,
-                namespace,
-                body,
-                cursor,
-                known,
-                p,
-            )?;
-            out.push(ComputeStatement::If {
-                condition,
-                statements,
-            });
+            let (condition, statements, close) =
+                parse_if_block(handler_kind, handler_name, namespace, body, cursor, known, p)?;
+            out.push(ComputeStatement::If { condition, statements });
             cursor = close + 1;
             continue;
         }
@@ -247,7 +186,11 @@ fn parse_compute_statements(
 }
 
 pub(super) fn page_return_matches(statements: &[Statement], declared: HandlerReturnKind) -> bool {
-    page_return_kind(statements) == Some(declared) || page_terminates_with_fail(statements)
+    match statements.last() {
+        Some(Statement::Match { arms, .. }) => arms.iter().all(|arm| page_return_matches(&arm.statements, declared)),
+        Some(Statement::Resource { statements, .. }) => page_return_matches(statements, declared),
+        _ => page_return_kind(statements) == Some(declared) || page_terminates_with_fail(statements),
+    }
 }
 
 fn page_terminates_with_fail(statements: &[Statement]) -> bool {
@@ -262,15 +205,17 @@ pub(super) fn action_return_matches(
     statements: &[ActionStatement],
     declared: HandlerReturnKind,
 ) -> bool {
-    action_return_kind(statements) == Some(declared) || action_terminates_with_fail(statements)
+    match statements.last() {
+        Some(ActionStatement::Match { arms, .. }) => arms.iter().all(|arm| action_return_matches(&arm.statements, declared)),
+        Some(ActionStatement::Resource { statements, .. }) => action_return_matches(statements, declared),
+        _ => action_return_kind(statements) == Some(declared) || action_terminates_with_fail(statements),
+    }
 }
 
 fn action_terminates_with_fail(statements: &[ActionStatement]) -> bool {
     match statements.last() {
         Some(ActionStatement::Fail(_)) => true,
-        Some(ActionStatement::Resource { statements, .. }) => {
-            action_terminates_with_fail(statements)
-        }
+        Some(ActionStatement::Resource { statements, .. }) => action_terminates_with_fail(statements),
         _ => false,
     }
 }
@@ -278,9 +223,7 @@ fn action_terminates_with_fail(statements: &[ActionStatement]) -> bool {
 pub(super) fn page_return_kind(statements: &[Statement]) -> Option<HandlerReturnKind> {
     match statements.last()? {
         Statement::ReturnHtml(_) => Some(HandlerReturnKind::Html),
-        Statement::ReturnJson(_) | Statement::ReturnJsonProjection(_) => {
-            Some(HandlerReturnKind::Json)
-        }
+        Statement::ReturnJson(_) | Statement::ReturnJsonProjection(_) => Some(HandlerReturnKind::Json),
         Statement::Fail(_) => None,
         Statement::Resource { statements, .. } => page_return_kind(statements),
         Statement::Authorize(_)
@@ -290,18 +233,18 @@ pub(super) fn page_return_kind(statements: &[Statement]) -> Option<HandlerReturn
         | Statement::Set { .. }
         | Statement::While { .. }
         | Statement::If { .. }
+        | Statement::Match { .. }
         | Statement::F32ArraySet { .. }
         | Statement::StringDictSet { .. }
-        | Statement::LetQuery { .. } => None,
+        | Statement::LetQuery { .. }
+        | Statement::LetOutboundStatus { .. } => None,
     }
 }
 
 pub(super) fn action_return_kind(statements: &[ActionStatement]) -> Option<HandlerReturnKind> {
     match statements.last()? {
         ActionStatement::ReturnRedirect(_) => Some(HandlerReturnKind::Redirect),
-        ActionStatement::ReturnJson(_) | ActionStatement::ReturnJsonProjection(_) => {
-            Some(HandlerReturnKind::Json)
-        }
+        ActionStatement::ReturnJson(_) | ActionStatement::ReturnJsonProjection(_) => Some(HandlerReturnKind::Json),
         ActionStatement::Fail(_) => None,
         ActionStatement::Resource { statements, .. } => action_return_kind(statements),
         ActionStatement::Authorize(_)
@@ -310,9 +253,11 @@ pub(super) fn action_return_kind(statements: &[ActionStatement]) -> Option<Handl
         | ActionStatement::Set { .. }
         | ActionStatement::While { .. }
         | ActionStatement::If { .. }
+        | ActionStatement::Match { .. }
         | ActionStatement::F32ArraySet { .. }
         | ActionStatement::StringDictSet { .. }
         | ActionStatement::LetQuery { .. }
+        | ActionStatement::LetOutboundStatus { .. }
         | ActionStatement::Transaction { .. }
         | ActionStatement::Flash(_) => None,
     }
@@ -321,32 +266,17 @@ pub(super) fn action_return_kind(statements: &[ActionStatement]) -> Option<Handl
 pub(super) fn compute_uses_request_state(statements: &[ComputeStatement]) -> Option<&str> {
     for statement in statements {
         let hit = match statement {
-            ComputeStatement::Let { expr, .. } | ComputeStatement::Set { expr, .. } => {
-                expr_uses_request_state(expr)
-            }
-            ComputeStatement::F32ArraySet { index, value, .. } => {
-                expr_uses_request_state(index).or_else(|| expr_uses_request_state(value))
-            }
-            ComputeStatement::StringDictSet { key, value, .. } => {
-                expr_uses_request_state(key).or_else(|| expr_uses_request_state(value))
-            }
-            ComputeStatement::While {
-                condition,
-                statements,
-            } => expr_uses_request_state(condition)
-                .or_else(|| compute_uses_request_state(statements)),
-            ComputeStatement::If {
-                condition,
-                statements,
-            } => expr_uses_request_state(condition)
-                .or_else(|| compute_uses_request_state(statements)),
+            ComputeStatement::Let { expr, .. } | ComputeStatement::Set { expr, .. } => expr_uses_request_state(expr),
+            ComputeStatement::F32ArraySet { index, value, .. } => expr_uses_request_state(index).or_else(|| expr_uses_request_state(value)),
+            ComputeStatement::StringDictSet { key, value, .. } => expr_uses_request_state(key).or_else(|| expr_uses_request_state(value)),
+            ComputeStatement::While { condition, statements } => expr_uses_request_state(condition).or_else(|| compute_uses_request_state(statements)),
+            ComputeStatement::If { condition, statements } => expr_uses_request_state(condition).or_else(|| compute_uses_request_state(statements)),
         };
-        if hit.is_some() {
-            return hit;
-        }
+        if hit.is_some() { return hit; }
     }
     None
 }
+
 
 #[cfg(test)]
 mod tests {
@@ -371,11 +301,7 @@ route test GET "/test" public => test;
         let p = compile_source(src).unwrap();
         let page = p.page("test").unwrap();
         let PageBody::Statements(statements) = &page.body;
-        assert!(
-            statements
-                .iter()
-                .any(|s| matches!(s, Statement::While { .. }))
-        );
+        assert!(statements.iter().any(|s| matches!(s, Statement::While { .. })));
     }
 
     #[test]

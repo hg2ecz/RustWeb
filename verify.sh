@@ -8,7 +8,12 @@ if [ ! -f Cargo.lock ]; then
   echo 'generate and review Cargo.lock in the trusted developer workspace before packaging' >&2
   exit 1
 fi
-cargo metadata --locked --format-version 1 >/dev/null
+cargo metadata --locked --format-version 1 >/dev/null || {
+  echo 'verification refused: Cargo.lock is stale for workspace manifests' >&2
+  echo 'run ./tools/refresh-lock.sh, review Cargo.lock, then regenerate RW-SUPPLY-CHAIN.lock' >&2
+  exit 1
+}
+./tools/supply-chain-verify.sh
 cargo check --locked --workspace
 cargo test --locked --workspace
 # M14 integrations crate is covered by workspace tests.

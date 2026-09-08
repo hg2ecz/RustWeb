@@ -1,10 +1,10 @@
-use auth::{LdapConfig, LocalUserStore, LoginRateLimiter, TotpReplayGuard};
+use auth::{AuthAbuseLimiter, LdapConfig, LocalUserStore, TotpReplayGuard};
 use data::RedisStore;
 use ipnet::IpNet;
 use language_core::Route;
 use observability::{
-    AuditEvent, Metrics, RequestLog, RequestTimer, access_log, audit_log, init_logging, json_line,
-    server_event, utc_timestamp,
+    AuditEvent, Metrics, RequestLog, RequestTimer, access_log, audit_log,
+    init_logging, json_line, server_event, utc_timestamp,
 };
 use resource_limits::apply as apply_resource_limits;
 use sha2::{Digest, Sha256};
@@ -41,6 +41,7 @@ struct WebSecurityCliConfig {
     cors_origins: Vec<String>,
     cors_allow_credentials: bool,
     webhook_secrets_dir: Option<PathBuf>,
+    egress_policy_file: Option<PathBuf>,
 }
 
 #[derive(Clone)]
@@ -107,6 +108,9 @@ struct AuthCliConfig {
     local_auth_db_url: Option<String>,
     require_totp: bool,
     login_max_attempts: u32,
+    login_principal_max_attempts: u32,
+    login_source_max_attempts: u32,
+    mfa_max_attempts: u32,
     login_window_secs: u64,
 }
 
@@ -119,7 +123,7 @@ struct AuthRuntime {
     require_totp: bool,
     redis: Option<RedisStore>,
     local_totp: TotpReplayGuard,
-    limiter: LoginRateLimiter,
+    limiter: AuthAbuseLimiter,
 }
 
 #[derive(Clone)]
@@ -167,36 +171,42 @@ impl Default for CacheCliConfig {
     }
 }
 
-mod auth_claims;
-mod auth_http;
-mod auth_setup;
+mod resource_limits;
+mod server_errors;
+mod server_config_file;
+mod tls_support;
 mod backend_support;
-mod bootstrap_config;
+mod source_reload;
+mod request_pipeline;
 mod connection;
 mod connection_dispatch;
 mod connection_finalize;
 mod http_io;
-mod idempotency;
-mod membership_setup;
-mod operations;
+mod response_headers;
+mod security_headers;
+mod security_alerts;
 mod presentation;
-mod rate_limit;
-mod request_input;
-mod request_pipeline;
-mod resource_limits;
-mod server_config_file;
-mod server_errors;
+mod runtime_error_logging;
+mod bootstrap_config;
+mod auth_setup;
+mod auth_claims;
+mod membership_setup;
+mod auth_http;
+mod auth_observability;
 mod session_cookie;
-mod source_reload;
 mod static_delivery;
-mod tls_support;
-mod web_security;
+mod idempotency;
 mod webhook_verification;
+mod rate_limit;
+mod web_security;
+mod operations;
+mod request_input;
+mod app_execution;
+use server_errors::{ClockError, ReservedPathError};
 use http_io::Response;
+use rate_limit::RouteRateLimiter;
 use operations::install_panic_logging_hook;
 use presentation::endpoint_error;
-use rate_limit::RouteRateLimiter;
-use server_errors::{ClockError, ReservedPathError};
 
 fn unix_secs() -> Result<u64, ClockError> {
     SystemTime::now()
@@ -288,17 +298,25 @@ fn main() {
     }
 }
 
+
+
+mod startup_args;
+mod startup_services;
+mod startup_security;
+mod production_security;
+mod outbound_runtime;
+mod outbound_startup;
+mod reload_security;
+mod startup_transport;
 mod cli;
-mod cli_config_apply;
-mod cli_finalize;
-mod cli_overrides;
 mod cli_scan;
+mod cli_overrides;
+mod cli_finalize;
+mod cli_config_apply;
 mod http_dispatch;
 mod startup;
-mod startup_args;
-mod startup_security;
-mod startup_services;
-mod startup_transport;
+
+
 
 fn validate_reserved_path(raw: &str) -> Result<String, ReservedPathError> {
     if !raw.starts_with('/')
@@ -333,6 +351,7 @@ fn route_matches_exact_path(route: &language_core::Route, path: &str) -> bool {
         })
 }
 
+
 async fn check_route_rate_limit(
     limiter: &RouteRateLimiter,
     route: &Route,
@@ -354,9 +373,10 @@ async fn check_route_rate_limit(
                 "rate_limited",
                 b"rate limit exceeded\n",
             );
-            response
-                .headers
-                .push(("Retry-After".into(), retry_after.to_string()));
+            response.push_header(
+                crate::response_headers::HeaderName::RetryAfter,
+                retry_after.to_string(),
+            );
             Some(response)
         }
         Err(_) => Some(endpoint_error(
@@ -376,6 +396,7 @@ fn security_audit_classification(status: u16, body: &[u8]) -> Option<(&'static s
     };
     match status {
         400 if contains(b"invalid forwarding headers") => Some(("proxy", "invalid_forwarding")),
+        401 if contains(b"webhook") => Some(("webhook", "verification_denied")),
         401 => Some(("auth", "unauthorized")),
         403 if contains(b"csrf") => Some(("csrf", "denied")),
         403 if contains(b"cors") => Some(("cors", "denied")),
@@ -383,7 +404,9 @@ fn security_audit_classification(status: u16, body: &[u8]) -> Option<(&'static s
         403 => Some(("policy", "forbidden")),
         421 => Some(("host", "mismatch")),
         426 => Some(("transport", "https_required")),
+        409 if contains(b"idempotency") || contains(b"idempotent") => Some(("idempotency", "conflict")),
         429 => Some(("rate_limit", "denied")),
+        503 if contains(b"resource_limit") => Some(("resource", "exhausted")),
         _ => None,
     }
 }
@@ -399,14 +422,11 @@ fn observe_response(
     metrics: &Metrics,
     access_enabled: bool,
 ) {
-    if !response
-        .headers
-        .iter()
-        .any(|(n, _)| n.eq_ignore_ascii_case("x-request-id"))
-    {
-        response
-            .headers
-            .push(("X-Request-Id".into(), request_id.into()));
+    if !response.has_header(crate::response_headers::HeaderName::XRequestId) {
+        response.push_header(
+            crate::response_headers::HeaderName::XRequestId,
+            request_id,
+        );
     }
     let duration = timer.elapsed();
     let bytes_out = if response.suppress_body {
@@ -488,6 +508,14 @@ fn observe_response(
         }) {
             audit_log(&line);
         }
+        crate::security_alerts::observe(
+            category,
+            "request",
+            outcome,
+            client_ip,
+            request_id,
+            route,
+        );
     }
 }
 

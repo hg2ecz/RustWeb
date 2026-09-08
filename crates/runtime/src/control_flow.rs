@@ -69,6 +69,7 @@ pub(crate) fn execute_while(
     }
 }
 
+
 pub(crate) fn execute_if(
     condition: &Expr,
     statements: &[ComputeStatement],
@@ -97,26 +98,23 @@ fn execute_compute(
                 env.insert(name.clone(), value);
             }
             ComputeStatement::Set { name, expr } => assign(name, expr, env, budget)?,
-            ComputeStatement::F32ArraySet {
-                array,
-                index,
-                value,
-            } => set_f32_array(array, index, value, env, budget)?,
+            ComputeStatement::F32ArraySet { array, index, value } => {
+                set_f32_array(array, index, value, env, budget)?
+            }
             ComputeStatement::StringDictSet { dict, key, value } => {
                 set_string_dict(dict, key, value, env, budget)?
             }
-            ComputeStatement::While {
-                condition,
-                statements,
-            } => execute_while(condition, statements, env, budget)?,
-            ComputeStatement::If {
-                condition,
-                statements,
-            } => execute_if(condition, statements, env, budget)?,
+            ComputeStatement::While { condition, statements } => {
+                execute_while(condition, statements, env, budget)?
+            }
+            ComputeStatement::If { condition, statements } => {
+                execute_if(condition, statements, env, budget)?
+            }
         }
     }
     Ok(())
 }
+
 
 #[cfg(test)]
 mod tests {
@@ -126,15 +124,8 @@ mod tests {
 
     fn budget() -> Budget {
         Budget::new(
-            &ExecutionLimits {
-                max_instructions: 10_000,
-                max_allocated_bytes: 1024 * 1024,
-            },
-            ResourceProfileConfig {
-                max_instructions: 10_000,
-                max_allocated_bytes: 1024 * 1024,
-                max_concurrent: 1,
-            },
+            &ExecutionLimits { max_instructions: 10_000, max_allocated_bytes: 1024 * 1024 },
+            ResourceProfileConfig { max_instructions: 10_000, max_allocated_bytes: 1024 * 1024, max_concurrent: 1 },
         )
     }
 
@@ -167,20 +158,10 @@ mod tests {
         }];
         let mut env = HashMap::from([("x".into(), Value::F32(F32Value::new(0.0).unwrap()))]);
         let mut b = Budget::new(
-            &ExecutionLimits {
-                max_instructions: 5,
-                max_allocated_bytes: 1024,
-            },
-            ResourceProfileConfig {
-                max_instructions: 5,
-                max_allocated_bytes: 1024,
-                max_concurrent: 1,
-            },
+            &ExecutionLimits { max_instructions: 5, max_allocated_bytes: 1024 },
+            ResourceProfileConfig { max_instructions: 5, max_allocated_bytes: 1024, max_concurrent: 1 },
         );
-        assert!(matches!(
-            execute_while(&condition, &statements, &mut env, &mut b),
-            Err(AppError::InstructionLimit)
-        ));
+        assert!(matches!(execute_while(&condition, &statements, &mut env, &mut b), Err(AppError::InstructionLimit)));
     }
 }
 
@@ -191,31 +172,13 @@ mod if_tests {
 
     #[test]
     fn if_executes_only_when_condition_is_true() {
-        let statements = vec![ComputeStatement::Set {
-            name: "i".into(),
-            expr: Expr::Int(7),
-        }];
+        let statements = vec![ComputeStatement::Set { name: "i".into(), expr: Expr::Int(7) }];
         let mut env = HashMap::from([("i".into(), Value::Int(1))]);
-        let make_budget = || {
-            Budget::new(
-                &ExecutionLimits {
-                    max_instructions: 100,
-                    max_allocated_bytes: 1024,
-                },
-                ResourceProfileConfig {
-                    max_instructions: 100,
-                    max_allocated_bytes: 1024,
-                    max_concurrent: 1,
-                },
-            )
-        };
-        execute_if(
-            &Expr::Bool(false),
-            &statements,
-            &mut env,
-            &mut make_budget(),
-        )
-        .unwrap();
+        let make_budget = || Budget::new(
+            &ExecutionLimits { max_instructions: 100, max_allocated_bytes: 1024 },
+            ResourceProfileConfig { max_instructions: 100, max_allocated_bytes: 1024, max_concurrent: 1 },
+        );
+        execute_if(&Expr::Bool(false), &statements, &mut env, &mut make_budget()).unwrap();
         assert_eq!(env.get("i"), Some(&Value::Int(1)));
         execute_if(&Expr::Bool(true), &statements, &mut env, &mut make_budget()).unwrap();
         assert_eq!(env.get("i"), Some(&Value::Int(7)));

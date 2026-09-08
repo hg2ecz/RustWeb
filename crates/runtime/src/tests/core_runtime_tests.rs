@@ -27,12 +27,12 @@ model Product {
     name: String
     price: Int
 }
-query fn listProducts(db: Db, limit: Int, offset: Int) -> Result<List<Product>, DbError> sql {
-    SELECT id, name, price FROM products ORDER BY id LIMIT :limit OFFSET :offset
+query fn listProducts(db: Db, offset: Int) -> Result<List<Product>, DbError> sql {
+    SELECT id, name, price FROM products ORDER BY id LIMIT 2 OFFSET :offset
 }
 page fn products(ctx: PageContext, db: Db, page: Int, pageSize: Int) -> Result<Html, PageError> {
     let offset = (page - 1) * pageSize;
-    let products = listProducts(db, pageSize, offset)?;
+    let products = listProducts(db, offset)?;
     return Ok(html {<ul>@for product in products {<li><a @href(product, product.id)>{{ product.name }}</a></li>}</ul><a @href(products, page + 1, pageSize)>next</a>});
 }
 page fn product(ctx: PageContext, id: Int) -> Result<Html, PageError> { return Ok(html {product}); }
@@ -305,3 +305,4 @@ mod resource_profile_error_tests {
         );
     }
 }
+

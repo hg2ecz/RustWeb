@@ -21,13 +21,11 @@ pub(super) fn load_memberships(
         if line.is_empty() || line.starts_with('#') {
             continue;
         }
-        let (user, raw) = line
-            .split_once('=')
-            .ok_or_else(|| AuthSetupError::InvalidLine {
-                path: path.to_path_buf(),
-                line: line_no,
-                message: "expected username=tenant,tenant",
-            })?;
+        let (user, raw) = line.split_once('=').ok_or_else(|| AuthSetupError::InvalidLine {
+            path: path.to_path_buf(),
+            line: line_no,
+            message: "expected username=tenant,tenant",
+        })?;
         let user = canonical_username(user).ok_or_else(|| AuthSetupError::InvalidUsername {
             path: path.to_path_buf(),
             line: line_no,
@@ -39,17 +37,12 @@ pub(super) fn load_memberships(
             });
         }
         let mut memberships = Vec::new();
-        for tenant in raw
-            .split(',')
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-        {
-            let parsed =
-                auth::TenantId::parse(tenant).map_err(|_| AuthSetupError::InvalidTenant {
-                    path: path.to_path_buf(),
-                    line: line_no,
-                    tenant: tenant.to_string(),
-                })?;
+        for tenant in raw.split(',').map(str::trim).filter(|value| !value.is_empty()) {
+            let parsed = auth::TenantId::parse(tenant).map_err(|_| AuthSetupError::InvalidTenant {
+                path: path.to_path_buf(),
+                line: line_no,
+                tenant: tenant.to_string(),
+            })?;
             memberships.push(parsed);
         }
         auth::validate_memberships(&memberships).map_err(|_| AuthSetupError::InvalidLine {
@@ -61,3 +54,4 @@ pub(super) fn load_memberships(
     }
     Ok(out)
 }
+

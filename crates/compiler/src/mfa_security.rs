@@ -20,12 +20,8 @@ pub(super) fn validate_handler_mfa(route: &Route, program: &Program) -> Result<(
 
 fn handler_requires_mfa(route: &Route, program: &Program) -> bool {
     match route.method {
-        HttpMethod::Get => program
-            .page(&route.handler)
-            .is_some_and(|h| h.security.mfa_required),
-        HttpMethod::Post => program
-            .action(&route.handler)
-            .is_some_and(|h| h.security.mfa_required),
+        HttpMethod::Get => program.page(&route.handler).is_some_and(|h| h.security.mfa_required),
+        HttpMethod::Post => program.action(&route.handler).is_some_and(|h| h.security.mfa_required),
     }
 }
 

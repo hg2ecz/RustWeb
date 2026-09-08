@@ -38,9 +38,7 @@ mod m35_object_authorization_runtime_tests {
     fn rule() -> ObjectAuthorization {
         ObjectAuthorization {
             object: "article".into(),
-            mode: AuthorizationMode::Owner {
-                field: "authorUsername".into(),
-            },
+            mode: AuthorizationMode::Owner { field: "authorUsername".into() },
             allow_roles: vec!["Publisher".into()],
         }
     }

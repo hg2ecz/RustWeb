@@ -48,6 +48,7 @@ max_concurrent = 2
     }
 }
 
+
 #[cfg(test)]
 mod m21_lifecycle_tests {
     use super::*;
@@ -57,11 +58,10 @@ mod m21_lifecycle_tests {
         let lifecycle = LifecycleCliConfig::default();
         let live = serve_health_endpoint(&lifecycle.live_path, "GET", &lifecycle, None, None).await;
         assert_eq!(live.status, 200);
-        assert_eq!(live.content_type, "application/json; charset=utf-8");
+        assert_eq!(live.content_type(), "application/json; charset=utf-8");
         assert_eq!(live.body, br#"{"status":"live"}"#);
         assert!(
-            live.headers
-                .iter()
+            live.headers()
                 .any(|(k, v)| k == "Cache-Control" && v == "no-store")
         );
 
@@ -101,6 +101,7 @@ mod m21_lifecycle_tests {
     }
 }
 
+
 #[cfg(test)]
 mod server_config_file_tests {
     use super::*;
@@ -129,23 +130,16 @@ mod server_config_file_tests {
     fn sample_shape_parses() {
         let _: ServerFileConfig =
             toml::from_str(include_str!("../../../../config/server.toml.sample")).unwrap();
-        let multi: ServerFileConfig = toml::from_str(include_str!(
-            "../../../../config/server-multidomain.toml.sample"
-        ))
-        .unwrap();
+        let multi: ServerFileConfig =
+            toml::from_str(include_str!("../../../../config/server-multidomain.toml.sample")).unwrap();
         assert_eq!(multi.domains.len(), 2);
         assert_eq!(multi.domains[0].aliases.as_deref().unwrap().len(), 3);
         assert!(multi.domains[0].tls.cert_file.is_some());
         assert_eq!(multi.reload.enabled, Some(true));
         assert_eq!(multi.domains[0].reload.poll_interval_ms, Some(1000));
-        let included: FileDomain = toml::from_str(include_str!(
-            "../../../../config/domains/domain.toml.sample"
-        ))
-        .unwrap();
-        assert_eq!(
-            included.aliases.as_deref(),
-            Some(&["control.example.com".to_string()][..])
-        );
+        let included: FileDomain =
+            toml::from_str(include_str!("../../../../config/domains/domain.toml.sample")).unwrap();
+        assert_eq!(included.aliases.as_deref(), Some(&["control.example.com".to_string()][..]));
         assert!(included.tls.key_file.is_some());
         assert_eq!(included.reload.poll_interval_ms, Some(1500));
         let cfg: ServerFileConfig = toml::from_str(
@@ -166,12 +160,9 @@ cors_origins = ["https://example.com"]
 
     #[test]
     fn domain_config_rejects_global_process_limit_override() {
-        assert!(
-            toml::from_str::<FileDomain>(
-                "host='a.example'\nworkdir='/srv/a'\n[limits]\nmax_process_memory_bytes=1\n"
-            )
-            .is_err()
-        );
+        assert!(toml::from_str::<FileDomain>(
+            "host='a.example'\nworkdir='/srv/a'\n[limits]\nmax_process_memory_bytes=1\n"
+        ).is_err());
     }
 
     #[test]
@@ -195,3 +186,4 @@ stderr=false
         assert!(toml::from_str::<ServerFileConfig>("[logging]\nunknown=true\n").is_err());
     }
 }
+

@@ -58,7 +58,10 @@ pub(super) fn tokenize(source: &str) -> Result<Vec<String>, CompileError> {
         }
         // Signed decimal integer literals are required by range validation.
         // Keep the sign in the token so `-10` cannot silently become `10`.
-        if (c[i] == '-' || c[i] == '+') && i + 1 < c.len() && c[i + 1].is_ascii_digit() {
+        if (c[i] == '-' || c[i] == '+')
+            && i + 1 < c.len()
+            && c[i + 1].is_ascii_digit()
+        {
             let s = i;
             i += 1;
             while i < c.len() && c[i].is_ascii_digit() {
@@ -71,12 +74,7 @@ pub(super) fn tokenize(source: &str) -> Result<Vec<String>, CompileError> {
         {
             let s = i;
             while i < c.len() {
-                if c[i].is_ascii_alphanumeric()
-                    || c[i] == '_'
-                    || c[i] == '.'
-                    || c[i] == '<'
-                    || c[i] == '>'
-                {
+                if c[i].is_ascii_alphanumeric() || c[i] == '_' || c[i] == '.' || c[i] == '<' || c[i] == '>' {
                     i += 1;
                     continue;
                 }
@@ -99,7 +97,11 @@ pub(super) fn tokenize(source: &str) -> Result<Vec<String>, CompileError> {
         }
 
         let line = 1 + c[..i].iter().filter(|ch| **ch == '\n').count();
-        let column = 1 + c[..i].iter().rev().take_while(|ch| **ch != '\n').count();
+        let column = 1 + c[..i]
+            .iter()
+            .rev()
+            .take_while(|ch| **ch != '\n')
+            .count();
         return Err(CompileError::Syntax(format!(
             "unexpected character `{}` at line {line}, column {column}",
             c[i]
@@ -120,58 +122,19 @@ pub(super) fn lex_expr(input: &str) -> Result<Vec<ExprToken>, CompileError> {
             continue;
         }
         match b[i] {
-            b'&' if b.get(i + 1) == Some(&b'&') => {
-                o.push(ExprToken::AndAnd);
-                i += 2
-            }
-            b'|' if b.get(i + 1) == Some(&b'|') => {
-                o.push(ExprToken::OrOr);
-                i += 2
-            }
-            b'<' if b.get(i + 1) == Some(&b'<') => {
-                o.push(ExprToken::ShiftLeft);
-                i += 2
-            }
-            b'>' if b.get(i + 1) == Some(&b'>') => {
-                o.push(ExprToken::ShiftRight);
-                i += 2
-            }
-            b'<' if b.get(i + 1) == Some(&b'=') => {
-                o.push(ExprToken::Le);
-                i += 2
-            }
-            b'>' if b.get(i + 1) == Some(&b'=') => {
-                o.push(ExprToken::Ge);
-                i += 2
-            }
-            b'=' if b.get(i + 1) == Some(&b'=') => {
-                o.push(ExprToken::EqEq);
-                i += 2
-            }
-            b'!' if b.get(i + 1) == Some(&b'=') => {
-                o.push(ExprToken::Ne);
-                i += 2
-            }
-            b'<' => {
-                o.push(ExprToken::Lt);
-                i += 1
-            }
-            b'>' => {
-                o.push(ExprToken::Gt);
-                i += 1
-            }
-            b'[' => {
-                o.push(ExprToken::LBracket);
-                i += 1
-            }
-            b']' => {
-                o.push(ExprToken::RBracket);
-                i += 1
-            }
-            b',' => {
-                o.push(ExprToken::Comma);
-                i += 1
-            }
+            b'&' if b.get(i + 1) == Some(&b'&') => { o.push(ExprToken::AndAnd); i += 2 }
+            b'|' if b.get(i + 1) == Some(&b'|') => { o.push(ExprToken::OrOr); i += 2 }
+            b'<' if b.get(i + 1) == Some(&b'<') => { o.push(ExprToken::ShiftLeft); i += 2 }
+            b'>' if b.get(i + 1) == Some(&b'>') => { o.push(ExprToken::ShiftRight); i += 2 }
+            b'<' if b.get(i + 1) == Some(&b'=') => { o.push(ExprToken::Le); i += 2 }
+            b'>' if b.get(i + 1) == Some(&b'=') => { o.push(ExprToken::Ge); i += 2 }
+            b'=' if b.get(i + 1) == Some(&b'=') => { o.push(ExprToken::EqEq); i += 2 }
+            b'!' if b.get(i + 1) == Some(&b'=') => { o.push(ExprToken::Ne); i += 2 }
+            b'<' => { o.push(ExprToken::Lt); i += 1 }
+            b'>' => { o.push(ExprToken::Gt); i += 1 }
+            b'[' => { o.push(ExprToken::LBracket); i += 1 }
+            b']' => { o.push(ExprToken::RBracket); i += 1 }
+            b',' => { o.push(ExprToken::Comma); i += 1 }
             b'.' => {
                 o.push(ExprToken::Dot);
                 i += 1
@@ -188,30 +151,12 @@ pub(super) fn lex_expr(input: &str) -> Result<Vec<ExprToken>, CompileError> {
                 o.push(ExprToken::Star);
                 i += 1
             }
-            b'/' => {
-                o.push(ExprToken::Slash);
-                i += 1
-            }
-            b'%' => {
-                o.push(ExprToken::Percent);
-                i += 1
-            }
-            b'&' => {
-                o.push(ExprToken::Amp);
-                i += 1
-            }
-            b'^' => {
-                o.push(ExprToken::Caret);
-                i += 1
-            }
-            b'|' => {
-                o.push(ExprToken::Pipe);
-                i += 1
-            }
-            b'!' => {
-                o.push(ExprToken::Bang);
-                i += 1
-            }
+            b'/' => { o.push(ExprToken::Slash); i += 1 }
+            b'%' => { o.push(ExprToken::Percent); i += 1 }
+            b'&' => { o.push(ExprToken::Amp); i += 1 }
+            b'^' => { o.push(ExprToken::Caret); i += 1 }
+            b'|' => { o.push(ExprToken::Pipe); i += 1 }
+            b'!' => { o.push(ExprToken::Bang); i += 1 }
             b'(' => {
                 o.push(ExprToken::LParen);
                 i += 1
@@ -251,33 +196,23 @@ pub(super) fn lex_expr(input: &str) -> Result<Vec<ExprToken>, CompileError> {
             }
             b'0'..=b'9' => {
                 let start = i;
-                while i < b.len() && b[i].is_ascii_digit() {
-                    i += 1;
-                }
+                while i < b.len() && b[i].is_ascii_digit() { i += 1; }
                 let mut is_float = false;
                 if i < b.len() && b[i] == b'.' && b.get(i + 1).is_some_and(|c| c.is_ascii_digit()) {
                     is_float = true;
                     i += 1;
-                    while i < b.len() && b[i].is_ascii_digit() {
-                        i += 1;
-                    }
+                    while i < b.len() && b[i].is_ascii_digit() { i += 1; }
                 }
                 if is_float {
                     if input.get(i..i + 3) != Some("f32") {
                         return Err(CompileError::Syntax(
-                            "floating literal requires explicit `f32` suffix (example: 1.25f32)"
-                                .into(),
+                            "floating literal requires explicit `f32` suffix (example: 1.25f32)".into(),
                         ));
                     }
                     let raw = &input[start..i];
                     i += 3;
-                    let value = raw
-                        .parse::<f32>()
-                        .ok()
-                        .and_then(language_core::F32Value::new)
-                        .ok_or_else(|| {
-                            CompileError::Syntax("F32 literal must be finite and in range".into())
-                        })?;
+                    let value = raw.parse::<f32>().ok().and_then(language_core::F32Value::new)
+                        .ok_or_else(|| CompileError::Syntax("F32 literal must be finite and in range".into()))?;
                     o.push(ExprToken::F32(value));
                 } else {
                     o.push(ExprToken::Int(input[start..i].parse().map_err(|_| {
